@@ -1,12 +1,181 @@
-PokerStars, PartyPoker, GGPoker용 DeeperMind 포커봇
-=====================================================
+PokerStars, PartyPoker, GGPoker용 DeeperMind 포커봇 (BudongJW/Poker 포크)
+=========================================================================
 
 이 포커봇은 PokerStars, PartyPoker, GG Poker에서 자동으로 플레이한다. 다른 테이블도 매핑하여 추가할 수 있다.
 이미지 인식, 몬테카를로 시뮬레이션, 기본 유전 알고리즘으로 동작한다.
 마우스는 자동으로 움직이며, 다수의 파라미터에 기반해 장시간 플레이 가능하다.
 
-바이너리를 다운로드해 실행 파일을 바로 실행할 수도 있다:
+바이너리를 다운로드해 실행 파일을 바로 실행할 수도 있다 (업스트림):
 http://www.deepermind-pokerbot.com
+
+----
+
+한국어 사용자 빠른 시작 (BudongJW 포크)
+----------------------------------------
+
+.. warning::
+
+   본 포크는 **학술 연구 + 플레이머니 검증 전용**. PokerStars 약관상 자동화 도구는
+   플레이머니에서도 금지되어 있고, RTA 탐지율은 95%를 넘는다 (영구 정지 + 잔액 몰수).
+   **실머니(pokerstars.com) 적용은 한국에서 도박죄 성립 가능**. 절대 금지.
+
+본 포크가 업스트림(dickreuter/Poker)에 추가한 것
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* **플레이머니 OCR**: ``1,250,000`` / ``1.5K`` / ``10M`` 등 대형 정수·접미사 파싱 (``poker/tools/text_normalize.py``)
+* **베지에 + Fitts 마우스 모델**: HCI 표준 적용 (``poker/tools/mouse_mover.py`` 재작성)
+* **numpy 2.x 호환성 수정**: 기존 ``int(np.random.uniform(0, 500, 1))`` TypeError 패치
+* **한국어 셋업 가이드**: ``SETUP_PLAY_MONEY.ko.md`` (집 PC 매핑까지 단계별)
+* **코어 알고리즘 스모크 테스트**: PokerStars 미설치 환경에서 봇 두뇌 무결성 검증 (``scripts/smoke_test.py`` 5/5, ``scripts/smoke_test_extended.py`` 15/15)
+* **환경 검증 스크립트**: Python/패키지/Tesseract/해상도/MongoDB 자동 점검 (``scripts/check_env.py``)
+* **2026 PokerStars UI 변화 대응 문서**: Aurora 강제, Seatfinder, 4K 그래픽, Throwables 등 (``SETUP_PLAY_MONEY.ko.md §7-A``)
+
+브랜치 구조
+~~~~~~~~~~~
+
+* ``master`` — 업스트림 미러
+* ``play-money-kr`` — 한국 거주자용 플레이머니 작업 브랜치 (**여기서 작업**)
+
+1단계: 외부 PC (코드 검증, PokerStars 미설치)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+PokerStars 없이도 봇의 **수학·이미지·마우스 로직**을 격리 검증할 수 있다.
+
+.. code-block:: bash
+
+   git clone https://github.com/BudongJW/Poker.git
+   cd Poker
+   git checkout play-money-kr
+
+   # Python 3.12 으로 충분 (코어 로직 + OCR 정규화 + 베지에 마우스)
+   py -3.12 -m venv .venv
+
+   # 최소 의존성 (TF / tesserocr 제외)
+   .venv/Scripts/python.exe -m pip install -U pip
+   .venv/Scripts/python.exe -m pip install "numpy<2" pandas requests pytest
+   .venv/Scripts/python.exe -m pip install opencv-python Pillow PyQt6
+
+   # 코어 알고리즘 검증 (5/5 통과해야)
+   .venv/Scripts/python.exe scripts/smoke_test.py
+
+   # 마우스 + 이미지 + OCR + Qt 확장 검증 (15/15 통과해야)
+   .venv/Scripts/python.exe scripts/smoke_test_extended.py
+
+기대 결과:
+
+.. code-block:: text
+
+   [OK] hand evaluator
+   [OK] outs calculator (gutshot, made hand)
+   [OK] montecarlo equity (AA vs random ~0.85)
+   [OK] mouse path Bezier curvature
+   [OK] mouse velocity profile (smoothstep)
+   [OK] mouse sleep distribution (log-normal ~22ms)
+   [OK] OCR normalize (play money 1,250,000 / 1.5K / 10M)
+   ...
+
+여기서 실패가 나면 ``SETUP_PLAY_MONEY.ko.md §1`` 의존성 설치 부분 재점검.
+
+2단계: 집 PC (PokerStars.net 설치 환경)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+**중요**: 반드시 ``pokerstars.net`` (플레이머니 전용) 에서 클라이언트 다운로드. ``.com`` 은
+한국 IP 차단 + 실머니 모드라 도박죄 리스크.
+
+.. code-block:: bash
+
+   git clone https://github.com/BudongJW/Poker.git
+   cd Poker
+   git checkout play-money-kr
+
+   # Python 3.11 권장 (tesserocr cp311 휠 + TF 2.12 호환성)
+   conda create -n pokerbot python=3.11 -y
+   conda activate pokerbot
+
+   pip install -r requirements_win.txt
+
+   # tesserocr 는 별도 휠 (Windows)
+   # https://github.com/simonflueckiger/tesserocr-windows_build/releases
+   pip install tesserocr-2.6.0-cp311-cp311-win_amd64.whl
+
+   # 1. 환경 자동 검증
+   python scripts/check_env.py
+
+   # 2. 코어 회귀 확인 (외부 PC 와 같은 결과)
+   python scripts/smoke_test.py
+   python scripts/smoke_test_extended.py
+
+   # 3. 봇 GUI 실행 → Table Setup 메뉴
+   python poker/main.py
+
+매핑 워크플로우 상세 (카드 13장 + 무늬 4종 + 버튼 + OCR 영역):
+SETUP_PLAY_MONEY.ko.md §3 의 체크리스트 참조.
+
+3단계: PokerStars.net 클라이언트 설정 (매핑 전 필수)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+매핑 정확도와 OCR 인식률을 좌우하는 클라이언트 측 설정:
+
+.. code-block:: text
+
+   Settings → Language: English
+   Settings → Cards: 4-Color Deck
+   Settings → Table Appearance:
+     - Theme: Classic (Saloon/Black 같은 어두운 테마 회피)
+     - Aurora Graphics Quality: Low
+     - Aurora Ambient Animations: Disabled  ← 매우 중요
+     - Throwables: Disabled
+     - Card animations: Minimal
+   Settings → Table Options:
+     - Auto-Center buttons: OFF
+     - Big card values: ON
+   Display (Windows):
+     - DPI scaling: 100%
+     - Resolution: 1920x1080 이상
+   Lobby:
+     - Seatfinder: Disabled (2025-07 도입된 자동 시팅, 봇 흐름과 충돌)
+
+4단계: 매핑 → 첫 한 핸드 통합 테스트
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+1. PokerStars.net Play Money → Hold'em → 6-Max → Zoom 테이블 입장
+2. 봇 GUI 의 Table Setup → ``Blank new`` → 이름: ``Pokerstars Play Money KR``
+   (이미 ``poker/config_default.ini`` 에 등록되어 있어 봇이 자동 로드)
+3. Take screenshot → Top left corner → Crop → Buttons search area 순차 매핑
+4. 카드 13장 (2~A) × 무늬 4종 (CDHS) 매핑
+5. Dealer/Pot/Stack/Call/Bet 영역 마킹 (플레이머니 큰 자릿수 고려해 영역을 넓게)
+6. Save → Test scraper 로 한 핸드 인식 검증
+7. 인식 성공 → 짧은 세션(30분) 으로 안정성 확인
+
+상세 단계는 SETUP_PLAY_MONEY.ko.md §3 의 체크리스트.
+
+알려진 한계 (정직한 한계 명시)
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+* **2024-01 매핑 기반 → 2026 Aurora UI 미스매치**: 카드·버튼 템플릿 모두 재매핑 필요
+* **베지에 마우스 모델도 PokerStars 95% 탐지를 깬다고 보장 못 함**: 다층 신호 (IP/세션/핸드 빈도) 가 더 있음. 본 변경은 HCI 표준 적용이지 탐지 우회 주장 아님
+* **유전 알고리즘은 글로벌 최적화, 상황별 적응 불가**: 모던 RL (DQN/PPO/NFSP) 와 비교 시 한계 명확
+* **상대 핸드 레인지 모델링 부재**: 균등분포 가정 → CFR/Pluribus 류와 격차
+* **MongoDB 서버 (dickreuter.com:7778) 의존**: 템플릿·NN 모델 다운로드. 서버 다운 시 매핑 불가
+
+도구·자료 한곳에
+~~~~~~~~~~~~~~~~~
+
+* `포크 저장소 <https://github.com/BudongJW/Poker>`_ (이 페이지)
+* `play-money-kr 브랜치 <https://github.com/BudongJW/Poker/tree/play-money-kr>`_
+* `업스트림 (dickreuter/Poker) <https://github.com/dickreuter/Poker>`_
+* `자매 RL 프로젝트 (dickreuter/neuron_poker) <https://github.com/dickreuter/neuron_poker>`_ — Gym 환경, self-play
+* SETUP_PLAY_MONEY.ko.md_ — 매핑·트러블슈팅 상세 가이드
+* ``scripts/check_env.py`` — 환경 검증 스크립트
+* ``scripts/smoke_test.py`` — 코어 알고리즘 5건
+* ``scripts/smoke_test_extended.py`` — 마우스/이미지/OCR/Qt 15건
+
+.. _SETUP_PLAY_MONEY.ko.md: SETUP_PLAY_MONEY.ko.md
+
+----
+
+(이하 업스트림 영문 README 한국어 번역 — 원본 참조용)
+
 
 봇 실행하기
 -----------
