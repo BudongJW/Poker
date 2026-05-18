@@ -102,11 +102,10 @@ def test_mouse_path_step_count():
 
 
 def test_mouse_path_bounding_box():
-    """모든 좌표가 출발-도착 경계 박스 + jitter(=20) 안에 있는지.
+    """모든 좌표가 베지에 곡선 + curvature(15%) + jitter 허용 영역 안에 있는지.
 
-    참고: 봇의 마우스 경로는 x/y 가 독립 step 으로 움직여 직선이 아닌
-    지그재그 형태가 됨. 이건 사람 패턴과 통계적으로 구분 가능한
-    탐지 시그널이기도 함 — 향후 베지어 곡선 등으로 개선 여지.
+    새 구현은 베지에 곡선이라 직선 P0→P3 에서 최대 ~15% * dist 만큼
+    수직으로 휘어질 수 있음. dist=566 (대각 400px) 의 15% ≈ 85 + jitter 여유.
     """
     _install_stubs_once()
     _reset_capture()
@@ -114,16 +113,100 @@ def test_mouse_path_bounding_box():
     mm = MouseMover(vbox_mode=False)
     mm.mouse_mover(0, 0, 400, 400)
     moves = [c for c in _CAPTURED if c[0] == "move"]
-    JITTER = 25  # xTremble=yTremble=20 + 여유
+    PAD = 120  # curvature(15% × 566) + jitter + 여유
     out_of_box = [
         (x, y) for _, x, y in moves
-        if not (-JITTER <= x <= 400 + JITTER and -JITTER <= y <= 400 + JITTER)
+        if not (-PAD <= x <= 400 + PAD and -PAD <= y <= 400 + PAD)
     ]
     ok = not out_of_box
     return _result(
-        "mouse path bounding box (-25 ≤ x,y ≤ 425)",
+        "mouse path bounding box (Bezier + curvature ≤ 120)",
         ok,
         f"moves={len(moves)}, out-of-box={len(out_of_box)}",
+    )
+
+
+def test_mouse_velocity_profile():
+    """smoothstep 가감속: 중간 스텝의 좌표 간격이 시작/끝 스텝보다 커야.
+
+    인접 좌표 간 거리를 segment[i] 라 하면, 정상 사람 마우스는
+    중앙부 segment 가 양 끝부 segment 보다 큼 (Fitts/사인 곡선 속도).
+    """
+    _install_stubs_once()
+    _reset_capture()
+    from poker.tools.mouse_mover import MouseMover
+    import math as _math
+    mm = MouseMover(vbox_mode=False)
+    mm.mouse_mover(0, 0, 600, 0)  # 긴 수평 이동 — 속도 차이 명확
+    moves = [c for c in _CAPTURED if c[0] == "move"]
+    coords = [(x, y) for _, x, y in moves]
+    segs = [
+        _math.hypot(coords[i+1][0] - coords[i][0],
+                    coords[i+1][1] - coords[i][1])
+        for i in range(len(coords) - 1)
+    ]
+    if len(segs) < 6:
+        return _result("mouse velocity profile (smoothstep)", False,
+                       f"not enough segments: {len(segs)}")
+    n = len(segs)
+    head = sum(segs[:n // 4]) / (n // 4)
+    mid = sum(segs[n // 3:2 * n // 3]) / (2 * n // 3 - n // 3)
+    tail = sum(segs[3 * n // 4:]) / (n - 3 * n // 4)
+    # 중앙 평균 segment 가 시작·끝 평균보다 명확히 커야 (≥ 1.3 배)
+    ok = mid > head * 1.3 and mid > tail * 1.3
+    return _result(
+        "mouse velocity profile (smoothstep)",
+        ok,
+        f"segments avg head={head:.1f} mid={mid:.1f} tail={tail:.1f} (mid > head·1.3, mid > tail·1.3)",
+    )
+
+
+def test_mouse_sleep_lognormal():
+    """sleep 시간 분포가 로그정규 특성을 보이는지 확인.
+
+    중요: time.sleep 호출 자체는 mock 하지 않고 실제 호출되므로,
+    여기서는 ``_human_sleep`` 함수만 직접 호출해 분포를 평가한다.
+    """
+    from poker.tools.mouse_mover import _human_sleep
+    samples = [_human_sleep() for _ in range(1000)]
+    pos = sum(1 for s in samples if s > 0)
+    mean = sum(samples) / len(samples)
+    # 평균 ≈ exp(-3.91 + 0.40²/2) ≈ exp(-3.83) ≈ 0.0217s
+    ok = pos == 1000 and 0.012 <= mean <= 0.035
+    return _result(
+        "mouse sleep distribution (log-normal, mean ~22ms)",
+        ok,
+        f"positive={pos}/1000, mean={mean*1000:.1f}ms (expected 12-35ms)",
+    )
+
+
+def test_mouse_path_is_curved():
+    """베지에 곡선 — 다수 경로 평균에서 직선 P0→P3 대비 명확한 수직 편차.
+
+    개별 경로는 control point 부호 우연히 반대로 나오면 S-커브 → 편차 작을 수 있음.
+    20번 샘플의 평균 max|y| 로 통계적 안정성 확보.
+
+    구버전(zigzag) 비교: 구버전 평균 max|y| ≈ jitter 한계(20) 이내.
+    신버전은 curvature 5~15% × 직선거리 → 평균 max|y| > 30 기대.
+    """
+    _install_stubs_once()
+    from poker.tools.mouse_mover import MouseMover
+
+    devs: list[int] = []
+    for _ in range(20):
+        _reset_capture()
+        mm = MouseMover(vbox_mode=False)
+        mm.mouse_mover(0, 0, 500, 0)
+        moves = [c for c in _CAPTURED if c[0] == "move"]
+        if moves:
+            devs.append(max(abs(y) for _, _, y in moves))
+    avg = sum(devs) / len(devs) if devs else 0
+    threshold = 500 * 0.05  # 5% — 직선 jitter 한계(20) 초과해야 의미 있음
+    ok = avg >= threshold
+    return _result(
+        "mouse path is curved (avg perpendicular deviation across 20 paths)",
+        ok,
+        f"avg max|y|={avg:.1f} on 500px horizontal (expected >= {threshold:.0f})",
     )
 
 
@@ -316,6 +399,9 @@ TESTS = [
     test_mouse_path_endpoints,
     test_mouse_path_step_count,
     test_mouse_path_bounding_box,
+    test_mouse_velocity_profile,
+    test_mouse_sleep_lognormal,
+    test_mouse_path_is_curved,
     test_screenshots_loadable,
     test_card_images_loadable,
     test_template_matching,
