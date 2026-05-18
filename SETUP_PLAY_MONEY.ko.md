@@ -180,6 +180,39 @@ PokerStars 플레이머니 Zoom 테이블을 열어두고, 봇 셋업 창을 옆
 
 ---
 
+## 7-A. 2026 PokerStars UI 변화 사전 대응
+
+원본 봇은 2023~2024년 1월 PokerStars 클라이언트 기준으로 만들어졌다. 2025~2026 사이 다음과 같은 변화가 있었으므로, 매핑 단계에서 의식하고 진행할 것.
+
+### 7-A.1 코드 패치로 사전 대응한 부분
+
+| 항목 | 변경 | 위치 |
+|---|---|---|
+| **OCR 콤마/접미사 처리** | 플레이머니 `1,250,000`, `1.5K`, `10M` 등 파싱 가능 | [`poker/tools/text_normalize.py`](poker/tools/text_normalize.py) (신규), [`poker/tools/screen_operations.py`](poker/tools/screen_operations.py) 의 `get_ocr_number` |
+| **통화 기호 확장** | `$£B` → `$£€₩¥BP` | 위와 동일 |
+| **템플릿 매칭 threshold 상수화** | 매핑 후 조정 가능 | `DEFAULT_TEMPLATE_MATCH_THRESHOLD = 0.01` |
+
+검증: `python scripts/smoke_test_extended.py` 의 OCR normalize 테스트 5종 통과 확인.
+
+### 7-A.2 클라이언트 설정으로 대응 (매핑 전 필수)
+
+| 2025/2026 변화 | 대응 |
+|---|---|
+| **Cash Game Lobby Seatfinder** (2025-07) — 자동 시팅으로 봇의 수동 테이블 선택 흐름 우회됨 | 로비에서 Seatfinder 기능을 **꺼둘 것**. 또는 봇 시작 시 이미 테이블에 앉은 상태로 가정하고 매핑 |
+| **4K 테이블 그래픽 재설계** — 카드·버튼 이미지가 미세하게 다름 | 모든 카드·버튼 템플릿을 **현재 클라이언트 기준으로 새로 캡처**. 구버전 템플릿(MongoDB Official 시리즈) 그대로 쓰지 말 것 |
+| **태블릿 최적화 레이아웃** | 데스크탑 모드 강제, DPI 100%, 테이블 크기 Default |
+| **신규 폰트 (가독성 개선)** | OCR 인식 실패 시 `prepareImage`의 binarize threshold(76, 125)를 조정해볼 것 |
+| **HUD/서드파티 사전 등록 의무화** | 봇은 HUD가 아니므로 무관. 다만 보안 모니터링은 강화됨을 인지 |
+
+### 7-A.3 매핑 후 인식 실패 시 점검 순서
+
+1. **카드 인식 실패**: 4-color deck 활성화 재확인 → 13장 전부 재매핑
+2. **숫자 OCR 실패**: 매핑 영역 폭을 늘려보고 (긴 자릿수 대응), 그래도 안 되면 `screen_operations.py`의 `DEFAULT_TEMPLATE_MATCH_THRESHOLD`를 0.05~0.1로 완화
+3. **좌상단 모서리 못 잡음**: 클라이언트 윈도우 데코레이션이 OS 테마 영향 받음. Windows 11 라이트 테마 권장
+4. **버튼 위치 오프셋**: 4K 재설계로 버튼이 미세하게 이동. 매핑 GUI에서 `mouse_*` 좌표 재지정
+
+---
+
 ## 8. 다음 작업 (집에서 할 일)
 
 1. `git pull origin play-money-kr`

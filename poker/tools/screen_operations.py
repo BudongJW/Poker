@@ -28,6 +28,15 @@ api = PyTessBaseAPI(path=tesserpath,
                     oem=OEM.LSTM_ONLY)
 
 
+# 2026 UI 대응: 4K 재설계·DPI 변화로 엄격한 0.01 매치가 깨질 수 있어 상수화.
+# 필요 시 호출 측에서 threshold 인자로 오버라이드 가능. 매핑 후 통계 보고
+# 조정 권장 (값 ↑ = 더 관대한 매치).
+DEFAULT_TEMPLATE_MATCH_THRESHOLD = 0.01
+
+# 플레이머니/실머니 모두 처리하는 OCR 정규화는 별도 순수 Python 모듈로 분리.
+from poker.tools.text_normalize import normalize_chip_amount  # noqa: E402
+
+
 def find_template_on_screen(template, screenshot, threshold, extended=False):
     """Find template on screen"""
     res = cv2.matchTemplate(screenshot, template, cv2.TM_SQDIFF_NORMED)
@@ -111,43 +120,38 @@ def get_ocr_number2(img_orig, fast=False):
 
 
 def get_ocr_number(img_orig, fast=False):
-    """Return float value from image. -1.0f when OCR failed"""
+    """Return float value from image. -1.0f when OCR failed.
+
+    Uses :func:`normalize_chip_amount` so play-money chip amounts
+    ("1,250,000", "1.5K", "10M") and small cash amounts ("$0.05",
+    "5,00€") are both parsed correctly.
+    """
     img_resized = prepareImage(img_orig, binarize=True)
     img_resized2 = prepareImage(img_orig, binarize=True, threshold=125)
-    lst = []
 
-    lst.append(
-        get_ocr_number2(img_resized).
-        strip().replace('$', '').replace('£', '').replace('€', '').replace('B', '').replace(',', '.').replace('\n', '').replace(':',
-                                                                                                                                ''))
-    lst.append(
-        get_ocr_number2(img_resized2).
-        strip().replace('$', '').replace('£', '').replace('€', '').replace('B', '').replace(',', '.').replace('\n', '').replace(':',
-                                                                                                                      ''))
-    try:
-        return float(lst[-1])
-    except ValueError:
-        if fast:
-            return -1
-        # , img_min, img_mod, img_med, img_sharp]
-        images = [img_orig, img_resized]
-        i = 0
-        while i < 2:
-            j = 0
-            while j < len(images):
-                lst.append(
-                    get_ocr_number2(images[j]).
-                    strip().replace('$', '').replace('£', '').replace('€', '').replace('B', '').replace('\n', '').replace(':', ''))
-                j += 1
-            i += 1
+    candidates: list[str] = [
+        get_ocr_number2(img_resized),
+        get_ocr_number2(img_resized2),
+    ]
 
-    log.debug(lst)
-    for element in lst:
-        try:
-            return float(element)
-        except ValueError:
-            pass
-            # log.warning(f"Not recognized: {element}")
+    for raw in candidates:
+        val = normalize_chip_amount(raw)
+        if val >= 0:
+            return val
+
+    if fast:
+        return -1.0
+
+    # Fallback: retry on alternative renderings
+    for _ in range(2):
+        for img in (img_orig, img_resized):
+            raw = get_ocr_number2(img)
+            candidates.append(raw)
+            val = normalize_chip_amount(raw)
+            if val >= 0:
+                return val
+
+    log.debug("OCR candidates: %s", candidates)
     return -1.0
 
 

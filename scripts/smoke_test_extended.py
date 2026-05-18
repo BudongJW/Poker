@@ -204,6 +204,95 @@ def test_template_matching():
     )
 
 
+# ---------- C'. OCR 정규화 (tesserocr 없이도 검증 가능) ----------
+
+def test_chip_amount_small_cash():
+    """소액 캐시 ($0.08) — 기존 동작 보존"""
+    from poker.tools.text_normalize import normalize_chip_amount
+    cases = [
+        ('$0.08', 0.08),
+        ('$0.05', 0.05),
+        ('1.25', 1.25),
+    ]
+    bad = [(s, v, normalize_chip_amount(s)) for s, v in cases
+           if abs(normalize_chip_amount(s) - v) > 1e-6]
+    return _result(
+        "OCR normalize (small cash $0.08)",
+        not bad,
+        f"failures: {bad}" if bad else "all 3 ok",
+    )
+
+
+def test_chip_amount_european_decimal():
+    """유럽식 쉼표 소수점 (5,00€) — 기존 동작 보존"""
+    from poker.tools.text_normalize import normalize_chip_amount
+    cases = [
+        ('5,00€', 5.0),
+        ('5,50', 5.5),
+        ('0,25', 0.25),
+    ]
+    bad = [(s, v, normalize_chip_amount(s)) for s, v in cases
+           if abs(normalize_chip_amount(s) - v) > 1e-6]
+    return _result(
+        "OCR normalize (EU decimal '5,00€')",
+        not bad,
+        f"failures: {bad}" if bad else "all 3 ok",
+    )
+
+
+def test_chip_amount_play_money_thousands():
+    """플레이머니 천 단위 (1,250,000) — 새로운 케이스 (구버전은 깨짐)"""
+    from poker.tools.text_normalize import normalize_chip_amount
+    cases = [
+        ('1,250,000', 1_250_000.0),
+        ('5,000', 5_000.0),
+        ('100,000', 100_000.0),
+    ]
+    bad = [(s, v, normalize_chip_amount(s)) for s, v in cases
+           if abs(normalize_chip_amount(s) - v) > 1e-6]
+    return _result(
+        "OCR normalize (play money '1,250,000')",
+        not bad,
+        f"failures: {bad}" if bad else "all 3 ok",
+    )
+
+
+def test_chip_amount_suffixes():
+    """K/M 접미사 — 새로운 케이스"""
+    from poker.tools.text_normalize import normalize_chip_amount
+    cases = [
+        ('1.5K', 1_500.0),
+        ('10M', 10_000_000.0),
+        ('25k', 25_000.0),
+        ('2.5m', 2_500_000.0),
+    ]
+    bad = [(s, v, normalize_chip_amount(s)) for s, v in cases
+           if abs(normalize_chip_amount(s) - v) > 1e-6]
+    return _result(
+        "OCR normalize (K/M suffix '1.5K' '10M')",
+        not bad,
+        f"failures: {bad}" if bad else "all 4 ok",
+    )
+
+
+def test_chip_amount_invalid():
+    """OCR 실패 → -1.0 반환"""
+    from poker.tools.text_normalize import normalize_chip_amount
+    cases = [
+        ('abc', -1.0),
+        ('', -1.0),
+        ('$$$', -1.0),
+        (None, -1.0),
+    ]
+    bad = [(s, v, normalize_chip_amount(s)) for s, v in cases
+           if normalize_chip_amount(s) != v]
+    return _result(
+        "OCR normalize (invalid input → -1.0)",
+        not bad,
+        f"failures: {bad}" if bad else "all 4 ok",
+    )
+
+
 # ---------- F. PyQt6 헤드리스 ----------
 
 def test_pyqt6_offscreen():
@@ -230,6 +319,11 @@ TESTS = [
     test_screenshots_loadable,
     test_card_images_loadable,
     test_template_matching,
+    test_chip_amount_small_cash,
+    test_chip_amount_european_decimal,
+    test_chip_amount_play_money_thousands,
+    test_chip_amount_suffixes,
+    test_chip_amount_invalid,
     test_pyqt6_offscreen,
 ]
 
