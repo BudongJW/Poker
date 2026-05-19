@@ -1,12 +1,62 @@
-DeeperMind pokerbot for pokerstars, partypoker and GGPoker
-==========================================================
+DeeperMind pokerbot for pokerstars, partypoker and GGPoker (BudongJW fork)
+===========================================================================
 
 This pokerbot plays automatically on Pokerstars, Partypoker and GG Poker. Any other table can be mapped as well.
 It works with image recognition, montecarlo simulation and a basic genetic algorithm.
 The mouse is moved automatically and the bot can potentially play for hours based on a large number of parameters.
 
-You can download the binaries and run the executable directly from here:
+You can download the binaries and run the executable directly from here (upstream):
 http://www.deepermind-pokerbot.com
+
+----
+
+| **한국어 사용자**: 한국어 빠른 시작 가이드는 `<readme.ko.rst>`_ 참조.
+| **For Korean users**: see `<readme.ko.rst>`_ for the Korean quick-start guide.
+
+This BudongJW fork adds (branch ``play-money-kr``)
+---------------------------------------------------
+
+.. warning::
+
+   This fork is for **academic research + play-money verification only**. Automation
+   tools are forbidden by PokerStars ToS even on play money, and the RTA detection
+   rate is above 95% (permanent ban + balance forfeiture). **Real-money use
+   (pokerstars.com) is illegal in Korea** (the maintainer's jurisdiction). Do not
+   apply this to real money.
+
+Additions on top of upstream dickreuter/Poker:
+
+* **Play-money OCR**: parses large integer chip amounts like ``1,250,000``, ``1.5K``, ``10M`` (``poker/tools/text_normalize.py``).
+* **Bezier + Fitts mouse model**: replaces the legacy zigzag straight-line with cubic Bezier curves, smoothstep easing, log-normal step sleep, and Gaussian micro-jitter (``poker/tools/mouse_mover.py``). Standard HCI mouse model; no claim of detection bypass.
+* **numpy 2.x compat fix**: the legacy ``int(np.random.uniform(0, 500, 1))`` was a TypeError on numpy ≥ 2; the module is now numpy-free.
+* **Smoke tests** runnable without PokerStars: ``scripts/smoke_test.py`` (5 core algorithm tests) and ``scripts/smoke_test_extended.py`` (15 mouse/image/OCR/Qt tests).
+* **Environment validator**: ``scripts/check_env.py`` checks Python version, packages, Tesseract, screen, MongoDB.
+* **Korean setup guide**: ``SETUP_PLAY_MONEY.ko.md`` walks through home-PC mapping for play money.
+* **Korean translated README** with detailed quick-start: ``readme.ko.rst``.
+
+Quick verification (external PC, no PokerStars install needed)
+--------------------------------------------------------------
+
+.. code-block:: bash
+
+   git clone https://github.com/BudongJW/Poker.git
+   cd Poker
+   git checkout play-money-kr
+
+   py -3.12 -m venv .venv
+   .venv/Scripts/python.exe -m pip install -U pip
+   .venv/Scripts/python.exe -m pip install "numpy<2" pandas requests pytest opencv-python Pillow PyQt6
+
+   .venv/Scripts/python.exe scripts/smoke_test.py           # 5/5 expected
+   .venv/Scripts/python.exe scripts/smoke_test_extended.py  # 15/15 expected
+
+For the full home-PC mapping flow (Python 3.11 + tesserocr + TF 2.12 + PokerStars.net),
+see `<SETUP_PLAY_MONEY.ko.md>`_ (Korean) or `<readme.ko.rst>`_ §1단계~4단계.
+
+----
+
+(Upstream README continues below — preserved as reference.)
+
 
 Running the bot:
 ----------------
