@@ -56,6 +56,80 @@ class ThreadManager(threading.Thread):
 
         self.game_logger = GameLogger()
 
+    @staticmethod
+    def _recorder():
+        """The process-wide live-play recorder, opened on first use.
+
+        Imported lazily so a bot run without the connectome stack installed still starts.
+        """
+        from poker.flybrain import track  # pylint: disable=import-outside-toplevel
+        return track.recorder()
+
+    def settle_previous_hand(self, d, table, history):
+        """Tell the fly how the last hand went, and attach the result to its decisions.
+
+        Must run *before* this hand's first `decide()`. The brain accumulates an
+        eligibility trace across decisions and `reinforce()` consumes it, so settling
+        after the new hand has already been scored would credit the previous hand's
+        outcome to the new hand's Kenyon cells.
+
+        The scraper computes `myFundsChange` when it detects a new hand, which makes it
+        the previous hand's chip result. Settlement is keyed on the game id changing, so
+        a hand is settled exactly once however many decisions it contained.
+        """
+        try:
+            previous_id = self._recorder().note_hand(getattr(history, 'GameID', None))
+        except Exception as exc:  # pylint: disable=broad-except
+            self.loger.warning("Live play recorder unavailable (%s)", exc)
+            return
+        if previous_id is None:
+            return          # same hand, or the first of the session: nothing finished
+
+        chips = getattr(table, 'myFundsChange', None)
+        if chips is None:
+            return
+        big_blind = getattr(table, 'bigBlind', None) or 0.0
+
+        try:
+            self._recorder().settle_hand(previous_id, chips, big_blind)
+        except Exception as exc:  # pylint: disable=broad-except
+            self.loger.warning("Could not settle hand %s (%s)", previous_id, exc)
+
+        if not hasattr(d, 'reinforce'):
+            return
+        try:
+            reward_bb = float(chips) / float(big_blind) if big_blind else float(chips)
+            applied = d.reinforce(reward_bb)
+            self.loger.info("Fly brain learned from hand %s: %+.2f bb (%s)",
+                            previous_id, reward_bb, applied)
+        except Exception as exc:  # pylint: disable=broad-except
+            # Learning must never cost a hand.
+            self.loger.warning("Fly brain could not learn from hand %s (%s)",
+                               previous_id, exc)
+
+    def record_fly_decision(self, d, table, history):
+        """Append this decision to the local track record."""
+        if not hasattr(d, 'log_dict'):
+            return
+        try:
+            self._recorder().record_decision(
+                game_id=str(getattr(history, 'GameID', '') or ''),
+                mode=d.config.mode.value,
+                fly_decision=d.fly_decision,
+                baseline_decision=d.baseline_decision,
+                fly_active=d.fly_active,
+                fly_error=d.fly_error,
+                synthetic=d.brain.is_synthetic,
+                stage=getattr(table, 'gameStage', None),
+                round_number=getattr(history, 'round_number', None),
+                equity=getattr(table, 'equity', None),
+                pot=getattr(table, 'totalPotValue', None),
+                to_call=getattr(table, 'minCall', None),
+                my_funds=getattr(table, 'myFunds', None),
+                big_blind=getattr(table, 'bigBlind', None))
+        except Exception as exc:  # pylint: disable=broad-except
+            self.loger.warning("Could not record the fly decision (%s)", exc)
+
     def build_decision(self, config, table, history, strategy):
         """Return the decision object for this hand.
 
@@ -230,7 +304,11 @@ class ThreadManager(threading.Thread):
                                            preflop_state, history)
                 self.gui_signals.signal_progressbar_increase.emit(20)
                 d = self.build_decision(config, table, history, strategy)
+                # Settle first: reinforce() consumes the eligibility trace, so it has to
+                # happen before this hand adds anything to it.
+                self.settle_previous_hand(d, table, history)
                 d.make_decision(table, history, strategy, self.game_logger)
+                self.record_fly_decision(d, table, history)
                 self.gui_signals.signal_progressbar_increase.emit(10)
                 if self.gui_signals.exit_thread: sys.exit()
 

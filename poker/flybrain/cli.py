@@ -445,6 +445,14 @@ def _print_spread(conditions, metrics, extra_columns=()):
             print(row)
 
 
+def cmd_record(args):
+    """Print the live-play track record collected by poker/flybrain/track.py."""
+    from poker.flybrain import track  # pylint: disable=import-outside-toplevel
+
+    print(track.format_summary(track.recorder(args.path or None).summary()))
+    return 0
+
+
 def cmd_controls(args):
     """Compare the real connectome against shuffled, frozen and random baselines.
 
@@ -598,6 +606,12 @@ def build_parser():
 
     p_ref = sub.add_parser('reference', help='print the Kuhn reference points')
     p_ref.set_defaults(func=cmd_reference)
+
+    p_rec = sub.add_parser('record', help='the live-play track record against real tables')
+    p_rec.add_argument('--path', default='',
+                       help='sqlite file to read (default poker/data/flybrain/'
+                            'live_play.sqlite)')
+    p_rec.set_defaults(func=cmd_record)
 
     p_train = sub.add_parser('train', help='train on the equity game')
     p_train.add_argument('--hands', type=int, default=4000)

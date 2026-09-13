@@ -202,8 +202,39 @@ rather than left as an intention.
 `PlayMoneyGuard` is a **declaration checkpoint, not a safety net** — it cannot detect a
 cash table on its own. It is deliberately impossible to satisfy by accident.
 
-Start in shadow mode. It produces paired `(state, fly action, baseline action, outcome)`
-records at zero risk, and those records are exactly the training data the fly needs.
+### The live track record
+
+Live play is recorded locally by `track.LiveRecorder`, one row per decision in
+`poker/data/flybrain/live_play.sqlite`, read back with:
+
+```bash
+python -m poker.flybrain.cli record
+```
+
+A hand's chip result is not known when the decision is made — the scraper computes
+`myFundsChange` when it detects the *next* hand — so rows are written unsettled and
+updated in place once the hand closes. That same boundary is where `reinforce()` is
+called, which is how the fly learns from real hands. Both happen before the new hand's
+first `decide()`, because `reinforce()` consumes an eligibility trace that the new hand
+would otherwise have already contaminated.
+
+**Which mode produces a track record, and which does not.** In shadow mode the baseline
+drives the mouse, so the hand outcome measures *the baseline's* play — the fly's choices
+changed nothing about it. Averaging outcomes over shadow rows yields the baseline's win
+rate no matter what the fly did. Shadow rows support two honest claims: how often the fly
+agrees with the baseline, and what the fly does on real scraped states. They do not
+support "the fly wins X bb/100". Only **active** mode makes outcomes attributable to the
+fly. `summary()` splits every outcome figure by mode and never pools them, because pooling
+is exactly how a shadow-mode baseline result gets misquoted as the fly's.
+
+Two further properties worth knowing: win rates are computed over settled **hands**, not
+decisions, so a hand the fly acted in three times does not outweigh one it acted in once;
+and any decision made on a synthetic connectome is flagged in the report, because such a
+record says nothing about the fly.
+
+Start in shadow mode — it validates perception and the decision path against real states
+before the fly is given the mouse. Then switch to active for a track record that is
+actually the fly's.
 
 ---
 

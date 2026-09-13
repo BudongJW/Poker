@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from poker.flybrain import connectome as connectome_mod
-from poker.flybrain import controls, decoding, encoding, kuhn
+from poker.flybrain import controls, decoding, encoding, kuhn, track
 from poker.flybrain.brain import FlyBrain
 from poker.flybrain.cli import (EquityGame, OfflineTable, calibration_tables,
                                 run_episodes)
@@ -352,6 +352,107 @@ def test_calibrate_gain_brings_a_real_brain_to_the_target(synthetic_connectome):
                                              target_sparsity=0.09, tolerance=0.02)
     assert measured == pytest.approx(0.09, abs=0.02)
     assert 0.0002 < gain < 0.0120
+
+
+# --- the live-play track record ---------------------------------------------------
+
+def _recorder(tmp_path):
+    return track.LiveRecorder(path=str(tmp_path / 'live.sqlite'))
+
+
+def test_settle_attaches_the_outcome_to_every_decision_in_the_hand(tmp_path):
+    """A hand's result arrives once but has to reach all of its decisions."""
+    recorder = _recorder(tmp_path)
+    for stage in ('PreFlop', 'Flop', 'Turn'):
+        recorder.record_decision(game_id='g1', mode='shadow', fly_decision='Call',
+                                 baseline_decision='Call', stage=stage, big_blind=2)
+    assert recorder.settle_hand('g1', chips=6.0, big_blind=2) == 3
+
+
+def test_note_hand_reports_the_boundary_exactly_once(tmp_path):
+    """The settle hook fires per hand, not per decision inside it."""
+    recorder = _recorder(tmp_path)
+    assert recorder.note_hand('g1') is None      # first hand: nothing finished yet
+    assert recorder.note_hand('g1') is None      # same hand, several decisions
+    assert recorder.note_hand('g2') == 'g1'      # g1 just ended
+    assert recorder.note_hand('g2') is None
+    assert recorder.note_hand('g3') == 'g2'
+
+
+def test_note_hand_ignores_a_missing_game_id(tmp_path):
+    """A scrape that failed to read the id must not look like a new hand."""
+    recorder = _recorder(tmp_path)
+    recorder.note_hand('g1')
+    assert recorder.note_hand(None) is None
+    assert recorder.note_hand('') is None
+    assert recorder.current_game_id == 'g1'
+
+
+def test_settling_twice_cannot_double_count_a_hand(tmp_path):
+    """The scraper can re-report myFundsChange; a hand must still count once."""
+    recorder = _recorder(tmp_path)
+    recorder.record_decision(game_id='g1', mode='shadow', fly_decision='Call',
+                             baseline_decision='Call', big_blind=2)
+    assert recorder.settle_hand('g1', chips=6.0, big_blind=2) == 1
+    assert recorder.settle_hand('g1', chips=6.0, big_blind=2) == 0
+
+
+def test_win_rate_counts_hands_not_decisions(tmp_path):
+    """Otherwise a hand the fly acted in three times outweighs one it acted in once."""
+    recorder = _recorder(tmp_path)
+    for _ in range(3):
+        recorder.record_decision(game_id='long', mode='active', fly_decision='Bet',
+                                 baseline_decision='Bet', fly_active=True, big_blind=2)
+    recorder.record_decision(game_id='short', mode='active', fly_decision='Fold',
+                             baseline_decision='Fold', fly_active=True, big_blind=2)
+    recorder.settle_hand('long', chips=2.0, big_blind=2)     # +1 bb
+    recorder.settle_hand('short', chips=-2.0, big_blind=2)   # -1 bb
+
+    active = [row for row in recorder.summary()['by_mode'] if row['mode'] == 'active'][0]
+    assert active['decisions'] == 4 and active['hands'] == 2
+    # +1 bb and -1 bb over two hands is 0, however many decisions each contained.
+    assert active['bb_per_100'] == pytest.approx(0.0)
+
+
+def test_shadow_outcomes_are_not_attributed_to_the_fly(tmp_path):
+    """In shadow the baseline drove, so its result is not the fly's track record."""
+    recorder = _recorder(tmp_path)
+    recorder.record_decision(game_id='g1', mode='shadow', fly_decision='Bet',
+                             baseline_decision='Fold', big_blind=2)
+    recorder.settle_hand('g1', chips=10.0, big_blind=2)
+    summary = recorder.summary()
+
+    shadow = [row for row in summary['by_mode'] if row['mode'] == 'shadow'][0]
+    assert shadow['attributable_to_fly'] is False
+    assert 'did not drive' in track.format_summary(summary)
+
+
+def test_agreement_is_recorded_per_decision(tmp_path):
+    recorder = _recorder(tmp_path)
+    recorder.record_decision(game_id='g1', mode='shadow', fly_decision='Call',
+                             baseline_decision='Call', big_blind=2)
+    recorder.record_decision(game_id='g1', mode='shadow', fly_decision='Bet',
+                             baseline_decision='Fold', big_blind=2)
+    shadow = [row for row in recorder.summary()['by_mode'] if row['mode'] == 'shadow'][0]
+    assert shadow['agreement_rate'] == pytest.approx(0.5)
+
+
+def test_recorder_failure_never_raises(tmp_path):
+    """A logging fault must not cost a live hand."""
+    recorder = _recorder(tmp_path)
+    recorder.enabled = False
+    assert recorder.record_decision(game_id='g1', mode='shadow', fly_decision='Call',
+                                    baseline_decision='Call') is None
+    assert recorder.settle_hand('g1', chips=1.0) is None
+    assert not recorder.summary()
+
+
+def test_synthetic_decisions_are_flagged_in_the_report(tmp_path):
+    """A track record built on fake wiring must announce itself."""
+    recorder = _recorder(tmp_path)
+    recorder.record_decision(game_id='g1', mode='shadow', fly_decision='Call',
+                             baseline_decision='Call', synthetic=True, big_blind=2)
+    assert 'SYNTHETIC' in track.format_summary(recorder.summary())
 
 
 def test_default_gain_is_the_re_derived_operating_point():
