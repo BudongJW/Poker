@@ -373,46 +373,55 @@ So: the module learns, measurably and reproducibly, and what it learns is "bet a
 Whether the *connectome* contributes to even that is still open — the Kuhn control runs
 (real vs shuffled vs frozen) answer that and have not been run yet.
 
-### Kuhn controls: the wiring matters, the plasticity does not
+### Kuhn controls — VOID, and why
 
-4000 training hands per condition, same seed, same opponent mix, evaluated exactly:
+The run below is recorded for provenance only. **It does not support any conclusion**,
+and it did not reproduce on a second machine (Windows / Python 3.14 / numpy 2.4.4), where
+shuffled measured 0.3333 rather than 1.0833.
 
 | condition | exploit (pure) | exploit (mixed) | chips vs Nash | chips vs random |
 |---|---|---|---|---|
-| real connectome | **0.3333** | 0.3333 | −0.1111 | **+0.3333** |
-| shuffled (degree-preserving) | **1.0833** | 0.9116 | −0.1250 | −0.4167 |
-| frozen (no KC→MBON plasticity) | **0.3333** | 0.3333 | −0.1111 | **+0.3333** |
+| real connectome | 0.3333 | 0.3333 | −0.1111 | +0.3333 |
+| shuffled (degree-preserving) | 1.0833 | 0.9116 | −0.1250 | −0.4167 |
+| frozen (no KC→MBON plasticity) | 0.3333 | 0.3333 | −0.1111 | +0.3333 |
 | random actions | 0.4583 | 0.4583 | −0.1389 | 0.0000 |
-| *best deterministic* | *0.1667* | — | — | — |
-| *equilibrium* | *0* | — | 0 | — |
 
-**Reading 1 — real beats shuffled by 3.25×.** 0.3333 against 1.0833, and +0.3333 against
-−0.4167 chips versus a random opponent. Rewiring the connectome while preserving every
-neuron's in- and out-degree destroys the result completely: the shuffled network ends up at
-1.0833, which is exactly where the *untrained* real network started. This is the first
-evidence in this project that the specific wiring does work, and it is nothing like the 9%
-noise the equity game produced.
+**Why it is void.** Kenyon cell sparsity, measured on the 12 Kuhn information sets at the
+default gain of 0.0026:
 
-**Reading 2 — the KC→MBON plasticity contributes nothing.** `frozen` is bit-for-bit
-identical to `real` on all four metrics. Freezing the synapses the fly actually modifies
-when it learns changes the outcome not at all, which means every bit of the improvement
-from 1.0833 to 0.3333 came from the readout delta rule, not from the mushroom body
-plasticity rule this module was built around. The biologically motivated learning is
-decoration at present.
+| gain | real KC active | shuffled KC active | real MBON | shuffled MBON |
+|---|---|---|---|---|
+| **0.0026 (default)** | **0.49%** | **13.02%** | 0.34 Hz | 84.33 Hz |
+| 0.0040 | 3.05% | 26.99% | 2.96 Hz | 202.19 Hz |
+| **0.0050** | **8.71%** | 30.96% | 10.53 Hz | 218.34 Hz |
+| 0.0080 | 35.91% | 35.97% | 90.09 Hz | 242.37 Hz |
 
-**Three caveats, and the first is serious:**
+The two conditions were never at comparable operating points. At the default gain the real
+network is **effectively silent** — 0.49% of Kenyon cells active, MBONs at 0.34 Hz — while
+the shuffled network is **27× more active**. The comparison was between a silent network
+and a hyperactive one, not between two wiring diagrams. The earlier wording here called
+that "suggestive, not established"; that was far too generous. It is void.
 
-1. **The conditions were not calibrated to equal Kenyon cell sparsity**, which this document
-   itself says is mandatory before comparing connectome variants. The usable gain window is
-   narrow (0.0015–0.0030), and the shuffle also dropped 227 self-loops, leaving 430,221
-   edges against 451,855 — 4.8% fewer. So "shuffled cannot learn" may partly be "shuffled
-   is not at a working operating point." Until each condition is brought to the same
-   sparsity with `controls.calibrate_gain()`, the 3.25× gap is suggestive, not established.
-2. **One seed, no repeats.** Exploitability is exact given a policy, but which policy
-   training lands on is not.
-3. **0.3333 is still 2× worse than the best deterministic policy** (0.1667), and real and
-   frozen landing on precisely the same number suggests both collapse into the same
-   degenerate "aggress almost everywhere" attractor rather than finding anything subtle.
+Two further consequences:
+
+- **The default `synaptic_gain` of 0.0026 is stale.** It was calibrated before the encoder
+  gained tuning-curve quantisation, disjoint glomerulus banks and target-mean-rate
+  normalisation, and was never re-derived afterwards. On Kuhn states the real network needs
+  roughly **0.0050** to reach the ~9% sparsity the fly shows. Anything measured at the
+  default is measured on a near-silent network.
+- **That is also why the run did not reproduce.** At 0.49% KC activity and 0.34 Hz MBON
+  output, almost nothing separates the action scores, so argmax decisions turn on
+  float-accumulation order. Different platform, different BLAS, different degenerate
+  policy. This is not seed sensitivity; it is an unusable operating point.
+
+**Why shuffled is hyperactive** is itself interesting and worth following up: the shuffle
+preserves every neuron's in- and out-degree but scatters each presynaptic neuron's
+*targets*, so the fly's inhibition — 478 GABA/glutamate neurons out of 8,246, plus the
+ALLN local neurons — stops landing on the cells it is supposed to control. Targeted
+inhibition is the first thing degree-preserving rewiring destroys. That is a real
+structural property of the connectome, but it is an activity-level effect, so it cannot be
+claimed as "the wiring computes better" until both conditions are compared at matched
+sparsity.
 
 ### Historical: the equity-game controls
 
@@ -438,20 +447,25 @@ and `OpenFly` both state that no profitable edge has been demonstrated.
 
 ### What to do next, in order
 
-1. **Re-run the controls with each condition calibrated to the same KC sparsity**
-   (`controls.calibrate_gain()`), across several seeds. This is the one thing standing
-   between "suggestive" and "established" on the central question, and nothing else should
-   be tuned before it.
-2. **Work out why the KC→MBON plasticity is inert.** `frozen == real` exactly. Either the
-   depression is too small to matter against the readout's delta rule, or the eligibility
-   trace is assigning credit to the wrong synapses. Kuhn hands are 1–2 decisions long,
-   which makes this far easier to isolate than the previous task.
-3. **Stop the readout saturating**, so a mixed policy survives extraction. Equilibrium in
-   Kuhn needs mixing; a saturated readout makes it unreachable however long it trains.
-4. **Re-weight the training opponent.** A 50/50 equilibrium/random mix pays blanket
+1. **Re-derive the operating point, then re-run the controls with per-condition
+   calibration.** This is not one item among several; until it is done there is no result
+   here at all. Concretely: the default gain must be re-derived for the current encoder
+   (real needs ≈0.0050 on Kuhn states, not 0.0026), `cmd_controls` must call
+   `controls.calibrate_gain()` for each condition separately and report the gain it chose,
+   and `calibrate_gain` must be fed Kuhn stimuli
+   (`[kuhn.KuhnTable(c, h) for c, h in kuhn.INFO_SETS]`) rather than equity-game ones. Then
+   several seeds, reporting spread.
+2. **Report chip metrics alongside exploitability.** Three of four conditions landed on
+   exactly 0.3333 in the second run while differing on chips, so several distinct
+   degenerate policies share an exploitability value. Exploitability alone is a weak
+   discriminator in that regime.
+3. **Work out why the KC→MBON plasticity is inert** — but only after 1, since at 0.49% KC
+   activity there is almost nothing for it to act on, which may be the whole explanation.
+4. **Stop the readout saturating**, so a mixed policy survives extraction. Equilibrium in
+   Kuhn needs mixing.
+5. **Re-weight the training opponent.** A 50/50 equilibrium/random mix pays blanket
    aggression too well, and blanket aggression is what it learned.
-5. Only then: Leduc poker (still exactly solvable), whole-brain scope, or more MBON readout
-   capacity.
+6. Only then: Leduc poker, whole-brain scope, or more MBON readout capacity.
 
 ### Not verified in this environment
 
