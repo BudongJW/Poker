@@ -21,6 +21,7 @@ from poker.decisionmaker.current_hand_memory import (CurrentHandPreflopState,
                                                      History)
 from poker.decisionmaker.decisionmaker import Decision
 from poker.decisionmaker.montecarlo_python import run_montecarlo_wrapper
+from poker.flybrain.config import FlyBrainConfig, RunMode
 from poker.gui.action_and_signals import StrategyHandler, UIActionAndSignals
 from poker.gui.gui_launcher import UiPokerbot
 from poker.scraper.table_screen_based import TableScreenBased
@@ -54,6 +55,31 @@ class ThreadManager(threading.Thread):
         self.loger = logging.getLogger('main')
 
         self.game_logger = GameLogger()
+
+    def build_decision(self, config, table, history, strategy):
+        """Return the decision object for this hand.
+
+        Falls back to the rule-based Decision whenever the fly brain is switched off or
+        cannot be constructed - a missing connectome download or a bad [flybrain]
+        section must never stop the bot from playing.
+        """
+        try:
+            fly_config = FlyBrainConfig.from_config_parser(config.config)
+        except (ValueError, KeyError) as exc:
+            self.loger.warning("Bad [flybrain] config (%s); using the rule-based decision", exc)
+            return Decision(table, history, strategy, self.game_logger)
+
+        if fly_config.mode is RunMode.offline:
+            return Decision(table, history, strategy, self.game_logger)
+
+        try:
+            # Imported lazily so the bot still starts when the connectome stack
+            # (numpy/scipy/pyarrow) is not installed.
+            from poker.flybrain.decision import FlyDecision  # pylint: disable=import-outside-toplevel
+            return FlyDecision(table, history, strategy, self.game_logger, config=fly_config)
+        except Exception as exc:  # pylint: disable=broad-except
+            self.loger.warning("Fly brain unavailable (%s); using the rule-based decision", exc)
+            return Decision(table, history, strategy, self.game_logger)
 
     def update_most_gui_items(self, preflop_state, p, m, t, d, h, gui_signals):
         try:
@@ -203,7 +229,7 @@ class ThreadManager(threading.Thread):
                 m = run_montecarlo_wrapper(strategy, self.gui_signals, config, ui, table, self.game_logger,
                                            preflop_state, history)
                 self.gui_signals.signal_progressbar_increase.emit(20)
-                d = Decision(table, history, strategy, self.game_logger)
+                d = self.build_decision(config, table, history, strategy)
                 d.make_decision(table, history, strategy, self.game_logger)
                 self.gui_signals.signal_progressbar_increase.emit(10)
                 if self.gui_signals.exit_thread: sys.exit()
@@ -218,6 +244,8 @@ class ThreadManager(threading.Thread):
                 log.info(
                     "Pot size: " + str(table.totalPotValue) + " -> Zero EV Call: " + str(round(d.maxCallEV, 2)))
                 log.info("+++++++++++++++++++++++ Decision: " + str(d.decision) + "+++++++++++++++++++++++")
+                if hasattr(d, 'log_dict'):
+                    log.info("Fly brain: %s", d.log_dict())
 
                 mouse_target = d.decision
                 action_options = {}

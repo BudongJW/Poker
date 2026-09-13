@@ -234,3 +234,5 @@ Poker.code-workspace
 *.spec
 *.ipynb
 *.dmg
+# Fly brain connectome downloads and trained state
+/poker/data/flybrain/
