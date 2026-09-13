@@ -27,6 +27,7 @@ Usage:
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
 import argparse
 import logging
+import os
 import sys
 
 import numpy as np
@@ -443,6 +444,41 @@ def _print_spread(conditions, metrics, extra_columns=()):
             print(row)
 
 
+def cmd_replay(args):
+    """Run the shipped screenshots through the scraper and into the fly."""
+    from poker.flybrain import replay as replay_mod  # pylint: disable=import-outside-toplevel
+    from poker.tools.helper import get_dir  # pylint: disable=import-outside-toplevel
+
+    brain = FlyBrain(_make_config(args))
+    if args.load:
+        brain.load(args.load)
+    base = args.screenshots or get_dir('tests', 'screenshots')
+
+    sparsities = []
+    for name, table_name, stage in replay_mod.FIXTURES:
+        path = os.path.join(base, name)
+        if not os.path.exists(path):
+            log.warning("missing fixture %s", path)
+            continue
+        try:
+            row = replay_mod.replay_one(brain, path, table_name, equity=args.equity,
+                                        stage=stage)
+        except Exception as exc:  # pylint: disable=broad-except
+            log.error("replay failed on %s (%s)", name, exc)
+            continue
+        sparsities.append(row['kc_active'])
+        print(replay_mod.format_replay(row))
+
+    if sparsities:
+        print(f"\nKC sparsity on scraped tables: mean {np.mean(sparsities):.3f} "
+              f"(target {args.target_sparsity:.2f}) at gain "
+              f"{brain.config.lif.synaptic_gain:.5f}")
+        if np.mean(sparsities) > 2 * args.target_sparsity:
+            print("The operating point calibrated on the offline tasks does not carry "
+                  "over to scraped tables; calibrate on these before playing.")
+    return 0
+
+
 def cmd_record(args):
     """Print the live-play track record collected by poker/flybrain/track.py."""
     from poker.flybrain import track  # pylint: disable=import-outside-toplevel
@@ -604,6 +640,15 @@ def build_parser():
 
     p_ref = sub.add_parser('reference', help='print the Kuhn reference points')
     p_ref.set_defaults(func=cmd_reference)
+
+    p_rep = sub.add_parser('replay', help='scraped screenshots -> fly decisions, no account')
+    p_rep.add_argument('--screenshots', default='',
+                       help='directory of screenshots (default poker/tests/screenshots)')
+    p_rep.add_argument('--equity', type=float, default=0.5,
+                       help='equity to supply; the scraper does not produce it')
+    p_rep.add_argument('--target-sparsity', type=float, default=0.09)
+    p_rep.add_argument('--load', default='', help='brain state to replay with')
+    p_rep.set_defaults(func=cmd_replay)
 
     p_rec = sub.add_parser('record', help='the live-play track record against real tables')
     p_rec.add_argument('--path', default='',

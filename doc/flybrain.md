@@ -211,6 +211,44 @@ rather than left as an intention.
 `PlayMoneyGuard` is a **declaration checkpoint, not a safety net** — it cannot detect a
 cash table on its own. It is deliberately impossible to satisfy by accident.
 
+### Replaying screenshots, and what it revealed
+
+`FlyDecision` can now be run on real scraped tables without an account:
+
+```bash
+python -m poker.flybrain.cli replay
+```
+
+It drives the real `TableScraper` over the screenshots shipped in
+`poker/tests/screenshots/`, wraps each scrape in the attribute surface the encoder reads
+(`replay.ScrapedTable`) and takes a decision — so perception → features → LIF → readout →
+a legal action, end to end. Equity is *not* scraped (it comes from the Monte Carlo
+downstream), so a replay supplies it; a replayed decision is conditional on a value the
+scraper never produced, and is evidence the path works rather than a measurement of play.
+
+**It immediately found a problem that would have invalidated a live run.** Kenyon cell
+activity on real scraped tables, fresh brain per fixture, at the calibrated gain of
+0.00499:
+
+| screenshot | table | street | KC active | MBON max |
+|---|---|---|---|---|
+| 53269218_PreFlop_0 | Official Party Poker | PreFlop | **0.000** | 20 Hz |
+| 988359671_PreFlop_0 | Official Party Poker | PreFlop | **0.000** | 20 Hz |
+| ps473830744_Flop_1 | Official Poker Stars | Flop | **0.247** | 140 Hz |
+| ggpk6ocr | Official GG Poker | Flop | **0.274** | 150 Hz |
+
+The 9% target is hit nowhere. Preflop the network is **silent**; postflop it is at
+**3× the target**. This is the same failure that voided the first control run — decisions
+taken at an operating point where the network is either dead or saturated — except it
+would now be happening on live hands. The gains in `CALIBRATED_GAIN` were derived on Kuhn
+information sets and equity-game states, and **they do not transfer to scraped tables**.
+
+Two likely contributors, not yet separated: the street one-hot channels differ between
+preflop and postflop, and these are micro-stakes tables whose pots (0.03–0.29) are far
+below the big blind the encoder normalises against, so most features round to near zero
+preflop. Until this is calibrated on replayed real states, a live track record measures
+the operating point rather than the fly.
+
 ### The live track record
 
 Live play is recorded locally by `track.LiveRecorder`, one row per decision in

@@ -8,8 +8,8 @@ from time import sleep
 import cv2
 import numpy as np
 from PIL import Image, ImageGrab
-from tesserocr import PyTessBaseAPI, PSM, OEM
 
+from poker.tools.ocr_backend import make_api
 from poker.tools.helper import memory_cache, get_dir
 from poker.tools import constants as const
 from poker.tools.mongo_manager import MongoManager
@@ -23,9 +23,10 @@ if getattr(sys, 'frozen', False) and hasattr(sys, '_MEIPASS'):
 else:
     tesserpath = os.path.join(get_dir('codebase'), '..', 'tessdata')
 
-api = PyTessBaseAPI(path=tesserpath,
-                    psm=PSM.SINGLE_LINE,
-                    oem=OEM.LSTM_ONLY)
+# tesserocr where it is installed, otherwise the tesseract executable. See ocr_backend:
+# tesserocr is source-only and cannot be built against a runtime-only Tesseract install,
+# and an unimportable OCR layer takes the whole bot with it.
+api = make_api(path=tesserpath)
 
 
 def find_template_on_screen(template, screenshot, threshold, extended=False):

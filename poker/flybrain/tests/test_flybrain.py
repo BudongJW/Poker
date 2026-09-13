@@ -13,7 +13,7 @@ import numpy as np
 import pytest
 
 from poker.flybrain import connectome as connectome_mod
-from poker.flybrain import controls, decoding, encoding, kuhn, track
+from poker.flybrain import controls, decoding, encoding, kuhn, replay, track
 from poker.flybrain.brain import FlyBrain
 from poker.flybrain.cli import (EquityGame, OfflineTable, calibration_tables,
                                 run_episodes)
@@ -289,6 +289,56 @@ def test_random_agent_is_always_legal():
     allowed = decoding.legal_actions(table)
     for _ in range(20):
         assert agent.decide(table, allowed=allowed).action in allowed
+
+
+# --- replaying real screenshots ---------------------------------------------------
+
+def _scraper_stub(**kwargs):
+    """A TableScraper-shaped object, so ScrapedTable can be tested without the scraper."""
+    fields = {'total_pot': 1.0, 'round_pot': 0.5, 'call_value': 0.25,
+              'player_funds': [10.0, 8.0], 'players_in_game': [0, 1],
+              'check_button': False, 'call_button': True, 'raise_button': True,
+              'all_in_call_button': False, 'my_cards': ['AH', 'KD'],
+              'table_cards': ['2C', '7D', 'TS']}
+    fields.update(kwargs)
+    return SimpleNamespace(**fields)
+
+
+def test_scraped_table_presents_the_surface_the_encoder_reads():
+    """The scraper fills a TableScraper; the fly reads a TableView. Mapping must hold."""
+    table = replay.ScrapedTable(_scraper_stub(), equity=0.7, stage='Flop')
+    features = encoding.features_from_table(table)
+    assert len(features) == len(encoding.FEATURES)
+    assert np.all(np.isfinite(features))
+    assert table.totalPotValue == pytest.approx(1.0)
+    assert table.minCall == pytest.approx(0.25)
+    assert table.myFunds == pytest.approx(10.0)
+
+
+def test_scraped_table_survives_a_failed_scrape():
+    """A misread screen gives empty and None fields; a live hand must not crash on it."""
+    table = replay.ScrapedTable(
+        _scraper_stub(total_pot=None, call_value=None, player_funds=[],
+                      players_in_game=[], my_cards=[], table_cards=[]))
+    features = encoding.features_from_table(table)
+    assert np.all(np.isfinite(features))
+    assert decoding.legal_actions(table)      # never an empty action set
+
+
+def test_scraped_buttons_decide_legality_not_a_guess():
+    """Legality has to come from what is on screen, or the fly clicks a missing button."""
+    table = replay.ScrapedTable(_scraper_stub(check_button=True, call_button=False,
+                                              raise_button=False, call_value=0.0))
+    assert table.checkButton is True and table.betButton is False
+    allowed = decoding.legal_actions(table)
+    assert 'Check' in allowed and 'Call' not in allowed
+
+
+def test_every_replay_fixture_names_a_stage_and_a_table():
+    """A screenshot paired with the wrong table scrapes zeroes rather than failing."""
+    for name, table_name, stage in replay.FIXTURES:
+        assert name.endswith('.png') and table_name and stage in (
+            'PreFlop', 'Flop', 'Turn', 'River')
 
 
 # --- calibration -----------------------------------------------------------------

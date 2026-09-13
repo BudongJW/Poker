@@ -246,6 +246,7 @@ poker/flybrain/
   kuhn.py         the measuring instrument - game tree, Nash family, exact exploitability
   controls.py     degree-preserving shuffle, calibrate_gain, RandomAgent
   track.py        local live-play record: per-decision rows, per-hand settlement
+  replay.py       screenshots -> real scraper -> fly decision, no account needed
   decision.py     FlyDecision, a drop-in for the bot's Decision
   guard.py        the play-money declaration checkpoint
   cli.py          info / reference / calibrate / train / controls
