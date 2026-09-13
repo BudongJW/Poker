@@ -13,7 +13,7 @@ pip install numpy scipy pyarrow          # pyarrow only to read the bulk connect
 
 python -m poker.flybrain.cli reference   # game-theory self-test, no download needed
 python -m poker.flybrain.cli info        # downloads ~1.1 GB on first run, then caches
-python -m poker.flybrain.cli controls --hands 4000
+python -m poker.flybrain.cli controls --hands 4000 --seeds 5
 ```
 
 The download lands in `poker/data/flybrain/` (gitignored). Only three of the published
@@ -28,33 +28,36 @@ No download? Everything still runs with `--synthetic` on a stand-in that matches
 population sizes and edge count. It exercises every code path and tells you **nothing
 about the fly** — `Connectome.synthetic` is `True` so you can refuse to report it.
 
-Tests: `pytest poker/flybrain/tests/ -q` → 54 passing, no network, no download.
+Tests: `pytest poker/flybrain/tests/ -q` → 59 passing, no network, no download.
 
 ---
 
 ## 1. Where things stand
 
-**There is no established result yet.** The control run recorded earlier is void — see
-"Kuhn controls — VOID, and why" in `doc/flybrain.md`. Short version:
+**The central question has been answered, in the negative: the specific wiring is not
+contributing.** Task 1 is done — the operating point was re-derived, every condition is
+now calibrated to the same Kenyon cell sparsity before training, and the controls were
+re-run over 5 seeds. See "Kuhn controls at matched sparsity" in `doc/flybrain.md` for the
+full table. Mean [min, max] over 5 seeds:
 
-At the default `synaptic_gain` of 0.0026, measured on the 12 Kuhn information sets:
-
-| gain | real KC active | shuffled KC active | real MBON | shuffled MBON |
+| condition | gain | KC | exploit (pure) | chips vs random |
 |---|---|---|---|---|
-| **0.0026 (default)** | **0.49%** | **13.02%** | 0.34 Hz | 84.33 Hz |
-| 0.0040 | 3.05% | 26.99% | 2.96 Hz | 202.19 Hz |
-| **0.0050** | **8.71%** | 30.96% | 10.53 Hz | 218.34 Hz |
-| 0.0080 | 35.91% | 35.97% | 90.09 Hz | 242.37 Hz |
+| real connectome | 0.00499 | 8.7% | 0.4167 [0.2500, 0.8333] | +0.1750 [0.0000, 0.3750] |
+| shuffled (degree-pres) | 0.00246 | 9.2% | 0.4333 [0.3333, 0.8333] | +0.1000 [0.0000, 0.3750] |
+| frozen (no plasticity) | 0.00499 | 8.7% | 0.6500 [0.2500, 1.1667] | −0.0750 [−0.5833, +0.1250] |
+| random actions | n/a | n/a | 0.4583 | 0.0000 |
 
-The real network is effectively silent at the default gain; the shuffled one is 27× more
-active. Every "real vs shuffled" number produced so far compares a silent network against a
-hyperactive one. It also did not reproduce on a second machine, which is expected: at
-0.34 Hz MBON output the action scores barely separate, so argmax decisions turn on
-float-accumulation order.
+Three things to carry forward:
 
-**Do not run `info` and expect ~0.09.** It reports sparsity at the default gain on
-equity-game states and currently gives 0.006. That is the broken operating point, not a
-misconfigured install.
+- **Real does not beat shuffled.** 0.4167 vs 0.4333, ranges overlapping almost completely.
+  Real is nominally ahead on all three metrics but every gap is a small fraction of the
+  seed spread. This was the falsification condition stated in advance, and it fired.
+- **Real barely beats a random policy** (0.4167 vs 0.4583). Everything sits far from the
+  0.1667 best-deterministic bar, so this is a comparison between degenerate policies.
+- **The plasticity is no longer inert — it now helps.** `frozen` is clearly worse than
+  `real` at a working operating point. The earlier `frozen == real` finding was an artefact
+  of 0.49% KC activity. KC→MBON depression is now the only component with a demonstrated
+  effect, while the wiring has none.
 
 Known and still standing:
 
@@ -62,77 +65,72 @@ Known and still standing:
   value exactly −1/18, Nash exploitability exactly 0). That part is solid.
 - The connectome loads correctly: 8,246 neurons, 451,855 edges, populations matching
   MaleCNS v1.0, `synthetic: False`.
-- 54 tests pass, pylint 9.95/10.
+- 59 tests pass; pylint 9.88/10 under pylint 4.0.8. The 9.95 recorded earlier was an older
+  pylint — the newer one emits `W0012` on every `import-outside-toplevel` suppression in
+  the repo, including files nobody has touched. Baseline on unmodified code is 9.87.
 
-## 2. Task 1 — fix the operating point, then re-run the controls
+## 2. Task 1 — DONE. What was changed, and what it cost
 
-Nothing else matters until this is done. There is currently no result to build on.
+The operating point is fixed and the controls have been re-run. Recorded here so nobody
+re-derives it:
 
-**Three concrete pieces:**
+- **The gain is re-derived per task**, in `config.CALIBRATED_GAIN`: Kuhn 0.004994 (8.7% KC
+  on the 12 information sets), equity 0.004902 (8.1% on 8 representative states).
+  `LIFParams.synaptic_gain` now defaults to 0.0050 instead of 0.0026. The two tasks want
+  different values, which is why they are a table and not a constant.
+- **`cmd_controls` calibrates every condition separately** and prints the chosen gain and
+  the achieved sparsity beside that condition's result. The gains land 2× apart — real
+  0.00499, shuffled 0.00246 — which is the size of the confound that voided the first run.
+- **`calibrate_gain` is fed Kuhn stimuli** via `calibration_tables(task)`, and its `bounds`
+  went from `(0.0005, 0.0040)` to `(0.0002, 0.0120)`. The old upper bound could not reach
+  the ≈0.0050 the real network needs, so calibration would silently have converged against
+  it. It also now keeps the closest probe rather than the last, and warns if it finishes
+  without reaching the target.
+- **`controls --seeds N`** (default 5) reports mean and [min, max] per metric.
 
-1. **Re-derive the default gain for the current encoder.** 0.0026 was calibrated before the
-   encoder gained tuning-curve quantisation, disjoint glomerulus banks and target-mean-rate
-   normalisation, and was never re-derived. On Kuhn states the real network reaches ~9% KC
-   sparsity at roughly **0.0050**. Confirm that and update `LIFParams.synaptic_gain`,
-   noting that the equity task may want a different value — which is an argument for
-   calibrating per task rather than hardcoding one number.
+**The falsification condition fired.** At matched sparsity shuffled performs like real, so
+the wiring is not contributing and the readout was carrying the result. Do not go looking
+for a way to make this come out differently.
 
-2. **Make `cmd_controls` calibrate each condition separately.** It currently never calls
-   `calibrate_gain` at all, so every condition is built with the same gain. Each condition
-   needs its own gain chosen to hit the same target sparsity, and the chosen gain must be
-   printed next to that condition's result. Expect the gains to differ a lot: real needs
-   ≈0.0050, shuffled is already at 13% by 0.0026 so it needs something well below that.
+One thing did *not* survive the fix, in the useful direction: **the plasticity is no longer
+inert.** `frozen` is now clearly worse than `real`, so the old Task 2 premise is gone. See
+section 3.
 
-3. **Feed calibration Kuhn stimuli.** `_representative_tables()` (cli.py:134) builds
-   equity-game tables. Use `[kuhn.KuhnTable(c, h) for c, h in kuhn.INFO_SETS]` — exactly 12
-   states, which is the whole state space of the task.
+**Still worth following up:** why the shuffle makes the network hyperactive at a shared
+gain. The shuffle preserves in- and out-degree but scatters each neuron's targets, so the
+fly's inhibition — 478 GABA/glutamate neurons out of 8,246, plus the ALLN local neurons —
+stops landing on the cells it controls. Targeted inhibition is the first thing
+degree-preserving rewiring destroys. It is an activity-level effect rather than a
+computational one, so it is not a performance claim — but it is the one place the specific
+wiring demonstrably does something, and it is now the most promising thread in the project.
 
-`controls.calibrate_gain(brain_factory, tables, target_sparsity=0.09)` already exists and
-bisects correctly. Widen its `bounds` — the default `(0.0005, 0.0040)` cannot reach the
-≈0.0050 the real network needs.
+## 3. Task 2 — the plasticity is no longer inert; measure what it is doing
 
-**Then** run 5+ seeds per condition and report mean and spread, not a single number.
+**Rewritten after Task 1.** The premise below ("frozen == real") no longer holds. At a
+working operating point `frozen` is *worse* than `real` on every metric — 0.6500 against
+0.4167 exploitability, −0.0750 against +0.1750 chips vs random — with the widest seed
+spread of any condition, [0.2500, 1.1667]. So KC→MBON depression is contributing, and it
+is the only component that demonstrably is.
 
-**Also report chip metrics, not just exploitability.** In the second run three of four
-conditions landed on exactly 0.3333 exploitability while differing on chips vs Nash and
-chips vs random. Several distinct degenerate policies share an exploitability value, so in
-this regime exploitability alone is a weak discriminator.
+That makes the question "how much, and through what" rather than "why is it dead":
 
-**Falsification, stated in advance:** if at matched sparsity shuffled performs like real,
-the wiring is not contributing and the readout was carrying everything. That is a good
-result. Write it down. Do not tune toward the recorded numbers — they are void.
+- Log `plasticity.apply()`'s L1 weight delta per hand against the readout's own update
+  magnitude. Now that both matter, the ratio is the interesting number.
+- `trace_decay` is 0.6 per decision and a Kuhn hand is 1–2 decisions, so every KC active in
+  the hand gets near-equal credit. Test near 0 (credit only the last decision).
+- The clean isolation test still applies, and is now more informative: disable the
+  **readout** update instead of the plasticity and see whether KC→MBON plasticity alone
+  moves exploitability. `decoder.update()` is called unconditionally in `brain.reinforce()`
+  — you need a flag for it.
 
-**Worth following up separately:** why the shuffle makes the network hyperactive. The
-shuffle preserves in- and out-degree but scatters each neuron's targets, so the fly's
-inhibition — 478 GABA/glutamate neurons out of 8,246, plus the ALLN local neurons — stops
-landing on the cells it controls. Targeted inhibition is the first thing degree-preserving
-rewiring destroys. That is a real structural property, but it is an activity-level effect,
-so it cannot be claimed as computation until both are compared at matched sparsity.
+The historical note, kept because it explains the reversal:
 
-## 3. Task 2 — find out why the plasticity is inert (only after Task 1)
-
-`frozen == real` on all four metrics in the first run — though on the second machine they
-diverged slightly on chips vs random (+0.3750 real against +0.3333 frozen), so the premise
-is weaker than recorded. And at 0.49% Kenyon cell activity there is almost nothing for the
-plasticity to act on, which may be the entire explanation. **Do Task 1 first**; this may
-resolve itself. Freezing the synapses the fly actually
-modifies when it learns changes nothing.
-
-Two candidate causes, in order of likelihood:
-
-1. **The depression is too small to matter** next to the readout's delta rule. Check the
-   magnitudes: `plasticity.apply()` returns the L1 of its weight delta — log it per hand
-   against the readout's own update magnitude. If it is orders of magnitude smaller, that
-   is the answer.
-2. **The eligibility trace credits the wrong synapses.** `trace_decay` is 0.6 per decision
-   and a Kuhn hand is 1–2 decisions, so the trace barely decays — every KC active in the
-   hand gets equal credit. Worth testing `trace_decay` near 0 (credit only the last
-   decision).
-
-A clean isolation test: disable the **readout** update instead of the plasticity, and see
-whether KC→MBON plasticity alone moves exploitability off 1.0833. If it cannot learn at all
-on its own, the rule is wrong, not just weak. `decoder.update()` is called unconditionally
-in `brain.reinforce()` — you will need a flag for this.
+`frozen == real` on all four metrics in the first run, and on a second machine they
+diverged only slightly (chips vs random +0.3750 real against +0.3333 frozen). Both runs
+were at 0.49% Kenyon cell activity, where there is almost nothing for a depression rule to
+act on — that was the entire explanation. The lesson generalises: **a null result measured
+at a broken operating point is not a null result.** Two components were written off on the
+strength of those runs, and re-measuring at 9% activity reversed one of them.
 
 Kuhn hands being 1–2 decisions long is what makes this tractable; the old equity task could
 not isolate it.
@@ -216,8 +214,19 @@ deliberately impossible to satisfy by accident.
   because an earlier modulo version let the last three features overwrite the first three.
 - **Long runs: write straight to a file, never through `| tail`.** The pipe buffers until
   the process exits, so you see nothing and cannot tell slow from hung.
-- **`calibrate_gain`'s default bounds `(0.0005, 0.0040)` are too low** to reach the ≈0.0050
-  the real network needs on Kuhn states. Widen them before trusting a calibration result.
+- **Never compare connectome variants at a shared gain.** This is the mistake that voided
+  the first control run. Real and its own degree-preserving shuffle need gains 2× apart to
+  reach the same 9% KC activity, so a shared gain compares activity levels. `cmd_controls`
+  calibrates per condition now; if you add a condition, calibrate it too and print the gain.
+- **A null result measured at a broken operating point is not a null result.** Both
+  "shuffled cannot learn" and "the plasticity is inert" were measured at 0.49% KC activity
+  and both reversed at 9%. Check the operating point before believing any negative.
+- **`calibrate_gain`'s bounds must span every condition.** The old `(0.0005, 0.0040)` could
+  not reach the ≈0.0050 the real network needs, and bisection converges silently against a
+  bound it cannot cross. It is `(0.0002, 0.0120)` now and warns if it finishes off-target.
+- **One seed tells you nothing here.** The seed spread within a condition ([0.2500, 0.8333]
+  for real) is far larger than the differences between conditions. Use `--seeds 5` at
+  minimum and report the range.
 - **Judge the pure policy against 0.1667, not 0.** Equilibrium in Kuhn requires mixing, so
   a temperature-0 argmax readout cannot reach 0 however well it trains.
 

@@ -88,16 +88,25 @@ def measure_kc_sparsity(brain, tables, repeats=1):
     return float(np.mean(fractions)) if fractions else 0.0
 
 
-def calibrate_gain(brain_factory, tables, target_sparsity=0.09, bounds=(0.0005, 0.0040),
-                   tolerance=0.015, max_iterations=14):
+def calibrate_gain(brain_factory, tables, target_sparsity=0.09, bounds=(0.0002, 0.0120),
+                   tolerance=0.010, max_iterations=20):
     """Bisect on synaptic_gain until Kenyon cell sparsity hits target_sparsity.
+
+    Sparsity is monotone in the gain, which is what makes bisection valid here.
+
+    The bounds have to span every condition being compared, and those differ by more than
+    an order of magnitude: on Kuhn stimuli the real connectome needs ~0.0050 to reach 9%
+    Kenyon cell activity, while the degree-preserving shuffle is already at 13% by 0.0026
+    and so needs something far lower. The old default of (0.0005, 0.0040) could not reach
+    the real network's operating point at all, which is why the first control run compared
+    a silent network against a hyperactive one.
 
     Args:
         brain_factory: callable taking a gain and returning a FlyBrain built with it.
-        tables: representative table states to measure on.
-        target_sparsity: fraction of KCs that should be active. ~0.09 matches the real
-            connectome at the calibrated default and sits in the range reported for
-            odour responses in the fly.
+        tables: representative table states to measure on. For the Kuhn task this should
+            be all 12 information sets - that is the entire state space.
+        target_sparsity: fraction of KCs that should be active. ~0.09 sits in the range
+            reported for odour responses in the fly.
         bounds: (low, high) gains to search between.
         tolerance: stop once |measured - target| is within this.
         max_iterations: bisection steps.
@@ -107,18 +116,25 @@ def calibrate_gain(brain_factory, tables, target_sparsity=0.09, bounds=(0.0005, 
     """
     low, high = bounds
     best = (None, None)
+    best_error = float('inf')
     for iteration in range(max_iterations):
         gain = 0.5 * (low + high)
         measured = measure_kc_sparsity(brain_factory(gain), tables)
         log.info("calibrate_gain [%02d] gain=%.5f -> KC sparsity %.3f (target %.3f)",
                  iteration, gain, measured, target_sparsity)
-        best = (gain, measured)
-        if abs(measured - target_sparsity) <= tolerance:
+        error = abs(measured - target_sparsity)
+        if error < best_error:
+            best, best_error = (gain, measured), error
+        if error <= tolerance:
             break
         if measured > target_sparsity:
             high = gain
         else:
             low = gain
+    else:
+        log.warning("calibrate_gain did not reach %.3f within %d steps; best %.3f at "
+                    "gain %.5f. If that sits against a bound, widen bounds=%s.",
+                    target_sparsity, max_iterations, best[1], best[0], bounds)
     return best
 
 

@@ -35,7 +35,8 @@ from poker.flybrain import controls as controls_mod
 from poker.flybrain import kuhn
 from poker.flybrain.brain import FlyBrain
 from poker.flybrain.encoding import TableView
-from poker.flybrain.config import FlyBrainConfig, LIFParams, RunMode, Scope
+from poker.flybrain.config import (CALIBRATED_GAIN, FlyBrainConfig, LIFParams, RunMode,
+                                   Scope)
 
 log = logging.getLogger(__name__)
 
@@ -132,9 +133,26 @@ class EquityGame:
 
 
 def _representative_tables(n=8, seed=3):
-    """A fixed spread of states, for calibration and sparsity measurement."""
+    """A fixed spread of equity-game states, for calibration and sparsity measurement."""
     game = EquityGame(seed=seed)
     return [game.deal() for _ in range(n)]
+
+
+def _kuhn_tables(stack=100.0):
+    """All 12 Kuhn information sets - the entire state space of that task."""
+    return [kuhn.KuhnTable(card, history, stack=stack)
+            for card, history in kuhn.INFO_SETS]
+
+
+def calibration_tables(task):
+    """The stimuli to calibrate the operating point on, for the task being measured.
+
+    Sparsity has to be measured on the states the fly will actually see. Calibrating the
+    Kuhn task on equity-game tables sets the operating point from a different stimulus
+    distribution, which is how the network ended up effectively silent on Kuhn states at
+    the old default gain.
+    """
+    return _kuhn_tables() if task == 'kuhn' else _representative_tables()
 
 
 def _make_config(args, gain=None):
@@ -146,6 +164,8 @@ def _make_config(args, gain=None):
         cache_dir=args.cache_dir or '',
         seed=args.seed,
     )
+    if gain is None:
+        gain = CALIBRATED_GAIN.get(getattr(args, 'task', 'kuhn'))
     if gain is not None:
         config.lif = LIFParams(synaptic_gain=gain)
     if getattr(args, 'no_plasticity', False):
@@ -315,15 +335,16 @@ def cmd_info(args):
     print(f"  DAN appetitive (PAM)  {manifest['dan_appetitive']:7,d}")
     print(f"  DAN aversive   (PPL1) {manifest['dan_aversive']:7,d}")
 
-    tables = _representative_tables()
+    tables = calibration_tables(args.task)
     sparsity = controls_mod.measure_kc_sparsity(brain, tables)
-    print(f"\nKC sparsity at gain {brain.config.lif.synaptic_gain:.5f}: {sparsity:.3f}")
+    print(f"\nKC sparsity on {args.task} stimuli at gain "
+          f"{brain.config.lif.synaptic_gain:.5f}: {sparsity:.3f}")
     return 0
 
 
 def cmd_calibrate(args):
     """Find the gain that puts Kenyon cell sparsity on target."""
-    tables = _representative_tables()
+    tables = calibration_tables(args.task)
     gain, measured = controls_mod.calibrate_gain(
         lambda g: FlyBrain(_make_config(args, gain=g)),
         tables,
@@ -389,8 +410,51 @@ def cmd_train(args):
     return 0
 
 
+KUHN_METRICS = (
+    ('exploit(pure)', 'exploitability_pure'),
+    ('exploit(mixed)', 'exploitability_mixed'),
+    ('chips vs nash', 'chips_vs_nash'),
+    ('chips vs random', 'chips_vs_random'),
+)
+
+EQUITY_METRICS = (
+    ('regret(bb)', 'mean_regret_bb'),
+    ('optimal action rate', 'optimal_action_rate'),
+)
+
+
+def _summarise(values):
+    """mean, min and max of one metric across seeds."""
+    array = np.asarray(values, dtype=float)
+    return float(array.mean()), float(array.min()), float(array.max())
+
+
+def _print_spread(conditions, metrics, extra_columns=()):
+    """One block per metric: mean and [min, max] across seeds, per condition."""
+    for title, key in metrics:
+        print(f"\n{title}")
+        header = f"  {'condition':24s} {'mean':>9s} {'min':>9s} {'max':>9s}"
+        for name in extra_columns:
+            header += f" {name:>12s}"
+        print(header)
+        for label, results, extras in conditions:
+            mean, low, high = _summarise([r[key] for r in results])
+            row = f"  {label:24s} {mean:>+9.4f} {low:>+9.4f} {high:>+9.4f}"
+            for name in extra_columns:
+                row += f" {extras.get(name, ''):>12s}"
+            print(row)
+
+
 def cmd_controls(args):
-    """Compare the real connectome against shuffled, frozen and random baselines."""
+    """Compare the real connectome against shuffled, frozen and random baselines.
+
+    Every condition is calibrated to the same Kenyon cell sparsity before it is trained.
+    Without that the comparison is between activity levels rather than wiring diagrams:
+    at a shared gain the real connectome and its degree-preserving shuffle sit an order of
+    magnitude apart in activity, because the shuffle scatters the targets of the fly's
+    inhibitory neurons. The chosen gain is reported beside each condition so the reader
+    can check the conditions really were matched.
+    """
     from poker.flybrain import connectome as connectome_mod  # pylint: disable=import-outside-toplevel
 
     base = _make_config(args)
@@ -399,77 +463,106 @@ def cmd_controls(args):
         cache_dir=base.cache_dir or None, use_synthetic=base.use_synthetic,
         seed=base.seed,
     )
+    tables = calibration_tables(args.task)
+    seeds = list(range(args.seed, args.seed + args.seeds))
 
-    def config_for(**overrides):
-        config = _make_config(args)
+    def config_for(seed, gain=None, plasticity_enabled=True):
+        config = _make_config(args, gain=gain)
+        config.seed = seed
         if args.task == 'kuhn':
             config.plasticity.reward_scale_bb = 1.0
-        for key, value in overrides.items():
-            if key == 'plasticity_enabled':
-                config.plasticity.enabled = value
+        config.plasticity.enabled = plasticity_enabled
         return config
 
     if args.task == 'kuhn':
         kuhn.self_test()
         print_kuhn_reference()
 
-    conditions = []
+    def calibrated_brain(label, seed, wiring, plasticity_enabled=True):
+        """Bring this condition to the target sparsity, then build it at that gain."""
+        gain, measured = controls_mod.calibrate_gain(
+            lambda g: FlyBrain(config_for(seed, gain=g), connectome=wiring),
+            tables, target_sparsity=args.target_sparsity,
+        )
+        log.info("%-22s seed %d calibrated gain %.5f -> KC sparsity %.3f",
+                 label, seed, gain, measured)
+        brain = FlyBrain(config_for(seed, gain=gain,
+                                    plasticity_enabled=plasticity_enabled),
+                         connectome=wiring)
+        return brain, gain, measured
 
-    def train_and_eval(label, brain):
+    def train_and_eval(brain, seed):
         if args.task == 'kuhn':
-            run_kuhn(brain, args.hands, kuhn_opponents(args.opponent), seed=args.seed,
+            run_kuhn(brain, args.hands, kuhn_opponents(args.opponent), seed=seed,
                      temperature=args.temperature, learn=True)
-            result = evaluate_kuhn(brain, seed=args.seed)
-            log.info("%-22s exploitability %.4f (pure) / %.4f (mixed)", label,
-                     result['exploitability_pure'], result['exploitability_mixed'])
-        else:
-            run_episodes(brain, EquityGame(seed=args.seed), args.hands,
-                         temperature=args.temperature, learn=True)
-            result = run_episodes(brain, EquityGame(seed=args.seed + 9999),
-                                  args.eval_hands, learn=False)
-            log.info("%-22s regret %.3f bb  optimal %.1f%%", label,
-                     result['mean_regret_bb'], 100 * result['optimal_action_rate'])
-        conditions.append((label, result))
+            return evaluate_kuhn(brain, seed=seed)
+        run_episodes(brain, EquityGame(seed=seed), args.hands,
+                     temperature=args.temperature, learn=True)
+        return run_episodes(brain, EquityGame(seed=seed + 9999), args.eval_hands,
+                            learn=False)
 
-    train_and_eval('real connectome', FlyBrain(config_for(), connectome=real))
+    def run_condition(label, wiring_for_seed, plasticity_enabled=True):
+        results, gains, sparsities = [], [], []
+        for seed in seeds:
+            brain, gain, measured = calibrated_brain(
+                label, seed, wiring_for_seed(seed), plasticity_enabled=plasticity_enabled)
+            gains.append(gain)
+            sparsities.append(measured)
+            result = train_and_eval(brain, seed)
+            results.append(result)
+            headline = (f"exploitability {result['exploitability_pure']:.4f}"
+                        if args.task == 'kuhn'
+                        else f"regret {result['mean_regret_bb']:.3f} bb")
+            log.info("%-22s seed %d gain %.5f  KC %.3f  %s",
+                     label, seed, gain, measured, headline)
+        extras = {
+            'gain': f"{np.mean(gains):.5f}",
+            'KC sparsity': f"{np.mean(sparsities):.3f}",
+        }
+        return (label, results, extras)
 
-    shuffled = controls_mod.shuffle_preserving_degree(real, seed=args.seed)
-    train_and_eval('shuffled (degree-pres)', FlyBrain(config_for(), connectome=shuffled))
-
-    train_and_eval('frozen (no plasticity)',
-                   FlyBrain(config_for(plasticity_enabled=False), connectome=real))
+    conditions = [
+        run_condition('real connectome', lambda _seed: real),
+        run_condition(
+            'shuffled (degree-pres)',
+            lambda seed: controls_mod.shuffle_preserving_degree(real, seed=seed)),
+        run_condition('frozen (no plasticity)', lambda _seed: real,
+                      plasticity_enabled=False),
+    ]
 
     if args.task == 'kuhn':
-        # A uniformly random agent *is* the uniform policy, so its numbers are exact too.
+        # A uniformly random agent *is* the uniform policy, so its numbers are exact and
+        # seed-independent; one entry repeated keeps the table shape uniform.
         uniform = kuhn.uniform_policy()
         nash = kuhn.nash_policy()
-        conditions.append(('random actions', {
+        random_result = {
             'exploitability_pure': kuhn.exploitability(uniform),
             'exploitability_mixed': kuhn.exploitability(uniform),
             'chips_vs_nash': 0.5 * (kuhn.expected_value(kuhn.merge_policies(uniform, nash))
                                     - kuhn.expected_value(kuhn.merge_policies(nash, uniform))),
             'chips_vs_random': 0.0,
-        }))
-        print(f"\n{'condition':24s} {'exploit(pure)':>14s} {'exploit(mixed)':>15s} "
-              f"{'chips vs nash':>14s} {'chips vs random':>16s}")
-        for label, result in conditions:
-            print(f"{label:24s} {result['exploitability_pure']:>14.4f} "
-                  f"{result['exploitability_mixed']:>15.4f} "
-                  f"{result['chips_vs_nash']:>+14.4f} {result['chips_vs_random']:>+16.4f}")
+        }
+        conditions.append(('random actions', [random_result] * len(seeds),
+                           {'gain': 'n/a', 'KC sparsity': 'n/a'}))
+        _print_spread(conditions, KUHN_METRICS, extra_columns=('gain', 'KC sparsity'))
         print(f"\nbest deterministic policy achievable: {1.0 / 6.0:.4f}    "
               f"equilibrium: 0.0000")
     else:
-        random_agent = controls_mod.RandomAgent(seed=args.seed)
-        result = run_episodes(random_agent, EquityGame(seed=args.seed + 9999),
-                              args.eval_hands, learn=False)
-        conditions.append(('random actions', result))
-        print(f"\n{'condition':24s} {'regret(bb)':>11s} {'optimal%':>9s}")
-        for label, result in conditions:
-            print(f"{label:24s} {result['mean_regret_bb']:>11.3f} "
-                  f"{100*result['optimal_action_rate']:>8.1f}%")
+        random_results = [
+            run_episodes(controls_mod.RandomAgent(seed=seed),
+                         EquityGame(seed=seed + 9999), args.eval_hands, learn=False)
+            for seed in seeds
+        ]
+        conditions.append(('random actions', random_results,
+                           {'gain': 'n/a', 'KC sparsity': 'n/a'}))
+        _print_spread(conditions, EQUITY_METRICS, extra_columns=('gain', 'KC sparsity'))
 
-    print("\nIf 'real connectome' does not beat 'shuffled', the specific wiring is not "
-          "contributing and no claim about the fly's circuit is supported.")
+    print(f"\n{len(seeds)} seeds per condition ({seeds[0]}..{seeds[-1]}), "
+          f"{args.hands} training hands each, "
+          f"all conditions calibrated to {args.target_sparsity:.2f} KC sparsity on "
+          f"{args.task} stimuli.")
+    print("If 'real connectome' does not beat 'shuffled' at matched sparsity, the specific "
+          "wiring is not contributing and the readout is carrying the result.")
     return 0
 
 
@@ -522,6 +615,13 @@ def build_parser():
     p_ctrl.add_argument('--eval-hands', type=int, default=2000)
     p_ctrl.add_argument('--opponent', choices=('mix', 'nash', 'random'), default='mix')
     p_ctrl.add_argument('--temperature', type=float, default=0.3)
+    p_ctrl.add_argument('--seeds', type=int, default=5,
+                        help='how many seeds per condition; results are reported as mean '
+                             'and [min, max] because which policy training lands on is '
+                             'not deterministic even though exploitability is exact')
+    p_ctrl.add_argument('--target-sparsity', type=float, default=0.09,
+                        help='KC sparsity every condition is calibrated to before it is '
+                             'trained (default 0.09)')
     p_ctrl.set_defaults(func=cmd_controls)
 
     return parser

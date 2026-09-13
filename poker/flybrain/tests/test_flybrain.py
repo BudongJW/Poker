@@ -6,14 +6,18 @@ exercises every code path; what it cannot do is say anything about the fly, whic
 why test_synthetic_is_flagged exists.
 """
 
+from types import SimpleNamespace
+
 import numpy as np
 import pytest
 
 from poker.flybrain import connectome as connectome_mod
 from poker.flybrain import controls, decoding, encoding, kuhn
 from poker.flybrain.brain import FlyBrain
-from poker.flybrain.cli import EquityGame, OfflineTable, run_episodes
-from poker.flybrain.config import (FlyBrainConfig, LIFParams, RunMode, Scope)
+from poker.flybrain.cli import (EquityGame, OfflineTable, calibration_tables,
+                                run_episodes)
+from poker.flybrain.config import (CALIBRATED_GAIN, FlyBrainConfig, LIFParams, RunMode,
+                                   Scope)
 from poker.flybrain.guard import PlayMoneyDeclarationMissing, PlayMoneyGuard
 
 
@@ -284,6 +288,78 @@ def test_random_agent_is_always_legal():
     allowed = decoding.legal_actions(table)
     for _ in range(20):
         assert agent.decide(table, allowed=allowed).action in allowed
+
+
+# --- calibration -----------------------------------------------------------------
+#
+# The first Kuhn control run was void because the conditions were never brought to the
+# same operating point: at a shared gain the real connectome sat at 0.49% KC activity and
+# its shuffle at 13%. These tests pin the three things that made that possible.
+
+class _GainStub:
+    """A stand-in whose KC activity is a known monotone function of the gain.
+
+    Lets the bisection be tested without paying for an LIF simulation per probe.
+    """
+
+    def __init__(self, gain, n_kc=1000, full_scale=0.01):
+        self.active = int(round(min(1.0, gain / full_scale) * n_kc))
+        self.n_kc = n_kc
+
+    def decide(self, table, **kwargs):
+        """Only kc_counts is read by measure_kc_sparsity."""
+        del table, kwargs
+        counts = np.zeros(self.n_kc, dtype=np.int32)
+        counts[:self.active] = 1
+        return SimpleNamespace(kc_counts=counts)
+
+    def abandon_hand(self):
+        """No-op."""
+        return 0
+
+
+def test_calibration_uses_every_kuhn_information_set():
+    """Sparsity has to be measured on the states the task actually presents."""
+    tables = calibration_tables('kuhn')
+    assert len(tables) == len(kuhn.INFO_SETS) == 12
+    assert {(table.card, table.history) for table in tables} == set(kuhn.INFO_SETS)
+
+
+def test_calibrate_gain_hits_the_target():
+    """The whole point of the bisection: end up at the sparsity asked for."""
+    gain, measured = controls.calibrate_gain(_GainStub, [None] * 3, target_sparsity=0.09,
+                                             tolerance=0.005)
+    assert measured == pytest.approx(0.09, abs=0.005)
+    assert gain == pytest.approx(0.0009, rel=0.1)
+
+
+def test_calibrate_gain_bounds_reach_the_real_networks_operating_point():
+    """The old bounds topped out at 0.0040 and could not reach the ~0.0050 real needs."""
+    gain, measured = controls.calibrate_gain(_GainStub, [None] * 2, target_sparsity=0.50,
+                                             tolerance=0.01)
+    assert measured == pytest.approx(0.50, abs=0.01)
+    assert gain > 0.0040
+
+
+def test_calibrate_gain_brings_a_real_brain_to_the_target(synthetic_connectome):
+    """End to end through the LIF engine, not just the bisection arithmetic."""
+    def factory(gain):
+        config = FlyBrainConfig(mode=RunMode.offline, use_synthetic=True, seed=3)
+        config.lif = LIFParams(synaptic_gain=gain)
+        return FlyBrain(config, connectome=synthetic_connectome)
+
+    gain, measured = controls.calibrate_gain(factory, calibration_tables('kuhn')[:4],
+                                             target_sparsity=0.09, tolerance=0.02)
+    assert measured == pytest.approx(0.09, abs=0.02)
+    assert 0.0002 < gain < 0.0120
+
+
+def test_default_gain_is_the_re_derived_operating_point():
+    """0.0026 predated the encoder changes and left the network silent on Kuhn states."""
+    assert LIFParams().synaptic_gain == pytest.approx(0.0050, abs=0.0005)
+    assert set(CALIBRATED_GAIN) == {'kuhn', 'equity'}
+    for task, gain in CALIBRATED_GAIN.items():
+        assert 0.004 < gain < 0.006, f"{task} gain {gain} is not the re-derived point"
 
 
 # --- the offline task ------------------------------------------------------------

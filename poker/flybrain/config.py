@@ -49,6 +49,21 @@ NT_SIGN = {
 # Cell classes that make up the mushroom body pathway, as annotated in MaleCNS v1.0.
 MB_CLASSES = ('olfactory', 'ALPN', 'ALLN', 'Kenyon_Cell', 'MBON', 'DAN')
 
+# Synaptic gains that put the *real* connectome at ~9% Kenyon cell activity, measured per
+# task on that task's own stimuli with controls.calibrate_gain(). They differ because the
+# tasks drive different numbers of feature channels, so one hardcoded number cannot serve
+# both: the previous single default of 0.0026 was derived on equity-game states before the
+# encoder gained quantisation and disjoint glomerulus banks, and left the network at 0.49%
+# activity on Kuhn states - effectively silent. See doc/flybrain.md.
+#
+# These are defaults for a single run on the real wiring. They are NOT a substitute for
+# calibration when connectome variants are compared: a rewired network sits at a different
+# operating point, so `controls` recalibrates every condition separately.
+CALIBRATED_GAIN = {
+    'kuhn': 0.004994,    # 12 information sets -> 8.7% KC active
+    'equity': 0.004902,  # 8 representative equity states -> 8.1% KC active
+}
+
 
 @dataclass
 class LIFParams:
@@ -65,10 +80,14 @@ class LIFParams:
     v_threshold: float = 1.0
     v_reset: float = 0.0
     refractory_ms: float = 2.0
-    # Scales raw synapse counts into membrane-voltage units. Tuned so population
-    # firing rates land in a physiological range rather than saturating - see
-    # doc/flybrain.md for the calibration sweep.
-    synaptic_gain: float = 0.0026
+    # Scales raw synapse counts into membrane-voltage units. Tuned so population firing
+    # rates land in a physiological range rather than saturating - see doc/flybrain.md.
+    # Re-derived for the current encoder (quantised tuning curves, disjoint glomerulus
+    # banks, target-mean-rate normalisation): the real connectome reaches ~9% Kenyon cell
+    # activity here. The previous 0.0026 predated those encoder changes and left the
+    # network at 0.49% on Kuhn states. Per-task values live in CALIBRATED_GAIN; anything
+    # comparing connectome variants must recalibrate rather than reuse this.
+    synaptic_gain: float = 0.0050
     # Clamp on |weight| so a handful of very heavy edges cannot dominate.
     max_abs_weight: float = 400.0
 

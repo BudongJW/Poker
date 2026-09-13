@@ -91,13 +91,32 @@ Real KCs code sparsely (~5–10% active for a given odour) and fly central neuro
 sustain those rates. Saturated KCs make every poker state look identical to the MBONs,
 which makes the KC→MBON plasticity useless. Sparsity is not cosmetic here.
 
-### 2. The usable gain window is narrow
+### 2. The usable gain window is narrow, and it is stimulus-specific
 
-Sweeping `synaptic_gain`, the network goes from silent to saturated between 0.0015 and
-0.0030. There is no broad plateau. **Any comparison between connectome variants must
-re-calibrate**, because a rewired network does not sit at the same operating point —
-otherwise the comparison is between activity levels, not between wiring diagrams. Use
-`controls.calibrate_gain()`.
+Sweeping `synaptic_gain`, the network goes from silent to saturated over a narrow range.
+There is no broad plateau, so the operating point has to be set deliberately and it has to
+be set **on the stimuli the task actually presents**. Measured with
+`controls.calibrate_gain()` on the current encoder, targeting 9% Kenyon cell activity on
+the real connectome:
+
+| stimuli | gain | KC active |
+|---|---|---|
+| 12 Kuhn information sets | **0.004994** | 8.7% |
+| 8 representative equity states | **0.004902** | 8.1% |
+
+Both live in `config.CALIBRATED_GAIN`, and `LIFParams.synaptic_gain` defaults to 0.0050.
+The previous single default of **0.0026 was stale**: it was derived on equity-game states
+before the encoder gained tuning-curve quantisation, disjoint glomerulus banks and
+target-mean-rate normalisation, and was never re-derived afterwards. At 0.0026 the real
+network sits at 0.49% KC activity on Kuhn states — effectively silent. Every number
+measured at that gain is measured on a network that is barely responding.
+
+**Any comparison between connectome variants must re-calibrate**, because a rewired
+network does not sit at the same operating point — otherwise the comparison is between
+activity levels, not between wiring diagrams. `cmd_controls` now calibrates every
+condition separately and prints the gain it chose beside that condition's result. The
+gains differ by 2× between real and its own degree-preserving shuffle, which is exactly
+how much the earlier uncalibrated comparison was off by.
 
 ### 3. Poisson sensory input puts the network in a chaotic regime
 
@@ -262,7 +281,7 @@ that have nothing to do with the fly — the readout alone may be carrying it.
 
 ```bash
 python -m poker.flybrain.cli reference          # the fixed points, and the self-test
-python -m poker.flybrain.cli controls --hands 4000
+python -m poker.flybrain.cli controls --hands 4000 --seeds 5
 ```
 
 | Control | What it breaks | What it proves |
@@ -272,7 +291,13 @@ python -m poker.flybrain.cli controls --hands 4000
 | `random` | policy | the floor |
 
 **If `real connectome` does not beat `shuffled`, no claim about the fly's circuit is
-supported.** Calibrate each condition to the same KC sparsity first.
+supported.** Each condition is calibrated to the same KC sparsity before it is trained —
+`controls` does this automatically and prints the gain it chose per condition, because a
+rewired network does not sit at the real one's operating point and an uncalibrated
+comparison measures activity level instead of wiring. Results are reported as mean and
+[min, max] over `--seeds` seeds: exploitability is exact given a policy, but which policy
+training lands on is not, and the seed spread is larger than the differences between
+conditions.
 
 ## Setup
 
@@ -280,9 +305,9 @@ supported.** Calibrate each condition to the same KC sparsity first.
 pip install numpy scipy pyarrow          # pyarrow only for reading the bulk files
 
 python -m poker.flybrain.cli info        # downloads ~1.1 GB on first run, then caches
-python -m poker.flybrain.cli calibrate
+python -m poker.flybrain.cli calibrate   # per-task; --task equity for the other stimuli
 python -m poker.flybrain.cli train --hands 2000 --save poker/data/flybrain/brain.npz
-python -m poker.flybrain.cli controls --hands 1000
+python -m poker.flybrain.cli controls --hands 4000 --seeds 5
 ```
 
 Downloads land in `poker/data/flybrain/` (already gitignored). Only three of the published
@@ -327,8 +352,11 @@ rule-based `Decision`. The bot must never stop playing because the fly failed.
 Working and measured: the loader, the circuit extraction, the LIF engine, the encoding,
 the legality guarantees, the plasticity wiring and sign, save/load, the controls, the
 Kuhn implementation (self-tested against the published game value and zero Nash
-exploitability), and the offline harness. 54 tests pass on the synthetic connectome;
-pylint 9.95/10. Calibration findings 1–4 above are reproducible.
+exploitability), the per-condition gain calibration, and the offline harness. 59 tests
+pass on the synthetic connectome; pylint 9.88/10 under pylint 4.0.8 (the 9.95 recorded
+earlier was an older pylint — most of the gap is `W0012` on `import-outside-toplevel`
+suppressions that the newer version no longer recognises, across files nobody has
+touched). Calibration findings 1–4 above are reproducible.
 
 ### Kuhn result: learning is real, the policy is degenerate
 
@@ -370,8 +398,61 @@ it:
    counteract that.
 
 So: the module learns, measurably and reproducibly, and what it learns is "bet always".
-Whether the *connectome* contributes to even that is still open — the Kuhn control runs
-(real vs shuffled vs frozen) answer that and have not been run yet.
+
+**Caveat, added later: this run was also made at the stale 0.0026 gain**, so the fly it
+describes was at 0.49% KC activity. The qualitative claim that something is learned
+survives — the metrics did move together — but the specific numbers come from a network
+that was barely responding, and they should not be quoted as the module's performance.
+
+### Kuhn controls at matched sparsity — the wiring is not contributing
+
+**This is the current result and it supersedes the void run below.** Five seeds per
+condition, 4000 training hands each, every condition independently calibrated to 9%
+Kenyon cell activity on the 12 Kuhn information sets before training, evaluated exactly.
+Cells are mean with [min, max] across seeds:
+
+| condition | gain | KC active | exploit (pure) | exploit (mixed) | chips vs Nash | chips vs random |
+|---|---|---|---|---|---|---|
+| real connectome | 0.00499 | 8.7% | **0.4167** [0.2500, 0.8333] | 0.4073 [0.2774, 0.7666] | −0.1167 [−0.1667, −0.0833] | **+0.1750** [0.0000, 0.3750] |
+| shuffled (degree-preserving) | 0.00246 | 9.2% | **0.4333** [0.3333, 0.8333] | 0.4200 [0.3333, 0.7666] | −0.1444 [−0.1667, −0.1111] | +0.1000 [0.0000, 0.3750] |
+| frozen (no KC→MBON plasticity) | 0.00499 | 8.7% | 0.6500 [0.2500, 1.1667] | 0.5969 [0.2774, 0.9600] | −0.1194 [−0.2500, −0.0417] | −0.0750 [−0.5833, +0.1250] |
+| random actions | n/a | n/a | 0.4583 | 0.4583 | −0.1389 | 0.0000 |
+| *best deterministic* | | | *0.1667* | — | — | — |
+| *equilibrium* | | | *0* | — | *0* | — |
+
+**Reading 1 — the falsification condition is met. Real does not beat shuffled.** 0.4167
+against 0.4333 on exploitability, with ranges that overlap almost completely; the per-seed
+values are near-identical multisets (real {0.8333, 0.3333×3, 0.2500}, shuffled {0.8333,
+0.3333×4}). Real is nominally ahead on all three metrics — exploitability, chips vs Nash,
+chips vs random — but every gap is a small fraction of the seed spread, and n=5. This was
+stated in advance as the outcome that would show the wiring is not contributing and the
+readout is carrying the result, and that is what the data show. **The specific MaleCNS
+wiring earns no claim in this task at this operating point.**
+
+**Reading 2 — real barely beats a random policy.** 0.4167 against 0.4583. The one place a
+real difference shows is chips vs random (+0.1750 against 0.0000), but that is also where
+the spread is widest [0.0000, 0.3750]. Nothing here is 2.5× better than chance.
+
+**Reading 3 — the plasticity is no longer inert; it now helps.** This reverses the earlier
+finding. `frozen` was previously bit-for-bit identical to `real`; at a working operating
+point it is clearly *worse* — 0.6500 against 0.4167 exploitability, and −0.0750 against
++0.1750 chips vs random. Freezing KC→MBON plasticity now costs performance, and frozen has
+the widest spread of any condition [0.2500, 1.1667]. The earlier "the plasticity is
+decoration" conclusion was an artefact of measuring at 0.49% KC activity, where there was
+almost nothing for a depression rule to act on. Note this makes the mushroom body
+plasticity the one component with demonstrated effect, while the wiring has none.
+
+**Reading 4 — calibration did what it was added for.** The gains needed to reach the same
+9% activity differ 2× between conditions (0.00499 vs 0.00246), and the achieved sparsities
+land within 0.083–0.098 of each other. That 2× is the confound that voided the earlier
+run, and it is now controlled rather than assumed away.
+
+**Caveats.** Five seeds is enough to show the gap is inside the noise and not enough to
+bound it tightly; no significance test is quoted because with n=5 and these ranges none
+would be informative. All conditions sit far from the 0.1667 best-deterministic bar, so
+this compares degenerate policies with each other. And exploitability remains a weak
+discriminator here — the chip metrics separate the conditions more clearly than it does,
+which is why all four are reported.
 
 ### Kuhn controls — VOID, and why
 
@@ -447,25 +528,33 @@ and `OpenFly` both state that no profitable edge has been demonstrated.
 
 ### What to do next, in order
 
-1. **Re-derive the operating point, then re-run the controls with per-condition
-   calibration.** This is not one item among several; until it is done there is no result
-   here at all. Concretely: the default gain must be re-derived for the current encoder
-   (real needs ≈0.0050 on Kuhn states, not 0.0026), `cmd_controls` must call
-   `controls.calibrate_gain()` for each condition separately and report the gain it chose,
-   and `calibrate_gain` must be fed Kuhn stimuli
-   (`[kuhn.KuhnTable(c, h) for c, h in kuhn.INFO_SETS]`) rather than equity-game ones. Then
-   several seeds, reporting spread.
-2. **Report chip metrics alongside exploitability.** Three of four conditions landed on
-   exactly 0.3333 in the second run while differing on chips, so several distinct
-   degenerate policies share an exploitability value. Exploitability alone is a weak
-   discriminator in that regime.
-3. **Work out why the KC→MBON plasticity is inert** — but only after 1, since at 0.49% KC
-   activity there is almost nothing for it to act on, which may be the whole explanation.
-4. **Stop the readout saturating**, so a mixed policy survives extraction. Equilibrium in
-   Kuhn needs mixing.
-5. **Re-weight the training opponent.** A 50/50 equilibrium/random mix pays blanket
-   aggression too well, and blanket aggression is what it learned.
-6. Only then: Leduc poker, whole-brain scope, or more MBON readout capacity.
+~~1. Re-derive the operating point, then re-run the controls with per-condition
+calibration.~~ **Done.** The gain is re-derived per task (`config.CALIBRATED_GAIN`),
+`cmd_controls` calibrates each condition separately and prints the gain, `calibrate_gain`
+is fed the 12 Kuhn information sets with bounds wide enough to reach them, and the run is
+5 seeds with spread reported. Result: the wiring is not contributing. That closes the
+question the project existed to ask, in the negative.
+
+Given that, the remaining work is about whether there is a regime where the wiring *could*
+show an effect, and about the one component that did:
+
+1. **Push the policies off the degenerate attractor.** Every condition sits between 0.4167
+   and 0.6500 against a 0.1667 bar, so this compared bad policies with each other. A
+   comparison between conditions that all fail is weak evidence either way — the wiring
+   might matter in a regime where the task is actually being solved. Two levers, in order:
+   stop the readout saturating so mixing survives extraction, and re-weight the training
+   opponent away from the 50/50 mix that pays blanket aggression.
+2. **Follow the plasticity result.** `frozen` is now clearly worse than `real`, which makes
+   KC→MBON depression the only component with a demonstrated effect. Worth measuring
+   properly: per-hand weight-delta magnitude against the readout's own update, and
+   `trace_decay` near 0 versus the current 0.6.
+3. **More seeds before any of the above is quoted.** n=5 shows the real-vs-shuffled gap is
+   inside the noise; it does not bound it. 20+ seeds would say whether the consistent
+   nominal edge to real on all three metrics is anything at all.
+4. **Investigate why the shuffle is hyperactive** (below) — it is a real structural
+   property of the connectome even though it is not a computational result, and it is the
+   one place the specific wiring demonstrably does something.
+5. Only then: Leduc poker, whole-brain scope, or more MBON readout capacity.
 
 ### Not verified in this environment
 
