@@ -373,6 +373,47 @@ So: the module learns, measurably and reproducibly, and what it learns is "bet a
 Whether the *connectome* contributes to even that is still open — the Kuhn control runs
 (real vs shuffled vs frozen) answer that and have not been run yet.
 
+### Kuhn controls: the wiring matters, the plasticity does not
+
+4000 training hands per condition, same seed, same opponent mix, evaluated exactly:
+
+| condition | exploit (pure) | exploit (mixed) | chips vs Nash | chips vs random |
+|---|---|---|---|---|
+| real connectome | **0.3333** | 0.3333 | −0.1111 | **+0.3333** |
+| shuffled (degree-preserving) | **1.0833** | 0.9116 | −0.1250 | −0.4167 |
+| frozen (no KC→MBON plasticity) | **0.3333** | 0.3333 | −0.1111 | **+0.3333** |
+| random actions | 0.4583 | 0.4583 | −0.1389 | 0.0000 |
+| *best deterministic* | *0.1667* | — | — | — |
+| *equilibrium* | *0* | — | 0 | — |
+
+**Reading 1 — real beats shuffled by 3.25×.** 0.3333 against 1.0833, and +0.3333 against
+−0.4167 chips versus a random opponent. Rewiring the connectome while preserving every
+neuron's in- and out-degree destroys the result completely: the shuffled network ends up at
+1.0833, which is exactly where the *untrained* real network started. This is the first
+evidence in this project that the specific wiring does work, and it is nothing like the 9%
+noise the equity game produced.
+
+**Reading 2 — the KC→MBON plasticity contributes nothing.** `frozen` is bit-for-bit
+identical to `real` on all four metrics. Freezing the synapses the fly actually modifies
+when it learns changes the outcome not at all, which means every bit of the improvement
+from 1.0833 to 0.3333 came from the readout delta rule, not from the mushroom body
+plasticity rule this module was built around. The biologically motivated learning is
+decoration at present.
+
+**Three caveats, and the first is serious:**
+
+1. **The conditions were not calibrated to equal Kenyon cell sparsity**, which this document
+   itself says is mandatory before comparing connectome variants. The usable gain window is
+   narrow (0.0015–0.0030), and the shuffle also dropped 227 self-loops, leaving 430,221
+   edges against 451,855 — 4.8% fewer. So "shuffled cannot learn" may partly be "shuffled
+   is not at a working operating point." Until each condition is brought to the same
+   sparsity with `controls.calibrate_gain()`, the 3.25× gap is suggestive, not established.
+2. **One seed, no repeats.** Exploitability is exact given a policy, but which policy
+   training lands on is not.
+3. **0.3333 is still 2× worse than the best deterministic policy** (0.1667), and real and
+   frozen landing on precisely the same number suggests both collapse into the same
+   degenerate "aggress almost everywhere" attractor rather than finding anything subtle.
+
 ### Historical: the equity-game controls
 
 These were measured on the task Kuhn replaced, and are kept only to record why it was
@@ -397,21 +438,20 @@ and `OpenFly` both state that no profitable edge has been demonstrated.
 
 ### What to do next, in order
 
-1. **Run the Kuhn controls** — `real` against `shuffled` and `frozen`, both calibrated to
-   the same KC sparsity via `controls.calibrate_gain()`, since the gain window is narrow
-   and a rewired network does not sit at the same operating point. Until this runs, no
-   claim about the fly's wiring is supported, only about the module as a whole.
-2. **Stop the readout saturating**, so a mixed policy survives extraction. Equilibrium in
-   Kuhn needs mixing; a saturated readout makes it unreachable no matter how long it
-   trains. Bounding the score magnitude or adding an entropy term are the obvious levers.
-3. **Re-weight or change the training opponent.** The 50/50 mix rewards blanket
-   aggression. Training against equilibrium alone, or self-play with per-seat credit,
-   removes the incentive that produced "bet always".
-4. **Fix credit assignment.** Reinforcing every decision in a hand with the final payoff
-   is crude. Kuhn hands are 1–2 decisions long, which makes this far easier to isolate
-   than the previous task did.
-5. Only then: Leduc poker (still exactly solvable), whole-brain scope, or more MBON
-   readout capacity.
+1. **Re-run the controls with each condition calibrated to the same KC sparsity**
+   (`controls.calibrate_gain()`), across several seeds. This is the one thing standing
+   between "suggestive" and "established" on the central question, and nothing else should
+   be tuned before it.
+2. **Work out why the KC→MBON plasticity is inert.** `frozen == real` exactly. Either the
+   depression is too small to matter against the readout's delta rule, or the eligibility
+   trace is assigning credit to the wrong synapses. Kuhn hands are 1–2 decisions long,
+   which makes this far easier to isolate than the previous task.
+3. **Stop the readout saturating**, so a mixed policy survives extraction. Equilibrium in
+   Kuhn needs mixing; a saturated readout makes it unreachable however long it trains.
+4. **Re-weight the training opponent.** A 50/50 equilibrium/random mix pays blanket
+   aggression too well, and blanket aggression is what it learned.
+5. Only then: Leduc poker (still exactly solvable), whole-brain scope, or more MBON readout
+   capacity.
 
 ### Not verified in this environment
 
