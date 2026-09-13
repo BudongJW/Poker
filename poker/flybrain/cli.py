@@ -4,17 +4,24 @@ Everything here runs on synthetic hands, so the fly can be developed and trained
 no account involved at all. Only once it beats its controls here is there any reason to
 put it in front of a real table, and then in shadow mode first.
 
-The training task is a contextual bandit over one betting decision. It is deliberately
-small enough that the optimal action is computable in closed form, which is what makes
-learning measurable rather than merely asserted - the same reason the literature tests
-mushroom body models on bandits (Bennett et al. 2021) and the reason a
-game-theoretically solved variant like Kuhn poker is the right next step up from here.
+The default task is **Kuhn poker**, because its optimum is known in closed form and a
+policy's exploitability can therefore be computed exactly. Results are reported against
+two fixed reference points: 0 for equilibrium, and 1/6 for the best any deterministic
+policy can do (equilibrium in Kuhn requires mixing, so a fly reading off an argmax cannot
+beat that).
+
+The older `equity` task is still reachable with --task equity. It is a contextual bandit
+over one betting decision, and it turned out to be a poor instrument: a bet-everything
+policy scored well on mean regret while being wrong about which bet, a random policy
+scored well on optimal-action-rate by folding often, and the two metrics disagreed. It is
+kept for comparison, not for conclusions.
 
 Usage:
     python -m poker.flybrain.cli info
     python -m poker.flybrain.cli calibrate
-    python -m poker.flybrain.cli train --hands 2000 --save poker/data/flybrain/brain.npz
-    python -m poker.flybrain.cli controls --hands 1000
+    python -m poker.flybrain.cli reference
+    python -m poker.flybrain.cli train --hands 4000 --save poker/data/flybrain/brain.npz
+    python -m poker.flybrain.cli controls --hands 4000
 """
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-locals
@@ -25,7 +32,9 @@ import sys
 import numpy as np
 
 from poker.flybrain import controls as controls_mod
+from poker.flybrain import kuhn
 from poker.flybrain.brain import FlyBrain
+from poker.flybrain.encoding import TableView
 from poker.flybrain.config import FlyBrainConfig, LIFParams, RunMode, Scope
 
 log = logging.getLogger(__name__)
@@ -34,34 +43,15 @@ log = logging.getLogger(__name__)
 BET_FRACTION = {'Bet': 0.25, 'Bet half pot': 0.5, 'Bet pot': 1.0}
 
 
-class OfflineTable:
-    """The attributes encoding.features_from_table() and decoding.legal_actions() read.
+class OfflineTable(TableView):
+    """A hand of the equity game, presented through the shared table surface."""
 
-    A stand-in for the scraper's table object, so offline hands and live hands present
-    an identical interface to the brain.
-    """
-
-    # pylint: disable=too-many-instance-attributes,invalid-name
+    # pylint: disable=too-many-arguments,too-many-positional-arguments
     def __init__(self, equity, pot, to_call, stack, stage, opponents=1,
                  check_available=False, big_blind=1.0):
-        self.abs_equity = equity
-        self.equity = equity
-        self.relative_equity = equity
-        self.totalPotValue = pot
-        self.round_pot_value = pot
-        self.minCall = to_call
-        self.minBet = max(big_blind, pot * 0.25)
-        self.myFunds = stack
-        self.bigBlind = big_blind
-        self.smallBlind = big_blind / 2.0
-        self.gameStage = stage
-        self.assumedPlayers = opponents + 1
-        self.playersAhead = opponents
-        self.other_player_has_initiative = to_call > 0
-        self.checkButton = check_available
-        self.callButton = not check_available
+        super().__init__(equity, pot, to_call if not check_available else 0.0, stack,
+                         stage, opponents=opponents, big_blind=big_blind)
         self.betButton = True
-        self.allInCallButton = False
 
 
 class EquityGame:
@@ -207,6 +197,111 @@ def run_episodes(agent, game, n_hands, temperature=0.0, learn=True, log_every=0)
     }
 
 
+def kuhn_opponents(kind, alpha=1.0 / 6.0):
+    """The opponent pool to train or evaluate against.
+
+    'nash'   equilibrium play. The most the fly can win is the game value, -1/18.
+    'random' aggress half the time everywhere. Exploitable by 0.458, so there is real
+             headroom and a clear learning signal.
+    'mix'    half of each, which keeps the headroom without overfitting to one opponent.
+    """
+    if kind == 'nash':
+        return [kuhn.nash_policy(alpha)]
+    if kind == 'random':
+        return [kuhn.uniform_policy()]
+    if kind == 'mix':
+        return [kuhn.nash_policy(alpha), kuhn.uniform_policy()]
+    raise ValueError(f"unknown opponent {kind!r}")
+
+
+def run_kuhn(agent, n_hands, opponents, seed=0, temperature=0.0, learn=True, log_every=0):
+    """Play Kuhn hands, alternating seats, and return metrics.
+
+    Seats alternate so the fly has to learn both sides; its information sets are disjoint
+    between seats, so this is not two tasks competing for the same weights.
+    """
+    rng = np.random.default_rng(seed)
+    chips, decisions = [], 0
+
+    for hand in range(n_hands):
+        opponent = opponents[hand % len(opponents)]
+        fly_seat = 1 + (hand % 2)
+        won, n_decisions = kuhn.play_hand(agent, opponent, fly_seat, rng,
+                                          temperature=temperature)
+        chips.append(won)
+        decisions += n_decisions
+
+        if learn:
+            agent.reinforce(won)
+        else:
+            agent.abandon_hand()
+
+        if log_every and (hand + 1) % log_every == 0:
+            window = chips[-log_every:]
+            log.info("  hand %6d  chips/hand %+.4f", hand + 1, float(np.mean(window)))
+
+    return {
+        'hands': n_hands,
+        'fly_decisions': decisions,
+        'chips_per_hand': float(np.mean(chips)) if chips else float('nan'),
+    }
+
+
+def evaluate_kuhn(brain, seed=0, alpha=1.0 / 6.0):
+    """Evaluate the fly's Kuhn policy exactly - nothing here is sampled.
+
+    Once the policy is read off the 12 information sets (12 LIF simulations), every number
+    below follows from the game tree in closed form: exploitability, and chips per hand
+    against each fixed opponent averaged over both seats. Sampling them instead would cost
+    thousands of simulations and add variance to quantities that have exact values.
+    """
+    del seed
+    pure_policy = kuhn.extract_policy(brain, temperature=0.0)
+    mixed_policy = kuhn.extract_policy(brain, temperature=1.0)
+
+    def chips_against(fly_policy, opponent):
+        """Exact chips per hand to the fly, averaged over the two seats."""
+        as_p1 = kuhn.expected_value(kuhn.merge_policies(fly_policy, opponent))
+        as_p2 = -kuhn.expected_value(kuhn.merge_policies(opponent, fly_policy))
+        return 0.5 * (as_p1 + as_p2)
+
+    # chips_vs_nash is bounded above by 0 and reaches it only for optimal play. Against
+    # an equilibrium opponent no strategy can beat the game value, so the fly gets at most
+    # -1/18 in seat 1 and at most +1/18 in seat 2; averaged over the two seats that is a
+    # ceiling of 0. It is a second, independent read on the same question exploitability
+    # answers, and the two should move together.
+    nash = kuhn.nash_policy(alpha)
+    uniform = kuhn.uniform_policy()
+    return {
+        'exploitability_pure': kuhn.exploitability(pure_policy),
+        'exploitability_mixed': kuhn.exploitability(mixed_policy),
+        'chips_vs_nash': chips_against(pure_policy, nash),
+        'chips_vs_random': chips_against(pure_policy, uniform),
+        'chips_vs_random_mixed': chips_against(mixed_policy, uniform),
+        'policy': pure_policy,
+        'mixed_policy': mixed_policy,
+    }
+
+
+def print_kuhn_reference():
+    """The fixed points every result is read against."""
+    print("Kuhn poker reference points (exploitability, chips/hand):")
+    print(f"  equilibrium                     {0.0:.4f}")
+    print(f"  best deterministic policy       {1.0 / 6.0:.4f}   <- the bar at temperature 0")
+    print(f"  aggress 50% everywhere          {kuhn.exploitability(kuhn.uniform_policy()):.4f}")
+    print(f"  never bet, never call           {kuhn.exploitability(kuhn.always_pass_policy()):.4f}")
+    print(f"  game value to player 1          {kuhn.GAME_VALUE_TO_P1:+.4f}")
+
+
+def cmd_reference(args):
+    """Print the Kuhn reference points and verify the implementation."""
+    del args
+    kuhn.self_test()
+    print_kuhn_reference()
+    print(f"\nNash policy (alpha=1/6):\n{kuhn.describe_policy(kuhn.nash_policy())}")
+    return 0
+
+
 def cmd_info(args):
     """Print what is loaded and how big it is."""
     brain = FlyBrain(_make_config(args))
@@ -240,32 +335,54 @@ def cmd_calibrate(args):
 
 
 def cmd_train(args):
-    """Train on the equity game and report before/after."""
+    """Train and report before/after."""
     config = _make_config(args)
+    if args.task == 'kuhn':
+        # Kuhn payoffs are 1 or 2 chips; the default reward scale of 10 big blinds would
+        # squash every outcome into the flat part of the tanh.
+        config.plasticity.reward_scale_bb = 1.0
     brain = FlyBrain(config)
     if args.load:
         brain.load(args.load)
 
-    game = EquityGame(seed=args.seed)
-    before = run_episodes(brain, EquityGame(seed=args.seed + 9999), args.eval_hands,
-                          learn=False)
-    log.info("before training: regret %.3f bb, optimal %.1f%%",
-             before['mean_regret_bb'], 100 * before['optimal_action_rate'])
+    if args.task == 'kuhn':
+        kuhn.self_test()
+        print_kuhn_reference()
+        opponents = kuhn_opponents(args.opponent)
 
-    trained = run_episodes(brain, game, args.hands, temperature=args.temperature,
-                           learn=True, log_every=max(1, args.hands // 10))
+        before = evaluate_kuhn(brain, seed=args.seed)
+        log.info("before training: exploitability %.4f (pure) / %.4f (mixed)",
+                 before['exploitability_pure'], before['exploitability_mixed'])
 
-    after = run_episodes(brain, EquityGame(seed=args.seed + 9999), args.eval_hands,
-                         learn=False)
-    log.info("after training : regret %.3f bb, optimal %.1f%%",
-             after['mean_regret_bb'], 100 * after['optimal_action_rate'])
+        run_kuhn(brain, args.hands, opponents, seed=args.seed,
+                 temperature=args.temperature, learn=True,
+                 log_every=max(1, args.hands // 10))
 
-    print(f"\n{'':14s} {'regret(bb)':>11s} {'optimal%':>9s}")
-    print(f"{'before':14s} {before['mean_regret_bb']:>11.3f} "
-          f"{100*before['optimal_action_rate']:>8.1f}%")
-    print(f"{'after':14s} {after['mean_regret_bb']:>11.3f} "
-          f"{100*after['optimal_action_rate']:>8.1f}%")
-    print(f"\ntraining actions: {trained['action_counts']}")
+        after = evaluate_kuhn(brain, seed=args.seed)
+        log.info("after training : exploitability %.4f (pure) / %.4f (mixed)",
+                 after['exploitability_pure'], after['exploitability_mixed'])
+
+        print(f"\n{'':8s} {'exploit(pure)':>14s} {'exploit(mixed)':>15s} "
+              f"{'chips vs nash':>14s} {'chips vs random':>16s}")
+        for label, result in (('before', before), ('after', after)):
+            print(f"{label:8s} {result['exploitability_pure']:>14.4f} "
+                  f"{result['exploitability_mixed']:>15.4f} "
+                  f"{result['chips_vs_nash']:>+14.4f} {result['chips_vs_random']:>+16.4f}")
+        print(f"\nlearned policy:\n{kuhn.describe_policy(after['policy'])}")
+    else:
+        game = EquityGame(seed=args.seed)
+        before = run_episodes(brain, EquityGame(seed=args.seed + 9999), args.eval_hands,
+                              learn=False)
+        trained = run_episodes(brain, game, args.hands, temperature=args.temperature,
+                               learn=True, log_every=max(1, args.hands // 10))
+        after = run_episodes(brain, EquityGame(seed=args.seed + 9999), args.eval_hands,
+                             learn=False)
+        print(f"\n{'':14s} {'regret(bb)':>11s} {'optimal%':>9s}")
+        print(f"{'before':14s} {before['mean_regret_bb']:>11.3f} "
+              f"{100*before['optimal_action_rate']:>8.1f}%")
+        print(f"{'after':14s} {after['mean_regret_bb']:>11.3f} "
+              f"{100*after['optimal_action_rate']:>8.1f}%")
+        print(f"\ntraining actions: {trained['action_counts']}")
 
     if args.save:
         brain.save(args.save)
@@ -276,42 +393,81 @@ def cmd_controls(args):
     """Compare the real connectome against shuffled, frozen and random baselines."""
     from poker.flybrain import connectome as connectome_mod  # pylint: disable=import-outside-toplevel
 
-    config = _make_config(args)
+    base = _make_config(args)
     real = connectome_mod.load(
-        scope=config.scope, weight_threshold=config.weight_threshold,
-        cache_dir=config.cache_dir or None, use_synthetic=config.use_synthetic,
-        seed=config.seed,
+        scope=base.scope, weight_threshold=base.weight_threshold,
+        cache_dir=base.cache_dir or None, use_synthetic=base.use_synthetic,
+        seed=base.seed,
     )
+
+    def config_for(**overrides):
+        config = _make_config(args)
+        if args.task == 'kuhn':
+            config.plasticity.reward_scale_bb = 1.0
+        for key, value in overrides.items():
+            if key == 'plasticity_enabled':
+                config.plasticity.enabled = value
+        return config
+
+    if args.task == 'kuhn':
+        kuhn.self_test()
+        print_kuhn_reference()
 
     conditions = []
 
     def train_and_eval(label, brain):
-        game = EquityGame(seed=args.seed)
-        run_episodes(brain, game, args.hands, temperature=args.temperature, learn=True)
-        result = run_episodes(brain, EquityGame(seed=args.seed + 9999), args.eval_hands,
-                              learn=False)
+        if args.task == 'kuhn':
+            run_kuhn(brain, args.hands, kuhn_opponents(args.opponent), seed=args.seed,
+                     temperature=args.temperature, learn=True)
+            result = evaluate_kuhn(brain, seed=args.seed)
+            log.info("%-22s exploitability %.4f (pure) / %.4f (mixed)", label,
+                     result['exploitability_pure'], result['exploitability_mixed'])
+        else:
+            run_episodes(brain, EquityGame(seed=args.seed), args.hands,
+                         temperature=args.temperature, learn=True)
+            result = run_episodes(brain, EquityGame(seed=args.seed + 9999),
+                                  args.eval_hands, learn=False)
+            log.info("%-22s regret %.3f bb  optimal %.1f%%", label,
+                     result['mean_regret_bb'], 100 * result['optimal_action_rate'])
         conditions.append((label, result))
-        log.info("%-22s regret %.3f bb  optimal %.1f%%", label,
-                 result['mean_regret_bb'], 100 * result['optimal_action_rate'])
 
-    train_and_eval('real connectome', FlyBrain(_make_config(args), connectome=real))
+    train_and_eval('real connectome', FlyBrain(config_for(), connectome=real))
 
     shuffled = controls_mod.shuffle_preserving_degree(real, seed=args.seed)
-    train_and_eval('shuffled (degree-pres)', FlyBrain(_make_config(args), connectome=shuffled))
+    train_and_eval('shuffled (degree-pres)', FlyBrain(config_for(), connectome=shuffled))
 
-    frozen_config = _make_config(args)
-    frozen_config.plasticity.enabled = False
-    train_and_eval('frozen (no plasticity)', FlyBrain(frozen_config, connectome=real))
+    train_and_eval('frozen (no plasticity)',
+                   FlyBrain(config_for(plasticity_enabled=False), connectome=real))
 
-    random_agent = controls_mod.RandomAgent(seed=args.seed)
-    result = run_episodes(random_agent, EquityGame(seed=args.seed + 9999),
-                          args.eval_hands, learn=False)
-    conditions.append(('random actions', result))
+    if args.task == 'kuhn':
+        # A uniformly random agent *is* the uniform policy, so its numbers are exact too.
+        uniform = kuhn.uniform_policy()
+        nash = kuhn.nash_policy()
+        conditions.append(('random actions', {
+            'exploitability_pure': kuhn.exploitability(uniform),
+            'exploitability_mixed': kuhn.exploitability(uniform),
+            'chips_vs_nash': 0.5 * (kuhn.expected_value(kuhn.merge_policies(uniform, nash))
+                                    - kuhn.expected_value(kuhn.merge_policies(nash, uniform))),
+            'chips_vs_random': 0.0,
+        }))
+        print(f"\n{'condition':24s} {'exploit(pure)':>14s} {'exploit(mixed)':>15s} "
+              f"{'chips vs nash':>14s} {'chips vs random':>16s}")
+        for label, result in conditions:
+            print(f"{label:24s} {result['exploitability_pure']:>14.4f} "
+                  f"{result['exploitability_mixed']:>15.4f} "
+                  f"{result['chips_vs_nash']:>+14.4f} {result['chips_vs_random']:>+16.4f}")
+        print(f"\nbest deterministic policy achievable: {1.0 / 6.0:.4f}    "
+              f"equilibrium: 0.0000")
+    else:
+        random_agent = controls_mod.RandomAgent(seed=args.seed)
+        result = run_episodes(random_agent, EquityGame(seed=args.seed + 9999),
+                              args.eval_hands, learn=False)
+        conditions.append(('random actions', result))
+        print(f"\n{'condition':24s} {'regret(bb)':>11s} {'optimal%':>9s}")
+        for label, result in conditions:
+            print(f"{label:24s} {result['mean_regret_bb']:>11.3f} "
+                  f"{100*result['optimal_action_rate']:>8.1f}%")
 
-    print(f"\n{'condition':24s} {'regret(bb)':>11s} {'optimal%':>9s}")
-    for label, result in conditions:
-        print(f"{label:24s} {result['mean_regret_bb']:>11.3f} "
-              f"{100*result['optimal_action_rate']:>8.1f}%")
     print("\nIf 'real connectome' does not beat 'shuffled', the specific wiring is not "
           "contributing and no claim about the fly's circuit is supported.")
     return 0
@@ -332,6 +488,10 @@ def build_parser():
     parser.add_argument('--cache-dir', default='',
                         help='where connectome downloads and caches live')
     parser.add_argument('--seed', type=int, default=0)
+    parser.add_argument('--task', choices=('kuhn', 'equity'), default='kuhn',
+                        help='kuhn (default): exact exploitability against a known '
+                             'optimum. equity: the older contextual bandit, kept for '
+                             'comparison only - it is a poor instrument.')
     parser.add_argument('-v', '--verbose', action='store_true')
 
     sub = parser.add_subparsers(dest='command', required=True)
@@ -343,9 +503,13 @@ def build_parser():
     p_cal.add_argument('--target-sparsity', type=float, default=0.09)
     p_cal.set_defaults(func=cmd_calibrate)
 
+    p_ref = sub.add_parser('reference', help='print the Kuhn reference points')
+    p_ref.set_defaults(func=cmd_reference)
+
     p_train = sub.add_parser('train', help='train on the equity game')
-    p_train.add_argument('--hands', type=int, default=1000)
-    p_train.add_argument('--eval-hands', type=int, default=300)
+    p_train.add_argument('--hands', type=int, default=4000)
+    p_train.add_argument('--eval-hands', type=int, default=2000)
+    p_train.add_argument('--opponent', choices=('mix', 'nash', 'random'), default='mix')
     p_train.add_argument('--temperature', type=float, default=0.3,
                          help='softmax temperature while training; 0 is greedy')
     p_train.add_argument('--no-plasticity', action='store_true')
@@ -354,8 +518,9 @@ def build_parser():
     p_train.set_defaults(func=cmd_train)
 
     p_ctrl = sub.add_parser('controls', help='real vs shuffled vs frozen vs random')
-    p_ctrl.add_argument('--hands', type=int, default=1000)
-    p_ctrl.add_argument('--eval-hands', type=int, default=300)
+    p_ctrl.add_argument('--hands', type=int, default=4000)
+    p_ctrl.add_argument('--eval-hands', type=int, default=2000)
+    p_ctrl.add_argument('--opponent', choices=('mix', 'nash', 'random'), default='mix')
     p_ctrl.add_argument('--temperature', type=float, default=0.3)
     p_ctrl.set_defaults(func=cmd_controls)
 

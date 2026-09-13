@@ -136,6 +136,39 @@ class ActionDecoder:
 
         return pick, {a: float(raw[index[a]]) for a in allowed}
 
+    def action_probabilities(self, mbon_rates, allowed, temperature):
+        """Return {action: probability} using the same softmax `choose` uses.
+
+        Exposed because a mixed policy has to be read out of the fly, not inferred: Kuhn
+        poker's equilibrium requires mixing, so the probabilities are the object of
+        interest rather than the single action sampled from them.
+        """
+        allowed = [a for a in allowed if a in self.actions]
+        if not allowed:
+            raise ValueError("No legal action is in the decoder's vocabulary")
+
+        raw = self.scores(mbon_rates)
+        index = {a: self.actions.index(a) for a in allowed}
+        masked = np.asarray([raw[index[a]] for a in allowed], dtype=np.float32)
+        if not np.all(np.isfinite(masked)):
+            masked = np.nan_to_num(masked, nan=0.0, posinf=0.0, neginf=0.0)
+
+        if temperature <= 0:
+            probabilities = np.zeros(len(allowed), dtype=np.float64)
+            probabilities[int(np.argmax(masked))] = 1.0
+            return dict(zip(allowed, probabilities))
+
+        spread = float(masked.std())
+        scale = max(temperature * spread, 1e-6) if spread > 0 else 1.0
+        shifted = np.clip((masked - masked.max()) / scale, -60.0, 0.0)
+        probabilities = np.exp(shifted)
+        total = probabilities.sum()
+        if not np.isfinite(total) or total <= 0:
+            probabilities = np.full(len(allowed), 1.0 / len(allowed))
+        else:
+            probabilities = probabilities / total
+        return dict(zip(allowed, probabilities))
+
     def value_of(self, action):
         """The decoder's current estimate for one action, from the last scores() call.
 

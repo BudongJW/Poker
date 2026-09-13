@@ -188,6 +188,71 @@ records at zero risk, and those records are exactly the training data the fly ne
 
 ---
 
+## The measuring instrument: Kuhn poker
+
+The offline task is **Kuhn poker** (Harold W. Kuhn, 1950), the minimal two-player poker
+game. It is here for one reason: **its optimum is known in closed form**, so a policy's
+exploitability — what an optimal opponent would win against it — can be computed exactly
+rather than estimated.
+
+    Three cards, J < Q < K. Both ante 1, so the pot starts at 2. Each is dealt one card.
+    One betting round, bet size 1. Player 1 checks or bets; a check lets Player 2 check
+    (showdown) or bet, and a bet can be folded to or called. High card wins a showdown.
+
+Twelve information sets, six per player. Every decision is binary — pass or aggress — so a
+policy is one aggression probability per information set.
+
+`kuhn.self_test()` checks the implementation against the published facts and runs in
+every test session:
+
+| check | value |
+|---|---|
+| information sets | 12 |
+| game value to player 1, across the whole Nash α family | **−1/18** exactly |
+| Nash exploitability, α ∈ [0, 1/3] | **0** exactly |
+
+Every result is read against these fixed points:
+
+| policy | exploitability (chips/hand) |
+|---|---|
+| equilibrium | 0 |
+| **best deterministic policy** | **1/6 ≈ 0.1667** |
+| aggress 50% everywhere | 0.4583 |
+| never bet, never call | 1.0 |
+
+The 1/6 row is the one that matters for this module. **Equilibrium in Kuhn requires
+mixing**, so a fly reading off an argmax at temperature 0 cannot do better than 1/6 no
+matter how good its circuit is. `best_pure_exploitability()` finds it by enumerating all
+4096 pure policies; the optimum is the nit strategy — bet and call only with the King.
+
+Evaluation is **entirely analytic**. Once the policy is read off the 12 information sets
+(12 LIF simulations), exploitability and chips-per-hand against each fixed opponent follow
+from the game tree in closed form. Sampling them would cost thousands of simulations and
+add variance to quantities that have exact values.
+
+A second, independent read comes free: **chips per hand against a Nash opponent, averaged
+over both seats, is bounded above by 0 and reaches 0 only for optimal play.** No strategy
+can beat the game value against an equilibrium opponent, so the fly gets at most −1/18 in
+seat 1 and at most +1/18 in seat 2. It answers the same question exploitability does, by a
+different route, and the two should move together — if they do not, the evaluator is
+wrong.
+
+### Why the previous task was replaced
+
+The first offline task was a contextual bandit over one betting decision (`--task equity`,
+still available). It was a bad instrument and the numbers said so: a bet-everything policy
+scored well on mean regret while being wrong about which bet, a random policy scored well
+on optimal-action-rate by folding often, and **the two metrics ranked the conditions in
+opposite orders**. No amount of tuning on top of a broken measurement means anything. Kuhn
+has no such hole — one number, exact, and a degenerate policy cannot flatter itself on it.
+
+It also suits the circuit. The finding above was that the mushroom body separates discrete
+cues but does not interpolate continuous ones. Kuhn's cues *are* discrete — three cards
+— so nothing has to be quantised by hand, and the task still demands bluffing and
+bluff-catching, which the equity game never did.
+
+---
+
 ## Controls — the bar the viral demos skip
 
 The flychess authors stated it plainly: *"we commit to reward-conditioned experiments and
@@ -196,7 +261,8 @@ no fly-brain demo clears it. A connectome-shaped network can perform a task for 
 that have nothing to do with the fly — the readout alone may be carrying it.
 
 ```bash
-python -m poker.flybrain.cli controls --hands 1000
+python -m poker.flybrain.cli reference          # the fixed points, and the self-test
+python -m poker.flybrain.cli controls --hands 4000
 ```
 
 | Control | What it breaks | What it proves |
@@ -207,8 +273,6 @@ python -m poker.flybrain.cli controls --hands 1000
 
 **If `real connectome` does not beat `shuffled`, no claim about the fly's circuit is
 supported.** Calibrate each condition to the same KC sparsity first.
-
----
 
 ## Setup
 
@@ -261,12 +325,58 @@ rule-based `Decision`. The bot must never stop playing because the fly failed.
 ## Status
 
 Working and measured: the loader, the circuit extraction, the LIF engine, the encoding,
-the legality guarantees, the plasticity wiring and sign, save/load, the controls, and the
-offline harness. 37 tests pass on the synthetic connectome; pylint 9.99/10. Calibration
-findings 1–4 above are reproducible.
+the legality guarantees, the plasticity wiring and sign, save/load, the controls, the
+Kuhn implementation (self-tested against the published game value and zero Nash
+exploitability), and the offline harness. 54 tests pass on the synthetic connectome;
+pylint 9.95/10. Calibration findings 1–4 above are reproducible.
 
-**It has not been shown that the connectome contributes.** On the offline equity game,
-900 training hands then 300 evaluation hands per condition:
+### Kuhn result: learning is real, the policy is degenerate
+
+4000 training hands against a 50/50 mix of an equilibrium and a uniform-random opponent,
+real MaleCNS wiring, evaluated exactly:
+
+| | exploitability (pure) | exploitability (mixed) | chips vs Nash | chips vs random |
+|---|---|---|---|---|
+| before | 1.0833 | 0.4901 | −0.1667 | −0.4583 |
+| **after** | **0.3333** | 0.3333 | **−0.1111** | **+0.3333** |
+| reference | 0.1667 best pure / 0 Nash | 0 Nash | 0 = optimal | 0.4583 max |
+
+**All four metrics moved the right way together.** That is the thing the equity game could
+never show: there, regret and optimal-action-rate ranked the conditions in opposite
+directions. Here exploitability, the Nash ceiling and the exploitation of a weak opponent
+all agree, which is the evidence that the instrument itself is sound. Against a random
+opponent the fly captures 0.3333 of the 0.4583 available — **73% of the maximum
+exploitation**.
+
+But look at what it learned:
+
+| | J | Q | K |
+|---|---|---|---|
+| open | bet | bet | bet |
+| vs a check | **check** | bet | bet |
+| facing a bet | call | call | call |
+
+It aggresses almost everywhere. That is a degenerate policy, and three things follow from
+it:
+
+1. **It is 2× worse than the best deterministic policy** (0.3333 vs 0.1667). It is not
+   close to good Kuhn play; it is good at beating a random opponent.
+2. **Mixing collapsed.** `exploitability(pure) == exploitability(mixed)` means the readout
+   saturated, so the softmax is effectively deterministic and the temperature knob does
+   nothing. Equilibrium in Kuhn requires mixing, so in this state equilibrium is
+   unreachable by construction.
+3. **The opponent mix caused it.** Half the training opponent folds and calls at random,
+   which pays aggression richly; the equilibrium half does not punish it hard enough to
+   counteract that.
+
+So: the module learns, measurably and reproducibly, and what it learns is "bet always".
+Whether the *connectome* contributes to even that is still open — the Kuhn control runs
+(real vs shuffled vs frozen) answer that and have not been run yet.
+
+### Historical: the equity-game controls
+
+These were measured on the task Kuhn replaced, and are kept only to record why it was
+replaced. 900 training hands then 300 evaluation hands per condition:
 
 | condition | regret (bb) | optimal action % |
 |---|---|---|
@@ -275,23 +385,11 @@ findings 1–4 above are reproducible.
 | frozen (no plasticity) | **1.739** | 1.0% |
 | random actions | 3.585 | 27.7% |
 
-Three things to read off this, none of them flattering:
-
-1. **Real barely beats shuffled** (2.176 vs 2.393, ~9%), which is inside the noise of 300
-   hands. By the standard this module set itself, that means the specific wiring is not
-   demonstrably doing anything.
-2. **Turning plasticity off makes it better** (1.739). The learning rule as implemented
-   is a net negative, so the KC→MBON depression and the readout update are fighting each
-   other or the credit assignment across a hand is wrong.
-3. **Regret and optimal-action-rate disagree completely.** Low-regret policies almost
-   never pick the exact best action, and the high-optimal-rate policies have worse regret.
-   The equity game rewards betting often enough that a bet-heavy policy scores well on
-   regret while being wrong about which bet; a random policy folds sometimes and collects
-   the hands where folding was optimal. **The task is not yet a good measuring
-   instrument**, and fixing that comes before any further tuning.
-
-Earlier training runs did show regret roughly halving within a condition (9.48 → 4.52),
-so the machinery learns *something* — it just does not beat its own controls.
+Real barely beat shuffled (~9%, inside the noise of 300 hands); turning plasticity off
+made it *better*; and the two metrics ranked the conditions in opposite orders. The third
+of those is what condemned the task rather than the fly — a measurement that disagrees
+with itself cannot answer the question. Earlier runs did show regret roughly halving
+within a condition (9.48 → 4.52), so the machinery learns something.
 
 So: a working instrument and an honest negative result, not a fly that plays poker.
 Saying so is the point. `flychess` reports no performance metrics at all, and `Stonkfly`
@@ -299,15 +397,21 @@ and `OpenFly` both state that no profitable edge has been demonstrated.
 
 ### What to do next, in order
 
-1. **Replace the equity game with Kuhn poker**, then Leduc. Both are solved, so distance
-   from the known optimal strategy is exactly measurable and a single number cannot be
-   gamed by a degenerate policy. This is the prerequisite for trusting anything else.
-2. **Fix credit assignment.** Reinforcing every decision in a hand with the hand's final
-   payoff is crude; the frozen-beats-plastic result points here first.
-3. **Re-calibrate each condition to equal KC sparsity** before comparing, using
-   `controls.calibrate_gain()`. The real and shuffled networks do not currently sit at the
-   same operating point, and the gain window is narrow.
-4. Only then consider whole-brain scope, or more MBON readout capacity.
+1. **Run the Kuhn controls** — `real` against `shuffled` and `frozen`, both calibrated to
+   the same KC sparsity via `controls.calibrate_gain()`, since the gain window is narrow
+   and a rewired network does not sit at the same operating point. Until this runs, no
+   claim about the fly's wiring is supported, only about the module as a whole.
+2. **Stop the readout saturating**, so a mixed policy survives extraction. Equilibrium in
+   Kuhn needs mixing; a saturated readout makes it unreachable no matter how long it
+   trains. Bounding the score magnitude or adding an entropy term are the obvious levers.
+3. **Re-weight or change the training opponent.** The 50/50 mix rewards blanket
+   aggression. Training against equilibrium alone, or self-play with per-seat credit,
+   removes the incentive that produced "bet always".
+4. **Fix credit assignment.** Reinforcing every decision in a hand with the final payoff
+   is crude. Kuhn hands are 1–2 decisions long, which makes this far easier to isolate
+   than the previous task did.
+5. Only then: Leduc poker (still exactly solvable), whole-brain scope, or more MBON
+   readout capacity.
 
 ### Not verified in this environment
 

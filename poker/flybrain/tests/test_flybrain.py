@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 from poker.flybrain import connectome as connectome_mod
-from poker.flybrain import controls, decoding, encoding
+from poker.flybrain import controls, decoding, encoding, kuhn
 from poker.flybrain.brain import FlyBrain
 from poker.flybrain.cli import EquityGame, OfflineTable, run_episodes
 from poker.flybrain.config import (FlyBrainConfig, LIFParams, RunMode, Scope)
@@ -429,3 +429,147 @@ def test_log_dict_reports_both_sides(fly_decision_cls):
     assert row['fly_decision'] in decoding.ACTIONS
     assert row['fly_synthetic_connectome'] is True
     assert row['fly_mode'] == 'shadow'
+
+
+# --- Kuhn poker -------------------------------------------------------------------
+#
+# The point of Kuhn poker here is that it can be checked against published facts rather
+# than against itself, so these tests assert the facts.
+
+def test_kuhn_has_twelve_information_sets():
+    """Six per player. If this is wrong, the game tree is wrong."""
+    assert len(kuhn.INFO_SETS) == 12
+    assert len(set(kuhn.INFO_SETS)) == 12
+
+
+def test_kuhn_game_value_across_the_nash_family():
+    """Every member of player 1's equilibrium family must yield exactly -1/18."""
+    for alpha in (0.0, 1.0 / 12.0, 1.0 / 6.0, 1.0 / 4.0, 1.0 / 3.0):
+        value = kuhn.expected_value(kuhn.nash_policy(alpha))
+        assert value == pytest.approx(-1.0 / 18.0, abs=1e-12)
+
+
+def test_kuhn_nash_is_unexploitable():
+    """Exploitability must be exactly zero at equilibrium, in both seats."""
+    for alpha in (0.0, 1.0 / 6.0, 1.0 / 3.0):
+        policy = kuhn.nash_policy(alpha)
+        assert kuhn.exploitability(policy) == pytest.approx(0.0, abs=1e-12)
+        assert kuhn.best_response_value(policy, 1) == pytest.approx(-1.0 / 18.0, abs=1e-12)
+        assert kuhn.best_response_value(policy, 2) == pytest.approx(1.0 / 18.0, abs=1e-12)
+
+
+def test_kuhn_rejects_alpha_outside_the_family():
+    """alpha beyond 1/3 is not an equilibrium and must not be silently accepted."""
+    with pytest.raises(ValueError):
+        kuhn.nash_policy(0.5)
+    with pytest.raises(ValueError):
+        kuhn.nash_policy(-0.1)
+
+
+def test_kuhn_exploitability_is_never_negative():
+    """Minimax guarantees it. A negative value would mean the evaluator is broken."""
+    for policy in (kuhn.uniform_policy(), kuhn.always_pass_policy(),
+                   kuhn.nash_policy(0.2)):
+        assert kuhn.exploitability(policy) >= -1e-12
+
+
+def test_kuhn_known_baseline_exploitabilities():
+    """Two reference policies, against values that can be derived by hand."""
+    assert kuhn.exploitability(kuhn.uniform_policy()) == pytest.approx(0.458333, abs=1e-5)
+    assert kuhn.exploitability(kuhn.always_pass_policy()) == pytest.approx(1.0, abs=1e-12)
+
+
+def test_kuhn_payoffs_are_zero_sum_and_signed_correctly():
+    """Folding loses the pot; a showdown after a bet is worth two chips."""
+    assert kuhn.payoff_to_p1('bp', kuhn.JACK, kuhn.KING) == 1      # P2 folded
+    assert kuhn.payoff_to_p1('pbp', kuhn.KING, kuhn.JACK) == -1    # P1 folded
+    assert kuhn.payoff_to_p1('pp', kuhn.KING, kuhn.QUEEN) == 1
+    assert kuhn.payoff_to_p1('pp', kuhn.JACK, kuhn.QUEEN) == -1
+    assert kuhn.payoff_to_p1('bb', kuhn.KING, kuhn.JACK) == 2
+    assert kuhn.payoff_to_p1('pbb', kuhn.JACK, kuhn.KING) == -2
+
+
+def test_kuhn_terminal_histories_are_complete():
+    """Every legal continuation must terminate or be a known decision point."""
+    for history in kuhn.HISTORIES:
+        for action in (kuhn.PASS, kuhn.AGGRESS):
+            nxt = history + action
+            assert kuhn.is_terminal(nxt) or nxt in kuhn.HISTORIES, nxt
+
+
+def test_kuhn_legal_actions_match_the_betting_state():
+    """Facing a bet you may fold or call; otherwise you may check or bet."""
+    assert kuhn.legal_fly_actions('') == ('Check', 'Bet')
+    assert kuhn.legal_fly_actions('p') == ('Check', 'Bet')
+    assert kuhn.legal_fly_actions('b') == ('Fold', 'Call')
+    assert kuhn.legal_fly_actions('pb') == ('Fold', 'Call')
+
+
+def test_kuhn_table_presents_true_card_equities():
+    """J beats neither other card, Q beats one, K beats both."""
+    assert kuhn.KuhnTable(kuhn.JACK, '').abs_equity == pytest.approx(0.0)
+    assert kuhn.KuhnTable(kuhn.QUEEN, '').abs_equity == pytest.approx(0.5)
+    assert kuhn.KuhnTable(kuhn.KING, '').abs_equity == pytest.approx(1.0)
+
+
+def test_kuhn_allowed_actions_are_a_subset_of_the_live_legality_rules():
+    """Kuhn must never offer an action the live table logic would forbid.
+
+    Not an equality: the generic rules offer three bet sizes because a real table does,
+    while Kuhn has one fixed 1-chip bet, so Kuhn is a strict subset on the betting side.
+    What must agree is that nothing Kuhn allows is illegal, and that the two agree on
+    which actions are passive and which aggressive.
+    """
+    for history in kuhn.HISTORIES:
+        table = kuhn.KuhnTable(kuhn.QUEEN, history)
+        live = set(decoding.legal_actions(table))
+        kuhn_allowed = set(kuhn.legal_fly_actions(history))
+        assert kuhn_allowed <= live, f"{history!r}: {kuhn_allowed - live} not legal live"
+
+        aggressive_live = {a for a in live if kuhn.action_is_aggressive(a)}
+        aggressive_kuhn = {a for a in kuhn_allowed if kuhn.action_is_aggressive(a)}
+        assert bool(aggressive_kuhn) == bool(aggressive_live)
+        assert len(kuhn_allowed) == 2, "every Kuhn decision is binary"
+
+
+def test_kuhn_facing_a_bet_the_two_paths_agree_exactly():
+    """With a bet to call there is only one aggressive option, so they must coincide."""
+    for history in ('b', 'pb'):
+        table = kuhn.KuhnTable(kuhn.QUEEN, history)
+        assert decoding.legal_actions(table) == kuhn.legal_fly_actions(history)
+
+
+def test_kuhn_histories_map_to_distinct_feature_codes():
+    """Each decision point must look different to the fly, or it cannot act on it."""
+    codes = {encoding.features_from_table(kuhn.KuhnTable(kuhn.QUEEN, h)).tobytes()
+             for h in kuhn.HISTORIES}
+    assert len(codes) == len(kuhn.HISTORIES)
+
+
+def test_kuhn_self_test_passes():
+    """The module's own check against the published facts."""
+    assert kuhn.self_test() is True
+
+
+def test_extracted_policy_covers_every_information_set(brain):
+    """A policy missing an information set would silently be evaluated as pass-always."""
+    policy = kuhn.extract_policy(brain, temperature=0.0)
+    assert set(policy) == set(kuhn.INFO_SETS)
+    assert all(0.0 <= p <= 1.0 for p in policy.values())
+
+
+def test_pure_extraction_is_deterministic_and_cannot_beat_the_pure_floor(brain):
+    """At temperature 0 the policy is pure, so 1/6 is the best it could possibly be."""
+    policy = kuhn.extract_policy(brain, temperature=0.0)
+    assert all(p in (0.0, 1.0) for p in policy.values())
+    assert kuhn.exploitability(policy) >= 1.0 / 6.0 - 1e-9
+
+
+def test_play_hand_returns_a_legal_kuhn_payoff(brain):
+    """Chips won must be one of the four possible Kuhn outcomes."""
+    rng = np.random.default_rng(0)
+    for seat in (1, 2):
+        won, decisions = kuhn.play_hand(brain, kuhn.nash_policy(), seat, rng)
+        assert won in (-2, -1, 1, 2)
+        assert decisions >= 1
+    brain.abandon_hand()

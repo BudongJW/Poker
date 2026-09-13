@@ -118,6 +118,39 @@ def features_from_table(table, history=None):
     return np.asarray([values[name] for name in FEATURES], dtype=np.float32)
 
 
+class TableView:
+    """The attribute surface features_from_table() and legal_actions() read.
+
+    Offline tasks present their state by filling this in, so a synthetic hand and a
+    scraped hand reach the encoder through one code path rather than two that could drift
+    apart. Named for what it is - a view of a table - not a fake one, because the live
+    scraper object satisfies the same surface without inheriting from this.
+    """
+
+    # pylint: disable=too-many-instance-attributes,invalid-name,too-many-arguments
+    # pylint: disable=too-many-positional-arguments
+    def __init__(self, equity, pot, to_call, stack, stage, opponents=1,
+                 big_blind=1.0, min_bet=None):
+        self.abs_equity = equity
+        self.equity = equity
+        self.relative_equity = equity
+        self.totalPotValue = pot
+        self.round_pot_value = pot
+        self.minCall = to_call
+        self.minBet = min_bet if min_bet is not None else max(big_blind, pot * 0.25)
+        self.myFunds = stack
+        self.bigBlind = big_blind
+        self.smallBlind = big_blind / 2.0
+        self.gameStage = stage
+        self.assumedPlayers = opponents + 1
+        self.playersAhead = opponents
+        self.other_player_has_initiative = to_call > 0
+        self.checkButton = to_call == 0
+        self.callButton = to_call > 0
+        self.betButton = True
+        self.allInCallButton = False
+
+
 class OdourEncoder:
     """Assigns poker features to real glomeruli and produces ORN firing rates.
 
