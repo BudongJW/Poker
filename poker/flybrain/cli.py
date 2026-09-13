@@ -35,8 +35,7 @@ from poker.flybrain import controls as controls_mod
 from poker.flybrain import kuhn
 from poker.flybrain.brain import FlyBrain
 from poker.flybrain.encoding import TableView
-from poker.flybrain.config import (CALIBRATED_GAIN, FlyBrainConfig, LIFParams, RunMode,
-                                   Scope)
+from poker.flybrain.config import FlyBrainConfig, LIFParams, RunMode, Scope, gain_for
 
 log = logging.getLogger(__name__)
 
@@ -165,9 +164,8 @@ def _make_config(args, gain=None):
         seed=args.seed,
     )
     if gain is None:
-        gain = CALIBRATED_GAIN.get(getattr(args, 'task', 'kuhn'))
-    if gain is not None:
-        config.lif = LIFParams(synaptic_gain=gain)
+        gain = gain_for(getattr(args, 'task', 'kuhn'), synthetic=args.synthetic)
+    config.lif = LIFParams(synaptic_gain=gain)
     if getattr(args, 'no_plasticity', False):
         config.plasticity.enabled = False
     return config

@@ -59,10 +59,31 @@ MB_CLASSES = ('olfactory', 'ALPN', 'ALLN', 'Kenyon_Cell', 'MBON', 'DAN')
 # These are defaults for a single run on the real wiring. They are NOT a substitute for
 # calibration when connectome variants are compared: a rewired network sits at a different
 # operating point, so `controls` recalibrates every condition separately.
+# The synthetic stand-in needs its own gains: it matches the real data's population sizes
+# and edge count but not its degree structure, and at the real network's gain it is
+# silent - 1 Kenyon cell of 4,064 and MBONs at 0.00 Hz. That matters beyond the fallback,
+# because the whole test suite runs on it, and a dead network passes a sparsity test
+# without exercising anything.
 CALIBRATED_GAIN = {
-    'kuhn': 0.004994,    # 12 information sets -> 8.7% KC active
-    'equity': 0.004902,  # 8 representative equity states -> 8.1% KC active
+    'real': {
+        'kuhn': 0.004994,     # 12 information sets -> 8.7% KC active
+        'equity': 0.004902,   # 8 representative equity states -> 8.1% KC active
+    },
+    'synthetic': {
+        'kuhn': 0.011531,     # -> 9.0% KC active
+        'equity': 0.011585,   # -> 8.7% KC active
+    },
 }
+
+
+def gain_for(task='kuhn', synthetic=False):
+    """The calibrated synaptic gain for a task on real or synthetic wiring.
+
+    A single default cannot serve both: they are 2.3x apart. Falls back to the Kuhn value
+    for an unknown task rather than to a number nobody measured.
+    """
+    table = CALIBRATED_GAIN['synthetic' if synthetic else 'real']
+    return table.get(task, table['kuhn'])
 
 
 @dataclass
@@ -196,12 +217,32 @@ class FlyBrainConfig:
     play_money_only: bool = True
     confirmed_play_money: bool = False
 
+    # Where the learned state (plastic KC->MBON weights and the readout) is kept between
+    # sessions. Without this the fly starts from scratch on every bot restart and nothing
+    # it learns from live play survives, which makes a live track record meaningless -
+    # every session would be the fly's first. Set empty to disable persistence.
+    brain_path: str = 'poker/data/flybrain/live_brain.npz'
+    # Save every this many reinforced hands. A poker session ends by the process being
+    # killed far more often than by a clean shutdown, so periodic saving is what actually
+    # preserves the learning; 0 disables it.
+    save_every_hands: int = 25
+
     lif: LIFParams = field(default_factory=LIFParams)
     encoding: EncodingParams = field(default_factory=EncodingParams)
     plasticity: PlasticityParams = field(default_factory=PlasticityParams)
 
     # Reproducibility
     seed: int = 20260903  # MaleCNS v1.0 release date
+
+    def __post_init__(self):
+        """Pick the gain that matches the wiring, unless the caller set one.
+
+        The real and synthetic connectomes need gains 2.3x apart, and at the real one's
+        gain the synthetic stand-in is silent. Only fills in when `lif` was left at its
+        defaults: an explicitly configured gain is always respected.
+        """
+        if self.lif == LIFParams():
+            self.lif.synaptic_gain = gain_for(synthetic=self.use_synthetic)
 
     def as_dict(self):
         """Return a JSON-serialisable view, for logging alongside each decision."""
@@ -237,6 +278,8 @@ class FlyBrainConfig:
         cfg.cache_dir = _get('cache_dir', str, cfg.cache_dir)
         cfg.play_money_only = _get('play_money_only', bool, cfg.play_money_only)
         cfg.confirmed_play_money = _get('confirmed_play_money', bool, cfg.confirmed_play_money)
+        cfg.brain_path = _get('brain_path', str, cfg.brain_path)
+        cfg.save_every_hands = _get('save_every_hands', int, cfg.save_every_hands)
         cfg.plasticity.enabled = _get('plasticity', bool, cfg.plasticity.enabled)
         cfg.plasticity.learning_rate = _get('learning_rate', float, cfg.plasticity.learning_rate)
         cfg.seed = _get('seed', int, cfg.seed)

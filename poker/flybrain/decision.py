@@ -24,6 +24,7 @@ offline No scraper; used by cli.py for self-play and replay.
 
 # pylint: disable=too-many-arguments,too-many-positional-arguments,too-many-instance-attributes
 import logging
+import os
 
 from poker.decisionmaker.decisionmaker import Decision
 from poker.flybrain import decoding
@@ -37,7 +38,7 @@ _BRAIN_CACHE = {}
 
 # Re-exported so `from poker.flybrain.decision import PlayMoneyGuard` keeps working.
 __all__ = ['FlyDecision', 'PlayMoneyGuard', 'PlayMoneyDeclarationMissing',
-           'get_brain', 'reset_brain_cache']
+           'get_brain', 'reset_brain_cache', 'persist_brain']
 
 
 def get_brain(config=None):
@@ -45,13 +46,53 @@ def get_brain(config=None):
 
     Rebuilding per decision would re-read the cached connectome every hand and, worse,
     throw away everything the fly had learned.
+
+    On first build the saved state at `config.brain_path` is restored if it exists, so
+    learning carries across bot restarts. Without that, every session would be the fly's
+    first and a live track record would measure a permanently naive fly.
     """
     config = config or FlyBrainConfig()
     key = (config.scope.value, config.weight_threshold, config.use_synthetic,
            config.cache_dir, config.seed)
     if key not in _BRAIN_CACHE:
-        _BRAIN_CACHE[key] = FlyBrain(config)
+        brain = FlyBrain(config)
+        _restore(brain, config.brain_path)
+        _BRAIN_CACHE[key] = brain
     return _BRAIN_CACHE[key]
+
+
+def _restore(brain, path):
+    """Load saved state if there is any. A missing or broken file is not fatal."""
+    if not path or not os.path.exists(path):
+        if path:
+            log.info("No saved fly brain at %s; starting from an untrained readout", path)
+        return False
+    try:
+        brain.load(path)
+        return True
+    except (OSError, ValueError, KeyError) as exc:
+        # A corrupt save must not stop the bot playing; it just starts untrained.
+        log.warning("Could not load the fly brain from %s (%s); starting untrained",
+                    path, exc)
+        return False
+
+
+def persist_brain(brain, config, force=False):
+    """Save the brain every `save_every_hands` reinforced hands.
+
+    A poker session almost always ends by the process being killed rather than by a clean
+    shutdown, so saving on exit would lose the session. Returns True if it wrote.
+    """
+    path = getattr(config, 'brain_path', '')
+    every = getattr(config, 'save_every_hands', 0)
+    if not path or (not force and (not every or brain.hands_reinforced % every)):
+        return False
+    try:
+        brain.save(path)
+        return True
+    except (OSError, ValueError) as exc:
+        log.warning("Could not save the fly brain to %s (%s)", path, exc)
+        return False
 
 
 def reset_brain_cache():
@@ -106,8 +147,14 @@ class FlyDecision(Decision):
                      self.fly_decision, self.baseline_decision)
 
     def reinforce(self, reward_bb):
-        """Hand the hand's result to the fly. Call once a hand's outcome is known."""
-        return self.brain.reinforce(reward_bb)
+        """Hand the hand's result to the fly. Call once a hand's outcome is known.
+
+        Persists periodically so a killed session keeps what it learned.
+        """
+        result = self.brain.reinforce(reward_bb)
+        if persist_brain(self.brain, self.config):
+            result = dict(result, saved_to=self.config.brain_path)
+        return result
 
     def log_dict(self):
         """Fly-specific fields to record alongside the normal game log row."""

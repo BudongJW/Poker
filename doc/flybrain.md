@@ -104,7 +104,16 @@ the real connectome:
 | 12 Kuhn information sets | **0.004994** | 8.7% |
 | 8 representative equity states | **0.004902** | 8.1% |
 
-Both live in `config.CALIBRATED_GAIN`, and `LIFParams.synaptic_gain` defaults to 0.0050.
+The **synthetic** stand-in needs its own gains — 0.011531 (Kuhn) and 0.011585 (equity),
+2.3× higher. It matches the real data's population sizes and edge count but not its degree
+structure, and at the real network's gain it is silent: 1 Kenyon cell of 4,064 and MBONs
+at 0.00 Hz. That matters beyond the no-download fallback, because the test suite runs on
+it and a dead network passes a sparsity assertion without exercising anything.
+`config.gain_for(task, synthetic=)` returns the right one and `FlyBrainConfig` applies it
+unless the caller set a gain explicitly.
+
+All four live in `config.CALIBRATED_GAIN`, and `LIFParams.synaptic_gain` defaults to the
+real/Kuhn value of 0.0050.
 The previous single default of **0.0026 was stale**: it was derived on equity-game states
 before the encoder gained tuning-curve quantisation, disjoint glomerulus banks and
 target-mean-rate normalisation, and was never re-derived afterwards. At 0.0026 the real
@@ -231,6 +240,13 @@ Two further properties worth knowing: win rates are computed over settled **hand
 decisions, so a hand the fly acted in three times does not outweigh one it acted in once;
 and any decision made on a synthetic connectome is flagged in the report, because such a
 record says nothing about the fly.
+
+**Learning persists across restarts.** `get_brain()` restores `config.brain_path` on first
+build and `reinforce()` re-saves every `save_every_hands` hands. Without this every
+session would start an untrained fly, so a live record would measure a permanently naive
+one however many hands it contained; saving only at shutdown would lose the session,
+because a poker run ends by the process being killed far more often than cleanly. A
+missing or corrupt state file costs the fly its memory, never the session.
 
 Start in shadow mode — it validates perception and the decision path against real states
 before the fly is given the mouse. Then switch to active for a track record that is

@@ -6,6 +6,7 @@ exercises every code path; what it cannot do is say anything about the fly, whic
 why test_synthetic_is_flagged exists.
 """
 
+import os
 from types import SimpleNamespace
 
 import numpy as np
@@ -17,7 +18,7 @@ from poker.flybrain.brain import FlyBrain
 from poker.flybrain.cli import (EquityGame, OfflineTable, calibration_tables,
                                 run_episodes)
 from poker.flybrain.config import (CALIBRATED_GAIN, FlyBrainConfig, LIFParams, RunMode,
-                                   Scope)
+                                   Scope, gain_for)
 from poker.flybrain.guard import PlayMoneyDeclarationMissing, PlayMoneyGuard
 
 
@@ -458,9 +459,35 @@ def test_synthetic_decisions_are_flagged_in_the_report(tmp_path):
 def test_default_gain_is_the_re_derived_operating_point():
     """0.0026 predated the encoder changes and left the network silent on Kuhn states."""
     assert LIFParams().synaptic_gain == pytest.approx(0.0050, abs=0.0005)
-    assert set(CALIBRATED_GAIN) == {'kuhn', 'equity'}
-    for task, gain in CALIBRATED_GAIN.items():
-        assert 0.004 < gain < 0.006, f"{task} gain {gain} is not the re-derived point"
+    assert set(CALIBRATED_GAIN) == {'real', 'synthetic'}
+    for task, gain in CALIBRATED_GAIN['real'].items():
+        assert 0.004 < gain < 0.006, f"real/{task} gain {gain} is not the re-derived point"
+
+
+def test_synthetic_wiring_gets_its_own_gain():
+    """At the real network's gain the stand-in is silent, so it cannot share it."""
+    assert gain_for(synthetic=True) > 2 * gain_for(synthetic=False)
+    assert FlyBrainConfig(use_synthetic=True).lif.synaptic_gain == pytest.approx(
+        gain_for(synthetic=True))
+    assert FlyBrainConfig().lif.synaptic_gain == pytest.approx(gain_for())
+
+
+def test_an_explicit_gain_is_never_overridden():
+    """Calibration sweeps set the gain by hand; the default must not fight them."""
+    config = FlyBrainConfig(use_synthetic=True, lif=LIFParams(synaptic_gain=0.0031))
+    assert config.lif.synaptic_gain == pytest.approx(0.0031)
+
+
+def test_the_test_connectome_is_not_silent(brain):
+    """A dead network passes a sparsity assertion without exercising anything.
+
+    This suite runs on the synthetic stand-in, so if it is silent most of these tests
+    are vacuous. Guards the regression that shipped when the real gain was re-derived
+    and the stand-in was left behind at it.
+    """
+    observation = brain.decide(_table())
+    assert (observation.kc_counts > 0).sum() > 20, "Kenyon cells are effectively silent"
+    assert float(observation.mbon_rates.max()) > 0.0, "no MBON is firing at all"
 
 
 # --- the offline task ------------------------------------------------------------
@@ -551,6 +578,63 @@ def _run_fly_decision(cls_and_connectome, **config_kwargs):
     instance = cls(table, None, None, None, config=config, brain=brain)
     instance.make_decision(table, None, None, None)
     return instance
+
+
+def test_learning_survives_a_restart(fly_decision_cls, tmp_path):
+    """Without persistence every session is the fly's first and live play accumulates
+    nothing, which would make a live track record meaningless."""
+    from poker.flybrain import decision as decision_mod  # pylint: disable=import-outside-toplevel
+
+    path = str(tmp_path / 'live_brain.npz')
+    instance = _run_fly_decision(fly_decision_cls, mode=RunMode.shadow,
+                                 brain_path=path, save_every_hands=1)
+    instance.reinforce(2.0)
+    assert os.path.exists(path), "reinforce() did not persist the brain"
+    trained = instance.brain.decoder.state_dict()['weights'].copy()
+    hands = instance.brain.hands_reinforced
+
+    restarted = _run_fly_decision(fly_decision_cls, mode=RunMode.shadow,
+                                  brain_path=path, save_every_hands=1)
+    assert not np.array_equal(restarted.brain.decoder.state_dict()['weights'], trained)
+    assert decision_mod._restore(restarted.brain, path) is True  # pylint: disable=protected-access
+    assert np.array_equal(restarted.brain.decoder.state_dict()['weights'], trained)
+    assert restarted.brain.hands_reinforced == hands
+
+
+def test_a_missing_or_corrupt_save_never_stops_the_bot(fly_decision_cls, tmp_path):
+    """A bad state file must cost the fly its memory, not the session."""
+    from poker.flybrain import decision as decision_mod  # pylint: disable=import-outside-toplevel
+
+    instance = _run_fly_decision(fly_decision_cls, mode=RunMode.shadow)
+    missing = str(tmp_path / 'not-here.npz')
+    assert decision_mod._restore(instance.brain, missing) is False  # pylint: disable=protected-access
+
+    corrupt = tmp_path / 'corrupt.npz'
+    corrupt.write_bytes(b'not an npz at all')
+    assert decision_mod._restore(instance.brain, str(corrupt)) is False  # pylint: disable=protected-access
+
+
+def test_persistence_respects_the_save_interval(fly_decision_cls, tmp_path):
+    """Saving on every hand would write megabytes per minute during live play."""
+    path = str(tmp_path / 'b.npz')
+    instance = _run_fly_decision(fly_decision_cls, mode=RunMode.shadow,
+                                 brain_path=path, save_every_hands=3)
+    written = []
+    for _ in range(6):
+        instance.brain.pending.append(instance.fly_observation)
+        instance.reinforce(1.0)
+        written.append(os.path.exists(path))
+    # Nothing on hands 1-2, then a write on the third and sixth.
+    assert written[0] is False and written[2] is True
+
+
+def test_persistence_can_be_switched_off(fly_decision_cls, tmp_path):
+    """An empty brain_path means the operator does not want a state file."""
+    path = tmp_path / 'should-not-appear.npz'
+    instance = _run_fly_decision(fly_decision_cls, mode=RunMode.shadow,
+                                 brain_path='', save_every_hands=1)
+    instance.reinforce(1.0)
+    assert not path.exists()
 
 
 def test_shadow_mode_leaves_the_baseline_driving(fly_decision_cls):
