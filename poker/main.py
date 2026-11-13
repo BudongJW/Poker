@@ -228,7 +228,7 @@ class ThreadManager(threading.Thread):
                     action_options['increases_num'] = strategy.selected_strategy['BetPlusInc']
 
                 if self.gui_signals.ui.auto_act.isChecked():
-                    mouse.mouse_action(mouse_target, table.tlc, action_options)
+                    mouse.mouse_action(mouse_target, table.screen_tlc, action_options)
                 else:
                     input("=== Press Enter to continue ===")
                     

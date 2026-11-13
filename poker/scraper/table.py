@@ -45,6 +45,7 @@ class Table(TableScraper):
             try:
                 vb = VirtualBoxController()
                 self.entireScreenPIL = vb.get_screenshot_vbox()
+                self.capture_offset = (0, 0)
                 self.logger.debug("Screenshot taken from virtual machine")
             except:
                 self.logger.warning("No virtual machine found. Press SETUP to re initialize the VM controller")

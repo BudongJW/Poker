@@ -2940,6 +2940,16 @@ Then check the console output for error messages.</string>
              <number>9</number>
             </property>
             <item>
+             <widget class="QPushButton" name="capture_target_button">
+              <property name="toolTip">
+               <string>Choose what screenshots capture: the full screen, a screen region or one game window</string>
+              </property>
+              <property name="text">
+               <string>Capture area...</string>
+              </property>
+             </widget>
+            </item>
+            <item>
              <widget class="QPushButton" name="take_screenshot_button">
               <property name="font">
                <font>
@@ -2950,7 +2960,7 @@ Then check the console output for error messages.</string>
                </font>
               </property>
               <property name="toolTip">
-               <string>Takes a screenshot of the entire screen. This is the first step you need to take</string>
+               <string>Takes a screenshot of the capture area (by default the entire screen). This is the first step you need to take</string>
               </property>
               <property name="text">
                <string>Take screenshot</string>

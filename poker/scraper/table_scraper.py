@@ -3,8 +3,9 @@ import logging
 
 from poker.scraper.table_scraper_nn import predict
 from poker.scraper.table_setup_actions_and_signals import CARD_SUITES, CARD_VALUES
+from poker.tools import constants as const
 from poker.tools.helper import get_dir
-from poker.tools.screen_operations import take_screenshot, crop_screenshot_with_topleft_corner, \
+from poker.tools.screen_operations import take_screenshot_with_offset, crop_screenshot_with_topleft_corner, \
     is_template_in_search_area, binary_pil_to_cv2, ocr
 
 log = logging.getLogger(__name__)
@@ -29,10 +30,25 @@ class TableScraper:
         self.call_button = None
         self.raise_button = None
         self.tlc = None
+        self.capture_offset = (0, 0)  # screen position of the screenshot's top left pixel
+        self.capture_target = None  # None: use the capture target from config.ini
 
     def take_screenshot2(self):
-        """Take a screenshot"""
-        self.screenshot = take_screenshot()
+        """Take a screenshot of the capture target (full screen, region or game window)"""
+        self.screenshot, self.capture_offset = take_screenshot_with_offset(target=self.capture_target)
+
+    @property
+    def screen_tlc(self):
+        """Top left corner in screen coordinates, used for mouse clicks"""
+        if self.tlc is None:
+            return None
+        return self.tlc[0] + self.capture_offset[0], self.tlc[1] + self.capture_offset[1]
+
+    def crop_at_known_top_left_corner(self):
+        """Crop self.screenshot at the top left corner found before, without searching again"""
+        self.screenshot = self.screenshot.crop(
+            (self.tlc[0], self.tlc[1], self.tlc[0] + const.CROP_WIDTH, self.tlc[1] + const.CROP_HEIGHT))
+        return self.screenshot
 
     def crop_from_top_left_corner(self):
         """Crop top left corner based on the current selected table dict and replace self.screnshot with it"""

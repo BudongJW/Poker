@@ -7,7 +7,7 @@
     <x>0</x>
     <y>0</y>
     <width>263</width>
-    <height>326</height>
+    <height>420</height>
    </rect>
   </property>
   <property name="sizeIncrement">
@@ -31,13 +31,13 @@
      <x>32</x>
      <y>15</y>
      <width>222</width>
-     <height>302</height>
+     <height>396</height>
     </rect>
    </property>
    <property name="minimumSize">
     <size>
      <width>222</width>
-     <height>302</height>
+     <height>396</height>
     </size>
    </property>
   </widget>
@@ -46,8 +46,8 @@
     <rect>
      <x>9</x>
      <y>9</y>
-     <width>201</width>
-     <height>257</height>
+     <width>241</width>
+     <height>351</height>
     </rect>
    </property>
    <layout class="QVBoxLayout" name="verticalLayout">
@@ -110,6 +110,33 @@
     </item>
     <item>
      <widget class="QLineEdit" name="password"/>
+    </item>
+    <item>
+     <widget class="QLabel" name="label_capture">
+      <property name="text">
+       <string>Capture area</string>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QLabel" name="capture_target_label">
+      <property name="text">
+       <string>Full screen</string>
+      </property>
+      <property name="wordWrap">
+       <bool>true</bool>
+      </property>
+     </widget>
+    </item>
+    <item>
+     <widget class="QPushButton" name="capture_target_button">
+      <property name="toolTip">
+       <string>Choose whether the bot captures the full screen, a screen region or one game window</string>
+      </property>
+      <property name="text">
+       <string>Select capture area...</string>
+      </property>
+     </widget>
     </item>
     <item>
      <spacer name="verticalSpacer">

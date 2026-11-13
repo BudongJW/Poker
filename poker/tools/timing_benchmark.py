@@ -18,9 +18,14 @@ NOT part of the measured time and have to be added for a real setup:
   replaced by a desktop-sized image with the table placed in it
 * mouse movements and GUI updates
 
+The screenshot goes through the capture target code (poker.tools.capture_target):
+``--capture full_screen`` captures the whole desktop image, ``--capture window``
+only the table's window, like choosing the game window in the "Capture area" dialog.
+
 Usage::
 
     python -m poker.tools.timing_benchmark --repeat 20 --json result.json
+    python -m poker.tools.timing_benchmark --capture window --no-stages
 """
 import argparse
 import copy
@@ -43,6 +48,8 @@ from poker.decisionmaker.decisionmaker import Decision
 from poker.decisionmaker.montecarlo_python import run_montecarlo_wrapper
 from poker.scraper.table_screen_based import TableScreenBased
 from poker.scraper.table_setup_actions_and_signals import CARD_SUITES, CARD_VALUES
+from poker.tools import capture_target
+from poker.tools.capture_target import MODE_FULL_SCREEN, MODE_REGION, MODE_WINDOW, CaptureTarget
 from poker.tools.helper import get_config, get_dir
 from poker.tools.strategy_handler import StrategyHandler
 
@@ -50,10 +57,10 @@ from poker.tools.strategy_handler import StrategyHandler
 # pylint: disable=too-few-public-methods
 
 DESKTOP_SIZE = (1920, 1080)
-# The table is placed in the top left corner of the desktop. After a new hand is
-# detected, TableScreenBased.get_new_hand() takes a new screenshot without
-# cropping it again, so later steps only see the table when it starts at (0, 0).
-TABLE_OFFSET = (0, 0)
+# Screen position of the table window. It is not at the screen origin, so the
+# conversion of the top left corner to screen coordinates for mouse clicks is checked.
+TABLE_OFFSET = (200, 100)
+CAPTURE_MODES = (MODE_FULL_SCREEN, MODE_WINDOW)
 
 TABLE_SPECS = {
     'pokerstars_turn': {
@@ -256,7 +263,11 @@ def _area(box):
 
 
 def build_table_fixture(spec, seed=0):
-    """Build a table mapping and a desktop screenshot from a test screenshot."""
+    """
+    Build a table mapping and a desktop screenshot from a test screenshot.
+
+    Returns table_dict, desktop image and the table's rectangle on the desktop.
+    """
     path = os.path.join(get_dir('codebase'), 'tests', 'screenshots', spec['screenshot'])
     table_img = Image.open(path).convert('RGB')
     rng = np.random.default_rng(seed)
@@ -286,7 +297,30 @@ def build_table_fixture(spec, seed=0):
     background = rng.integers(20, 60, (DESKTOP_SIZE[1], DESKTOP_SIZE[0], 3), dtype=np.uint8)
     desktop = Image.fromarray(background)
     desktop.paste(table_img, TABLE_OFFSET)
-    return table_dict, desktop
+    table_rect = (TABLE_OFFSET[0], TABLE_OFFSET[1],
+                  TABLE_OFFSET[0] + table_img.size[0], TABLE_OFFSET[1] + table_img.size[1])
+    return table_dict, desktop, table_rect
+
+
+class FakeScreen:
+    """Stands in for the screen: grabbing returns the desktop image or a part of it."""
+
+    def __init__(self, desktop):
+        self.desktop = desktop
+
+    def grab(self, bbox=None):
+        return self.desktop if bbox is None else self.desktop.crop(bbox)
+
+    def install(self):
+        capture_target.grab_image = self.grab
+        return self
+
+
+def make_capture_target(capture, table_rect):
+    """Capture target for a capture mode. A window is captured like a region with the window's rectangle."""
+    if capture == MODE_WINDOW:
+        return CaptureTarget(MODE_REGION, region=table_rect)
+    return CaptureTarget(MODE_FULL_SCREEN)
 
 
 def recognition_steps(table, strategy, history, mouse, gui_signals):
@@ -351,22 +385,19 @@ class Counters:
         return self
 
 
-def new_table(table_dict, desktop, strategy, game_logger, gui_signals):
+def new_table(table_dict, target, strategy, game_logger, gui_signals):
     table = TableScreenBased(strategy, table_dict, gui_signals, game_logger, 0.0, None)
-
-    def fake_grab():
-        table.screenshot = desktop
-
-    table.take_screenshot2 = fake_grab
+    table.capture_target = target
     return table
 
 
-def run_recognition(table_dict, desktop, strategy, history, game_logger, counters):
+def run_recognition(table_dict, target, strategy, history, game_logger, counters):
+    """Run the ready chain once. The screen must be replaced with FakeScreen(...).install() before."""
     gui_signals = MagicMock()
     gui_signals.exit_thread = False
     gui_signals.pause_thread = False
     mouse = MagicMock()
-    table = new_table(table_dict, desktop, strategy, game_logger, gui_signals)
+    table = new_table(table_dict, target, strategy, game_logger, gui_signals)
     counters.template = counters.ocr = 0
     timings = {}
     start = time.perf_counter()
@@ -392,8 +423,11 @@ def run_calculation(table, strategy, history, game_logger, gui_signals, preflop_
             'runs': int(m.runs), 'equity': float(table.abs_equity), 'decision_value': d.decision}
 
 
-def check_expected(table, expected):
+def check_expected(table, expected, screen_tlc=TABLE_OFFSET):
+    """Compare recognized values and the top left corner in screen coordinates with the expected ones."""
+    expected = dict(expected, screen_tlc=tuple(screen_tlc))
     found = {
+        'screen_tlc': tuple(table.screen_tlc),
         'my_cards': sorted(table.mycards), 'table_cards': sorted(table.cardsOnTable),
         'game_stage': table.gameStage, 'dealer_position': table.dealer_position,
         'players_in_game': table.players_in_game, 'my_funds': table.myFunds,
@@ -431,8 +465,9 @@ def set_scenario(table, stage, opponents):
     return t
 
 
-def environment_info(repeat, warmup):
+def environment_info(repeat, warmup, capture):
     info = {
+        'capture': capture, 'table_offset': TABLE_OFFSET,
         'python': sys.version.split()[0], 'platform': platform.platform(),
         'processor': platform.processor() or platform.machine(), 'cpu_count': os.cpu_count(),
         'numpy': np.__version__, 'pandas': pd.__version__,
@@ -457,7 +492,9 @@ def new_history(preflop_sheet):
 
 def benchmark_table(spec, context, repeat, warmup):
     """Full decision cycles (recognition + calculation) on one table screenshot."""
-    table_dict, desktop = build_table_fixture(spec)
+    table_dict, desktop, table_rect = build_table_fixture(spec)
+    FakeScreen(desktop).install()
+    target = make_capture_target(context['capture'], table_rect)
     samples = {'recognition': [], 'montecarlo': [], 'decision': [], 'calculation': [], 'cycle': []}
     step_times = {}
     table = calc = None
@@ -466,7 +503,7 @@ def benchmark_table(spec, context, repeat, warmup):
         strategy.read_strategy()
         history = new_history(context['preflop_sheet'])
         table, recog_total, timings, gui_signals = run_recognition(
-            table_dict, desktop, strategy, history, context['game_logger'], context['counters'])
+            table_dict, target, strategy, history, context['game_logger'], context['counters'])
         calc = run_calculation(table, strategy, history, context['game_logger'], gui_signals,
                                CurrentHandPreflopState())
         if i < warmup:
@@ -483,6 +520,7 @@ def benchmark_table(spec, context, repeat, warmup):
     result = {name: stats(values) for name, values in samples.items()}
     result.update({
         'title': spec['title'],
+        'capture_size': list(table.entireScreenPIL.size),
         'recognition_without_fixed_sleep': stats(
             [r - s for r, s in zip(samples['recognition'], step_times['take_screenshot'])]),
         'steps': {name: stats(values) for name, values in step_times.items()},
@@ -516,18 +554,21 @@ def benchmark_stage(base, stage, opponents, context, repeat, warmup):
     return result
 
 
-def run_benchmark(repeat, warmup):
+def run_benchmark(repeat, warmup, capture=MODE_FULL_SCREEN, stages=True):
     context = {
+        'capture': capture,
         'game_logger': StubGameLogger(),
         'preflop_sheet': pd.read_excel(os.path.join(get_dir('codebase'), 'decisionmaker', 'preflop.xlsx'),
                                        sheet_name=None, engine='openpyxl'),
         'counters': Counters().install(),
     }
-    results = {'environment': environment_info(repeat, warmup), 'tables': {}, 'stages': {}}
+    results = {'environment': environment_info(repeat, warmup, capture), 'tables': {}, 'stages': {}}
 
     recognized = {}
     for key, spec in TABLE_SPECS.items():
         results['tables'][key], recognized[key] = benchmark_table(spec, context, repeat, warmup)
+    if not stages:
+        return results
 
     base = recognized['pokerstars_turn']
     for stage in STAGE_BOARDS:
@@ -550,7 +591,8 @@ def print_report(results):
 
     for key, res in results['tables'].items():
         print(f"\n=== {res['title']} ({key}) ===")
-        print(f"template searches: {res['counts']['template_searches']}, OCR calls: {res['counts']['ocr_calls']}")
+        print(f"captured image: {res['capture_size'][0]}x{res['capture_size'][1]}, "
+              f"template searches: {res['counts']['template_searches']}, OCR calls: {res['counts']['ocr_calls']}")
         print(f"mismatches against expected values: {res['mismatches'] or 'none'}")
         print(f"{'phase':<36}{'mean ms':>9}{'median':>9}{'p95':>9}{'max':>9}")
         for phase in ('recognition', 'recognition_without_fixed_sleep', 'montecarlo', 'decision',
@@ -562,6 +604,8 @@ def print_report(results):
             if s['mean'] >= 0.0005:
                 print(f"  {name:<34}{ms(s['mean'])}")
 
+    if not results['stages']:
+        return
     print("\n=== Calculation by game stage and active opponents ===")
     print(f"{'stage/opponents':<18}{'players':>8}{'MC runs':>9}{'MC mean':>9}{'dec mean':>9}"
           f"{'total':>9}{'p95':>9}")
@@ -574,6 +618,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n', maxsplit=1)[0])
     parser.add_argument('--repeat', type=int, default=20, help='measured iterations per scenario')
     parser.add_argument('--warmup', type=int, default=2, help='iterations not counted')
+    parser.add_argument('--capture', choices=CAPTURE_MODES, default=MODE_FULL_SCREEN,
+                        help='capture the full desktop or only the table window')
+    parser.add_argument('--no-stages', action='store_true', help='skip the calculation by game stage')
     parser.add_argument('--json', help='write raw results to this file')
     parser.add_argument('--verbose', action='store_true', help='show bot log output')
     args = parser.parse_args()
@@ -582,7 +629,7 @@ def main():
     if not args.verbose:
         logging.disable(logging.CRITICAL)
 
-    results = run_benchmark(args.repeat, args.warmup)
+    results = run_benchmark(args.repeat, args.warmup, args.capture, stages=not args.no_stages)
     print_report(results)
     if args.json:
         with open(args.json, 'w', encoding='utf-8') as fh:

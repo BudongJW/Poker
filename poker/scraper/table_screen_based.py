@@ -98,7 +98,7 @@ class TableScreenBased(Table):
 
         if imback:
             self.gui_signals.signal_status.emit("I am back found")
-            mouse.mouse_action("Imback", self.tlc)
+            mouse.mouse_action("Imback", self.screen_tlc)
             return False
         else:
             return True
@@ -112,7 +112,7 @@ class TableScreenBased(Table):
         if resume_hand:
             log.info("Resume hand found. Clicking resume hand button...")
             self.gui_signals.signal_status.emit("Resume hand")
-            mouse.mouse_action("resume_hand", self.tlc)
+            mouse.mouse_action("resume_hand", self.screen_tlc)
             return False
         else:
             return True
@@ -220,7 +220,7 @@ class TableScreenBased(Table):
 
             if found_card == '':
                 mouse_target = "Fold"
-                mouse.mouse_action(mouse_target, self.tlc)
+                mouse.mouse_action(mouse_target, self.screen_tlc)
                 log.info("-------- FAST FOLD -------")
                 return False
 
@@ -594,6 +594,8 @@ class TableScreenBased(Table):
 
             mouse.move_mouse_away_from_buttons_jump()
             self.take_screenshot(False, p)
+            # the new screenshot is not cropped yet, otherwise the following steps read the wrong areas
+            self.crop_at_known_top_left_corner()
         else:
             log.debug("Game number on screen: " + str(h.game_number_on_screen))
             self.get_my_funds(h, p)

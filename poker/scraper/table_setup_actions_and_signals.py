@@ -11,6 +11,7 @@ from PyQt6 import QtGui, QtWidgets
 from PyQt6.QtCore import Qt, QObject, pyqtSlot, pyqtSignal, QTimer, QCoreApplication
 from PyQt6.QtWidgets import QMessageBox, QSlider
 
+from poker.gui.capture_target_dialog import open_capture_target_dialog
 from poker.tools import constants as const
 from poker.scraper.table_scraper_nn import TRAIN_FOLDER
 from poker.tools.helper import COMPUTER_NAME, get_config, get_dir
@@ -83,6 +84,7 @@ class TableSetupActionAndSignals(QObject):
         self.ui.screenshot_widget.dragEnterEvent = self.drag_enter_event
         self.ui.screenshot_widget.dragMoveEvent = self.drag_move_event
         self.ui.screenshot_widget.dropEvent = self.drop_event
+        self.ui.capture_target_button.clicked.connect(lambda: self.open_capture_target())
         self.ui.take_screenshot_button.clicked.connect(lambda: self.take_screenshot_timed())
         self.ui.screenshot_slider.valueChanged.connect(lambda v: self.show_screenshot_at_slider_pos(v))
         self.ui.test_all_button.clicked.connect(lambda: self.test_all())
@@ -104,6 +106,10 @@ class TableSetupActionAndSignals(QObject):
         self.ui.load_screenshots_button.clicked.connect(lambda: self.load_screenshots())
         self.ui.save_screenshots_button.clicked.connect(lambda: self.save_screenshots())
         self.ui.append_checkbox.stateChanged.connect(lambda state: self.set_append(state))
+
+    def open_capture_target(self):
+        """Choose the capture area used for screenshots (full screen, region or game window)"""
+        self.capture_target_dialog = open_capture_target_dialog(self.ui)  # pylint: disable=attribute-defined-outside-init
 
     def load_screenshots(self):
         folder_str = QtWidgets.QFileDialog.getExistingDirectory(None, 'Select Folder')

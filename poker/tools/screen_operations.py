@@ -10,6 +10,7 @@ import numpy as np
 from PIL import Image, ImageGrab
 from tesserocr import PyTessBaseAPI, PSM, OEM
 
+from poker.tools.capture_target import CaptureTarget
 from poker.tools.helper import memory_cache, get_dir
 from poker.tools import constants as const
 from poker.tools.mongo_manager import MongoManager
@@ -162,22 +163,42 @@ def take_screenshot(virtual_box=False):
         PIL screenshot
 
     """
+    screenshot, _ = take_screenshot_with_offset(virtual_box)
+    return screenshot
+
+
+def take_screenshot_with_offset(virtual_box=False, target=None):
+    """
+    Take screenshot directly from screen or via virtualbox
+
+    Without virtualbox only the capture target (full screen, region or game window,
+    see poker.tools.capture_target) is captured.
+
+    Args:
+        virtual_box: bool
+        target: CaptureTarget, read from config.ini when None
+
+    Returns:
+        PIL screenshot, (x, y) screen position of the screenshot's top left pixel
+
+    """
     if not virtual_box:
         log.debug("Calling screen grabber")
-        screenshot = ImageGrab.grab()
-        log.debug("Direct screenshot successful")
+        target = target or CaptureTarget.from_config()
+        screenshot, offset = target.grab()
+        log.debug(f"Direct screenshot successful: {target.describe()}, offset {offset}")
+        return screenshot, offset
 
-    else:  # virtual_box
-        try:
-            vb = VirtualBoxController()
-            screenshot = vb.get_screenshot_vbox()
-            log.debug("Screenshot taken from virtual machine")
-        except:
-            log.warning(
-                "No virtual machine found. Press SETUP to re initialize the VM controller")
-            # gui_signals.signal_open_setup.emit(p,L)
-            screenshot = ImageGrab.grab()
-    return screenshot
+    try:
+        vb = VirtualBoxController()
+        screenshot = vb.get_screenshot_vbox()
+        log.debug("Screenshot taken from virtual machine")
+    except:
+        log.warning(
+            "No virtual machine found. Press SETUP to re initialize the VM controller")
+        # gui_signals.signal_open_setup.emit(p,L)
+        screenshot = ImageGrab.grab()
+    return screenshot, (0, 0)
 
 def normalize_rect(x1, y1, x2, y2):
     x1_ = min(x1, x2)

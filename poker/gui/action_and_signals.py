@@ -29,6 +29,8 @@ from poker.gui.gui_launcher import TableSetupForm, GeneticAlgo, SetupForm, Strat
 from poker.tools.mongo_manager import MongoManager
 
 from poker.tools.vbox_manager import VirtualBoxController
+from poker.gui.capture_target_dialog import open_capture_target_dialog
+from poker.tools.capture_target import CaptureTarget
 from PyQt6.QtWidgets import QMessageBox
 import webbrowser
 from poker.decisionmaker.genetic_algorithm import *  # pylint: disable=wildcard-import
@@ -411,6 +413,13 @@ class UIActionAndSignals(QObject):  # pylint: disable=undefined-variable
 
         self.ui_setup.login.setText(login)
         self.ui_setup.password.setText(password)
+
+        self.ui_setup.capture_target_label.setText(CaptureTarget.from_config(config).describe())
+        self.ui_setup.capture_target_button.clicked.connect(lambda: self.open_capture_target())
+
+    def open_capture_target(self):
+        self.capture_target_dialog = open_capture_target_dialog(  # pylint: disable=attribute-defined-outside-init
+            self.ui_setup, on_saved=lambda target: self.ui_setup.capture_target_label.setText(target.describe()))
 
     def save_setup(self):
         config = get_config()
