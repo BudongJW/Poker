@@ -408,7 +408,22 @@ def test_hand_percentiles():
 def test_action_lines():
     line = inference.parse_line("open/bet/check call", 6)
     assert [(street, code) for street, _, code in line] == [(0, 2), (1, 2), (2, 1), (2, 1)]
-    assert line[0][1] == (0, 0, 1, 3) and line[3][1] == (2, 1, 1, 3)
+    assert line[0][1] == (0, 0, 1, 3, 1, -1) and line[3][1] == (2, 1, 1, 3, 1, -1)      # seat unknown: pooled
+    # two players left in the hand at a six-handed table (the default): the button opened after three folds
+    seated = inference.parse_line("BTN: open/bet", 2)
+    assert seated[0][1] == (0, 0, 1, 1, 1, 3)               # pre-flop: three players left, short-handed table, button
+    assert seated[1][1] == (1, 0, 0, 0, 1, 2)               # flop: two left, the button acts last
+    assert inference.parse_line("utg: open/bet", 3, table=9)[0][1] == (0, 0, 1, 3, 2, 0)   # full ring, early seat
+    assert inference.parse_line("utg: open", 2)[0][1][3:] == (3, 1, 1)                     # six-handed UTG is a middle seat
+    assert inference.parse_line("sb: open/bet", 2, table=2)[1][1][4:] == (0, 2)            # heads-up table: the button
+    assert inference.parse_line("co: open/bet", 2)[1][1][5] == -1                          # last to act? unknown ...
+    assert inference.parse_line("co: open/bet", 2, "bb")[1][1][5] == 2                     # ... unless my seat is known
+    assert inference.parse_line("co: open/bet", 2, "btn")[1][1][5] == 0
+    assert inference.parse_line("open", 8)[0][1][4] == 2                                   # eight in the hand: a full table
+    with pytest.raises(ValueError):
+        inference.parse_line("open", 6, table=4)
+    with pytest.raises(ValueError):
+        inference.parse_line("dealer: open", 6)
     assert inference.parse_line("open//bet", 2)[1][0] == 2
     with pytest.raises(ValueError):
         inference.parse_line("open/jam", 2)
@@ -416,15 +431,61 @@ def test_action_lines():
         inference.range_from_line("open/bet/bet", "AsKs", "Qs Js 2d", 2)     # no turn on the board yet
 
 
+def test_seats_and_table_sizes():
+    names = lambda n, button=0: [inference.POSITIONS[inference.seat_class(seat, button, n)] for seat in range(n)]
+    assert names(6) == ["btn", "sb", "bb", "mp", "mp", "co"]
+    assert names(9) == ["btn", "sb", "bb", "ep", "ep", "ep", "mp", "mp", "co"]
+    assert names(4) == ["btn", "sb", "bb", "co"] and names(3) == ["btn", "sb", "bb"]
+    assert names(2, button=1) == ["bb", "btn"]
+    assert [inference.table_class(n) for n in (2, 3, 6, 7, 10, None)] == [0, 1, 1, 2, 2, -1]
+    # after the flop: first, in between, last among the players left (button = seat 0, seats 2 and 4 folded)
+    assert [inference.position_now(seat, 0, 6, {2, 4}, 1) for seat in (1, 3, 5, 0)] == [0, 1, 1, 2]
+    assert inference.position_now(3, 0, 6, {2, 4}, 0) == inference.POSITIONS.index("mp")
+
+    rng = random.Random(8)
+    bots = [make_bot("random", seed=i) for i in range(6)]
+    result = play_hand(bots, [1000] * 6, 2, 5, 10, rng)
+    seen = inference.observed(result.actions, 6, 2)
+    assert seen[0][0] == 5 and seen[0][2][4:] == (1, inference.POSITIONS.index("mp"))    # first to act six-handed
+    assert all(ctx[4] == 1 and 0 <= ctx[5] <= 5 for _, _, ctx, _ in seen)
+
+
+def test_model_shrinks_rare_seats_and_stores_only_what_it_saw(tmp_path):
+    counts = np.zeros(inference._SHAPE)
+    common = inference.context(0, 0, True, 6, 6, inference.POSITIONS.index("btn"))
+    rare = inference.context(0, 0, True, 6, 6, inference.POSITIONS.index("sb"))
+    counts[common][:, inference.AGGRESSIVE] = 900        # the button raised 90% of the time ...
+    counts[common][:, inference.GAVE_UP] = 100
+    counts[rare][:, inference.GAVE_UP] = 2               # ... the small blind was seen twice, folding
+    model = inference.ActionModel({"all": counts})
+    assert model.likelihood(common, inference.AGGRESSIVE)[0] == pytest.approx(0.9, abs=0.01)
+    assert 0.5 < model.likelihood(rare, inference.AGGRESSIVE)[0] < 0.9           # leans on the table average
+    unknown_seat = inference.context(0, 0, True, 6, 6)
+    unknown_table = inference.context(0, 0, True, 6)
+    assert model.likelihood(unknown_seat, inference.AGGRESSIVE)[0] == pytest.approx(900 / 1002, abs=0.01)
+    assert model.likelihood(unknown_table, inference.AGGRESSIVE)[0] == pytest.approx(900 / 1002, abs=0.01)
+
+    path = str(tmp_path / "model.json")
+    model.save(path)
+    assert len(json.load(open(path))["counts"]["all"]) == 2                      # two situations, not 1,728
+    assert (inference.ActionModel.load(path).counts["all"] == counts).all()
+    old_layout = json.load(open(path)); old_layout["shape"] = [4, 3, 2, 4, 10, 3]
+    json.dump(old_layout, open(path, "w"))
+    with pytest.raises(ValueError):
+        inference.ActionModel.load(path)
+
+
 def test_bundled_action_model_reads_strength_from_aggression():
     model = inference.default_model()
     assert {"all", "tag", "lag", "nit"} <= set(model.counts)
-    for ctx in ((0, 0, 1, 0), (1, 0, 0, 0), (3, 1, 1, 0)):
+    for ctx in (inference.context(0, 0, True, 2), inference.context(1, 0, False, 2, 6, 2),
+                inference.context(3, 1, True, 2, 9, 0)):
         total = sum(model.likelihood(ctx, action) for action in range(3))
         assert total == pytest.approx(np.ones(inference.N_BUCKETS))
-    raise_by_strength = model.likelihood((1, 0, 0, 0), inference.AGGRESSIVE)     # betting the flop heads-up
+    flop_bet = inference.context(1, 0, False, 2)                                 # betting the flop heads-up
+    raise_by_strength = model.likelihood(flop_bet, inference.AGGRESSIVE)
     assert raise_by_strength[-1] > 3 * raise_by_strength[0]
-    assert (model.likelihood((1, 0, 0, 0), inference.AGGRESSIVE, "someone new") == raise_by_strength).all()
+    assert (model.likelihood(flop_bet, inference.AGGRESSIVE, "someone new") == raise_by_strength).all()
 
     hero, board = parse_cards("AsKs"), parse_cards("Qs Js 2d")
     pct = inference.hand_percentiles(board)
@@ -443,15 +504,25 @@ def test_models_fitted_on_public_hand_histories():
     assert {"all", "nl25-50", "nl100-200", "nl400-600", "nl1000"} == set(online.counts)
     assert {"all", "pro", "pluribus"} == set(pro.counts)
     assert online.counts["all"].sum() > 1_000_000 and pro.counts["all"].sum() > 80_000
-    river_bet = (3, 1, 1, 0)                                     # heads-up on the river, facing a bet
+    river_bet = inference.context(3, 1, True, 2)                 # heads-up on the river, facing a bet
     for model in (online, pro):
         fold = model.likelihood(river_bet, inference.GAVE_UP)
         assert fold[0] > 0.8 > 0.2 > fold[-1]                    # weak hands fold, strong hands do not
         assert model.likelihood(river_bet, inference.AGGRESSIVE)[0] > 0.01      # and people do bluff-raise
     # real players bet weak hands when checked to far more often than the equity bots do
-    checked_to = (1, 0, 0, 0)
+    checked_to = inference.context(1, 0, False, 2)
     assert online.likelihood(checked_to, inference.AGGRESSIVE)[-1] < inference.default_model().likelihood(
         checked_to, inference.AGGRESSIVE)[-1]
+    # position: at a full table the button, folded to, opens far more hands than the first seat does
+    early = inference.context(0, 0, True, 9, 9, inference.POSITIONS.index("ep"))
+    button = inference.context(0, 0, True, 3, 9, inference.POSITIONS.index("btn"))
+    assert online.likelihood(button, inference.AGGRESSIVE).sum() > 1.5 * online.likelihood(early, inference.AGGRESSIVE).sum()
+    # table size: heads-up the button plays most hands, at a six-handed table the same seat count does not arise
+    duel = inference.context(0, 0, True, 2, 2, inference.POSITIONS.index("btn"))
+    assert online.likelihood(duel, inference.GAVE_UP).mean() < 0.5
+    seated = advisor.analyze("AsKs", "Qs Js 2d", lines=["ep: open/bet"], position="bb", table=9)
+    loose = advisor.analyze("AsKs", "Qs Js 2d", lines=["btn: open/bet"], position="bb", table=9)
+    assert seated["ranges"][0]["width"] < loose["ranges"][0]["width"]             # an early open is a tighter range
 
     a = advisor.analyze("AsKs", "Qs Js 2d", lines=["open/bet"])                  # the default reads with 'online'
     b = advisor.analyze("AsKs", "Qs Js 2d", lines=["open/bet"], model="selfplay")
@@ -485,7 +556,7 @@ def test_fit_and_score_on_self_play(tmp_path):
     model = inference.fit(path, hands=120, flop_runouts=20, processes=2)
     assert {"all", "tag", "lag", "nit"} == set(model.counts)
     assert model.counts["all"].sum() == sum(model.counts[name].sum() for name in ("tag", "lag", "nit")) > 500
-    assert model.counts["all"][:, :, 0, :, :, inference.GAVE_UP].sum() == 0   # nobody folds without a bet
+    assert model.counts["all"][:, :, 0, ..., inference.GAVE_UP].sum() == 0    # nobody folds without a bet
     model.save(str(tmp_path / "model.json"))
     again = inference.ActionModel.load(str(tmp_path / "model.json"))
     assert (again.counts["all"] == model.counts["all"]).all()
@@ -497,7 +568,8 @@ def test_fit_and_score_on_self_play(tmp_path):
     hands = inference._load_hands(path, 20, seed=0)
     hand = max(hands, key=lambda h: len(h["actions"]))
     hero_seat = hand["actions"][-1][1]
-    ranges = inference.infer_ranges(again, hand["actions"][:-1], hero_seat, hand["holes"][hero_seat], hand["board"])
+    ranges = inference.infer_ranges(again, hand["actions"][:-1], hero_seat, hand["holes"][hero_seat], hand["board"],
+                                    hand["n_players"], hand["button"])
     assert hero_seat not in ranges and all(len(r) > 0 for r in ranges.values())
 
 
@@ -518,9 +590,11 @@ def test_advisor_new_sections():
 
 def test_web_request_handling():
     out = web.analyze_request({"hand": "AsKs", "board": "QsJs2d", "players": 3, "trials": 20000, "pot": "100",
-                               "to_call": "50", "bet": "", "opponents": [{"type": "line", "value": "open/bet"},
-                                                                          {"type": "cards", "value": "Qh Qd"}]})
+                               "to_call": "50", "bet": "", "position": "bb", "table": 6,
+                               "opponents": [{"type": "line", "value": "open/bet", "position": "btn"},
+                                             {"type": "cards", "value": "Qh Qd"}]})
     assert out["n_players"] == 3 and len(out["ranges"]) == 2 and out["pot_odds"]["required_equity"] == pytest.approx(1 / 3)
+    assert {r["label"] for r in out["ranges"]} == {"btn: open/bet", "지정 레인지"}
     json.dumps(out)
     for bad in ({"hand": "AsKs", "players": 2, "opponents": [{"type": "range", "value": "QQ"}] * 2},
                 {"hand": "AsAs"}, {"hand": "AsKs", "players": 99}, {"hand": "AsKs", "opponents": [{"type": "cards", "value": "Qh"}]}):
@@ -587,8 +661,10 @@ def test_learning_cycle_keeps_state(tmp_path, capsys):
     inference.default_model().save(str(seeded / "action_model.json"))
     entry = daily.run_cycle(**dict(options, state_dir=str(seeded)))
     assert entry["model"]["mae_before"] is not None and entry["cycle"] == 1
-    assert {"champion", "challenger", "tag", "lag", "nit", "tag_range"} == set(first["standings"])
-    assert sum(first["standings"].values()) == pytest.approx(0, abs=1)          # chips only change hands
+    assert {"champion", "challenger", "human", "nit", "tag_range"} == set(first["standings"])     # two seats play 'human'
+    assert first["opponents"] == ["human", "human", "nit", "tag_range"]
+    with pytest.raises(ValueError):
+        daily.run_cycle(**dict(options, references=("human",)))
     assert not list(tmp_path.glob("*.sqlite"))                                  # the hand database is cleaned up
     second = daily.run_cycle(**options)
     assert second["cycle"] == 2 and second["model"]["mae_before"] is not None
@@ -621,8 +697,12 @@ def test_phh_hand_is_replayed():
         (0, 2, "raise", 2, 3), (0, 0, "fold", 5, 3), (0, 1, "call", 4, 2),
         (1, 1, "check", 0, 2), (1, 2, "raise", 0, 2), (1, 1, "call", 8, 2),
         (2, 1, "check", 0, 2), (2, 2, "check", 0, 2), (3, 1, "raise", 0, 2), (3, 2, "call", 20, 2)]
-    seen = inference.observed(hand["actions"])
-    assert seen[0][2] == (0, 0, 1, 1) and seen[1][2] == (0, 1, 1, 1) and seen[5][2] == (1, 1, 1, 0)
+    assert (hand["n_players"], hand["button"]) == (3, 2)                              # the last seat listed is the button
+    seen = inference.observed(hand["actions"], hand["n_players"], hand["button"])
+    # (street, raises, facing, players left, table class, position): the button opens, the small blind
+    # folds to the raise, and on the flop the big blind (first to act of the two left) calls a bet
+    assert seen[0][2] == (0, 0, 1, 1, 1, 3) and seen[1][2] == (0, 1, 1, 1, 1, 4) and seen[5][2] == (1, 1, 1, 0, 1, 0)
+    assert seen[4][2][5] == 2                                                         # the button bets last to act
 
     assert phh.parse_hand(PHH_HAND.replace("'NT'", "'FT'")) is None                   # not no-limit hold'em
     assert phh.parse_hand(PHH_HAND.replace("p1 f", "p1 xyz")) is None                 # unknown action
@@ -634,7 +714,8 @@ def test_phh_hand_is_replayed():
     duel = phh.parse_hand("variant = 'NT'\nblinds_or_straddles = [5, 10]\n"
                           "actions = ['d dh p1 ????', 'd dh p2 ????', 'p2 cc', 'p1 cc', 'd db 2c3d4h', 'p1 cc', 'p2 f']\n")
     assert [(a[1], a[2], a[5]) for a in duel["actions"]] == [(1, "call", 5), (0, "check", 0), (0, "check", 0), (1, "fold", 0)]
-    free_fold = inference.observed(duel["actions"])[-1]
+    free_fold = inference.observed(duel["actions"], duel["n_players"], duel["button"])[-1]
+    assert free_fold[2][4:] == (0, 2)                                                 # heads-up table, the button acts last
     assert free_fold[3] == inference.GAVE_UP and free_fold[2][2] == 0           # a fold with nothing to call ...
     assert (inference.default_model().likelihood(free_fold[2], inference.GAVE_UP) > 0).all()   # ... is never impossible
 

@@ -141,8 +141,18 @@ th { color: var(--muted); }
     <div class="slots" id="slots"></div>
     <div class="picker" id="picker" aria-label="카드 선택"></div>
     <div class="row">
-      <label class="field">인원(나 포함)
+      <label class="field">판에 남은 인원(나 포함)
         <select id="players"></select>
+      </label>
+      <label class="field">테이블
+        <select id="table">
+          <option value="2">1:1</option>
+          <option value="6" selected>6인</option>
+          <option value="9">9인</option>
+        </select>
+      </label>
+      <label class="field">내 포지션
+        <select id="position"></select>
       </label>
       <label class="field">정밀도
         <select id="quality">
@@ -197,6 +207,13 @@ const PREFLOP_ACTIONS = [["", "—"], ["limp", "림프"], ["open", "오픈 레�
 const POSTFLOP_ACTIONS = [["", "—"], ["check", "체크"], ["bet", "벳"], ["call", "콜"], ["raise", "레이즈"],
   ["check call", "체크 후 콜"], ["check raise", "체크레이즈"], ["bet callraise", "벳 후 레이즈에 콜"], ["reraise", "리레이즈"]];
 const STREETS = ["프리플랍", "플랍", "턴", "리버"];
+const SEATS = [["", "모름"], ["ep", "얼리(UTG)"], ["mp", "미들(HJ)"], ["co", "컷오프"], ["btn", "버튼"], ["sb", "스몰 블라인드"], ["bb", "빅 블라인드"]];
+function seatSelect(value, onchange) {
+  const sel = el("select");
+  for (const [v, t] of SEATS) { const o = el("option", null, t); o.value = v; sel.append(o); }
+  sel.value = value; sel.onchange = () => onchange(sel.value);
+  return sel;
+}
 
 const state = {slots: Array(7).fill(null), active: 0, players: 2, opponents: [], seq: 0, timer: null};
 const $ = id => document.getElementById(id);
@@ -279,6 +296,9 @@ function renderOpponents() {
     remove.onclick = () => { state.opponents.splice(i, 1); renderOpponents(); schedule(); };
     head.append(kind, remove); box.append(head);
     if (opp.type === "line") {
+      const seat = el("label", "field", "상대 포지션 (알면 레인지가 더 정확해집니다)");
+      seat.append(seatSelect(opp.position || "", v => { opp.position = v; schedule(); }));
+      box.append(seat);
       const row = el("div", "streets");
       STREETS.forEach((name, s) => {
         const field = el("label", "field", name), sel = el("select");
@@ -307,11 +327,12 @@ async function request() {
   if (street < 0) { renderMessage("보드는 비워 두거나 플랍 3장, 턴, 리버 순서로 채워 주세요."); return; }
   const quality = {fast: {trials: 50000}, normal: {trials: 200000}, precise: {precision: 0.001}, ultra: {precision: 0.0005}}[$("quality").value];
   const opponents = state.opponents.map(o => o.type === "line"
-    ? {type: "line", value: o.streets.slice(0, street + 1).join("/").replace(/\/+$/, "")}
+    ? {type: "line", position: o.position || "", value: o.streets.slice(0, street + 1).join("/").replace(/\/+$/, "")}
     : {type: o.type, value: o.text});
   const [model, profile] = $("model").value.split(":");
   const body = {hand: h1 + h2, board: state.slots.slice(2).filter(Boolean).join(""), players: state.players,
-    opponents, pot: $("pot").value, to_call: $("toCall").value, bet: $("bet").value, model, profile, ...quality};
+    opponents, pot: $("pot").value, to_call: $("toCall").value, bet: $("bet").value, model, profile,
+    position: $("position").value, table: Math.max(Number($("table").value), state.players), ...quality};
   const seq = ++state.seq;
   result.classList.add("loading");
   try {
@@ -452,10 +473,13 @@ $("players").onchange = () => { state.players = Number($("players").value); rend
 $("quality").onchange = () => schedule();
 $("model").onchange = () => schedule();
 for (const id of ["pot", "toCall", "bet"]) $(id).oninput = () => schedule(500);
-$("addOpponent").onclick = () => { state.opponents.push({type: "line", streets: ["", "", "", ""], text: ""}); renderOpponents(); };
+$("addOpponent").onclick = () => { state.opponents.push({type: "line", streets: ["", "", "", ""], text: "", position: ""}); renderOpponents(); };
+for (const [v, t] of SEATS) { const o = el("option", null, t); o.value = v; $("position").append(o); }
+$("position").onchange = () => schedule();
+$("table").onchange = () => schedule();
 $("reset").onclick = () => {
   state.slots.fill(null); state.active = 0; state.opponents = []; state.seq++;
-  for (const id of ["pot", "toCall", "bet"]) $(id).value = "";
+  for (const id of ["pot", "toCall", "bet", "position"]) $(id).value = "";
   renderInput(); renderMessage("내 카드 두 장을 고르면 계산합니다. 보드는 비워 두거나 3·4·5장을 고르세요.");
 };
 renderInput();

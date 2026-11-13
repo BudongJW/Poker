@@ -8,7 +8,8 @@ Two things are learned, and each change must prove itself on fresh hands before 
   the current one unless it estimates equity worse on hands it was not fitted on.
 * **How to bet** - the champion's parameters (how strong to bet, how much to demand for a call,
   how often to bluff, how much to respect raises). Each cycle a few mutated challengers play the
-  champion at the same tables; a challenger takes over only if it wins more with 95% confidence.
+  champion at the same tables, next to four fixed opponents (two of them play like real online
+  players); a challenger takes over only if it wins more with 95% confidence.
 
 State lives in three small files (by default next to the package data, so it can be committed):
 ``action_model.json``, ``champion.json`` and ``history.jsonl`` (one line per cycle).
@@ -29,7 +30,9 @@ STATE_DIR = os.path.join(os.path.dirname(__file__), "data")
 START = {"value": 0.15, "margin": 0.06, "bluff": 0.05, "respect": 0.2}            # the 'tag' bot
 BOUNDS = {"value": (0.02, 0.45), "margin": (-0.05, 0.25), "bluff": (0.0, 0.4), "respect": (0.0, 0.5)}
 STEP = {"value": 0.04, "margin": 0.03, "bluff": 0.05, "respect": 0.08}
-REFERENCES = ("tag", "lag", "nit", "tag_range")       # fixed opponents that fill the six-handed table
+# The four fixed opponents that fill the six-handed table: two play with the habits of real online
+# players (see pokerlab.bots.PopulationBot), two are this package's equity bots.
+REFERENCES = ("human", "human", "nit", "tag_range")
 
 
 def load_champion(state_dir=STATE_DIR):
@@ -75,8 +78,10 @@ def _paired_difference(db_path, first_batch):
 
 
 def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, score_hands=1500, decay=0.9,
-              processes=None, seed=None, work_dir=None, keep_db=False, progress=print):
+              references=REFERENCES, processes=None, seed=None, work_dir=None, keep_db=False, progress=print):
     """Play, learn, evaluate and record once -> the history entry that was appended."""
+    if len(references) != 4:
+        raise ValueError("the table is six-handed: champion, challenger and exactly four fixed opponents")
     started = time.time()
     say = progress or (lambda message: None)
     os.makedirs(state_dir, exist_ok=True)
@@ -97,7 +102,7 @@ def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, 
                     first_batch = db.execute("SELECT MAX(batch) FROM batches").fetchone()[0] + 1
             candidate = mutate(champion["params"], rng)
             lineup = [_spec("champion", champion["params"], model_path),
-                      _spec("challenger", candidate, model_path), *REFERENCES]
+                      _spec("challenger", candidate, model_path), *references]
             n, _ = selfplay.run(db_path, hands=hands, players=(6,), bots=lineup, batch_size=500, processes=processes,
                                 seed=rng.getrandbits(30), progress=None)
             played += n
@@ -138,7 +143,7 @@ def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, 
                       "mae_before": None if before is None else round(float(before["mae_model"]), 4),
                       "mae_after": round(float(after["mae_model"]), 4), "bias_after": round(float(after["bias_model"]), 4),
                       "kept": bool(keep_model)},
-            "matches": matches, "champion": champion, "standings": standings,
+            "matches": matches, "champion": champion, "standings": standings, "opponents": list(references),
         }
         with open(os.path.join(state_dir, "history.jsonl"), "a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")

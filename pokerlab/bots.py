@@ -13,7 +13,7 @@ import numpy as np
 from .cards import hand_class
 from .engine import CALL, CHECK, FOLD, RAISE
 from .equity import COMBO_INDEX, Range, quick_equity
-from .inference import context, default_model, infer_ranges, load_model, strength_buckets
+from .inference import context, default_model, infer_ranges, load_model, position_now, strength_buckets
 from .preflop import preflop_equity, top_range
 
 
@@ -93,8 +93,8 @@ class EquityBot(Bot):
         if self.model:
             if len(_BUCKETS) > 64:
                 _BUCKETS.clear()
-            ranges = list(infer_ranges(self.model, view.actions, view.seat, view.hole, view.board,
-                                       flop_runouts=60, rng=self.np_rng, cache=_BUCKETS).values())
+            ranges = list(infer_ranges(self.model, view.actions, view.seat, view.hole, view.board, view.n_players,
+                                       view.button, flop_runouts=60, rng=self.np_rng, cache=_BUCKETS).values())
             if not ranges and view.street == 0:
                 return preflop_equity(hand_class(*view.hole), n_opp)
             return quick_equity(view.hole, view.board, n_opp, self.trials, self.np_rng, ranges)
@@ -145,7 +145,9 @@ class PopulationBot(Bot):
         if len(_BUCKETS) > 64:
             _BUCKETS.clear()
         bucket = strength_buckets(view.board, 60, self.np_rng, _BUCKETS)[COMBO_INDEX[view.hole[0], view.hole[1]]]
-        ctx = context(view.street, view.raises, view.to_call > 0, view.n_live)
+        folded = {a[1] for a in view.actions if a[2] == FOLD}
+        position = position_now(view.seat, view.button, view.n_players, folded, view.street)
+        ctx = context(view.street, view.raises, view.to_call > 0, view.n_live, view.n_players, position)
         fold, passive, _ = (self.model.likelihood(ctx, code, self.profile)[bucket] for code in range(3))
         r = self.rng.random()
         if r < fold:

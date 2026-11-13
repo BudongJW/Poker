@@ -29,13 +29,18 @@ def main(argv=None):
     p = sub.add_parser("equity", help="win probability and interpretation of one spot")
     p.add_argument("hand", help="hole cards, e.g. AsKs")
     p.add_argument("--board", default="", help="0, 3, 4 or 5 board cards, e.g. 'Qs Js 2d'")
-    p.add_argument("--players", type=int, default=2, help="players in the hand including you (default 2)")
+    p.add_argument("--players", type=int, default=2, help="players still in the hand including you (default 2)")
     p.add_argument("--range", action="append", default=[], dest="ranges", metavar="RANGE",
                    help="known range of one opponent, e.g. 'TT+,AQs+', '15%%' or exact cards 'QhQd'; repeatable")
     p.add_argument("--villain", action="append", default=[], dest="lines", metavar="LINE",
                    help="what one opponent did, streets split by '/', e.g. 'open/bet/bet'; the range is "
                         "inferred from it. Pre-flop: limp open call 3bet call3bet 4bet check. "
-                        "Post-flop: check bet call raise callraise reraise. Repeatable")
+                        "Post-flop: check bet call raise callraise reraise. Put the opponent's seat in front "
+                        "if you know it: 'btn: open/bet' (ep mp co btn sb bb). Repeatable")
+    p.add_argument("--position", help="your own seat (ep mp co btn sb bb); with a villain's seat it tells "
+                                      "the model who acts last after the flop")
+    p.add_argument("--table", type=int, help="players dealt in at the table (default 6, or 9 with more than "
+                                             "six players in the hand); --players is who is still in")
     p.add_argument("--model", default=advisor.DEFAULT_MODEL,
                    help=f"action model that reads --villain lines: {', '.join(inference.MODELS)} or a model file "
                         f"(default: {advisor.DEFAULT_MODEL})")
@@ -92,7 +97,7 @@ def main(argv=None):
                    help="profiles besides 'all': 'stake' = one per stake band, 'pluribus' = the bot vs the professionals")
     p.add_argument("--init", metavar="MODEL", help="starting model for hands whose cards are hidden (a name or a file)")
     p.add_argument("--hands", type=int, help="read at most this many hands, from files in random order")
-    p.add_argument("--iterations", type=int, default=12, help="most EM passes when cards are hidden (default 12)")
+    p.add_argument("--iterations", type=int, default=30, help="most EM passes per stage when cards are hidden (default 30)")
     p.add_argument("--processes", type=int)
 
     p = sub.add_parser("score-history", help="how well an action model explains hand histories it was not fitted on")
@@ -105,6 +110,8 @@ def main(argv=None):
     p.add_argument("--cycles", type=int, default=1, help="cycles to run back to back; 0 = until Ctrl-C")
     p.add_argument("--hands", type=int, default=60_000, help="hands per challenger match (default 60000)")
     p.add_argument("--challengers", type=int, default=3, help="challengers tried per cycle (default 3)")
+    p.add_argument("--opponents", default=",".join(daily.REFERENCES),
+                   help=f"the four fixed opponents at the table (default: {','.join(daily.REFERENCES)})")
     p.add_argument("--state", default=daily.STATE_DIR, help="directory holding the learned state")
     p.add_argument("--processes", type=int)
     p.add_argument("--keep-db", action="store_true", help="keep the cycle's hand database instead of deleting it")
@@ -125,7 +132,7 @@ def main(argv=None):
         spot = dict(hero=args.hand, board=args.board, n_players=args.players, pot=args.pot, to_call=args.to_call,
                     ranges=[preflop.parse_range(r) for r in args.ranges], trials=args.trials, seed=args.seed,
                     precision=args.precision and args.precision / 100, bet=args.bet, lines=args.lines,
-                    profile=args.profile, model=args.model)
+                    profile=args.profile, model=args.model, position=args.position, table=args.table)
         if args.json:
             print(json.dumps(advisor.to_json(advisor.analyze(**spot)), ensure_ascii=False, indent=1))
         else:
@@ -175,7 +182,7 @@ def main(argv=None):
             print(inference.summarize(rows).to_string(float_format=lambda x: f"{x:.4f}"))
     elif args.command == "daily":
         daily.run(args.cycles, state_dir=args.state, hands=args.hands, challengers=args.challengers,
-                  processes=args.processes, keep_db=args.keep_db)
+                  references=tuple(args.opponents.split(",")), processes=args.processes, keep_db=args.keep_db)
     elif args.command == "history":
         daily.print_history(args.state)
     elif args.command == "serve":

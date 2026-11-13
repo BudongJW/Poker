@@ -1,7 +1,7 @@
 """Read public hand histories in the PHH format (https://phh.readthedocs.io) into the hand
 records the range model learns from.
 
-Each hand becomes ``{'board', 'holes', 'bots', 'actions'}`` exactly like a hand loaded from a
+Each hand becomes ``{'board', 'n_players', 'button', 'holes', 'bots', 'actions'}`` like a hand loaded from a
 self-play database, with two differences: ``holes`` only has the seats whose cards are known
 (dealt face up in the log, or shown at showdown), and ``bots`` holds a label per seat that the
 caller chooses (a player type, a stake level, ...), which becomes a model profile.
@@ -122,7 +122,8 @@ def parse_hand(text, label=None):
         bots = {seat: label(names[seat] if seat < len(names) else "", big_blind) for seat in range(n)}
     else:
         bots = {seat: label or "all" for seat in range(n)}
-    return {"board": board, "holes": holes, "bots": bots, "actions": actions}
+    # seats are listed blinds first, so the last one is the button (heads-up too: it posts the small blind)
+    return {"board": board, "n_players": n, "button": n - 1, "holes": holes, "bots": bots, "actions": actions}
 
 
 def read_file(path, label=None):

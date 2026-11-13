@@ -30,7 +30,8 @@ def analyze_request(body):
         if not value:
             continue
         if kind == "line":
-            lines.append(value)
+            seat = str(opponent.get("position") or "").strip()
+            lines.append(f"{seat}: {value}" if seat else value)
         elif kind == "range":
             ranges.append(parse_range(value))
         elif kind == "cards":
@@ -53,7 +54,8 @@ def analyze_request(body):
         body["hand"], body.get("board", ""), n_players, _number(body.get("pot")), _number(body.get("to_call")),
         ranges, trials=min(int(body.get("trials", 200_000)), MAX_TRIALS),
         precision=max(precision, MIN_PRECISION) if precision else None,
-        bet=_number(body.get("bet")), lines=lines, profile=str(body.get("profile", "all")), model=model)
+        bet=_number(body.get("bet")), lines=lines, profile=str(body.get("profile", "all")), model=model,
+        position=str(body.get("position") or "") or None, table=int(body["table"]) if body.get("table") else None)
     return advisor.to_json(analysis)
 
 

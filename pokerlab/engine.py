@@ -19,7 +19,7 @@ class View:
 
     __slots__ = ("seat", "hole", "board", "street", "pot", "to_call", "current_bet", "min_raise_to",
                  "max_raise_to", "can_raise", "stack", "bet", "big_blind", "n_players", "n_live",
-                 "position", "raises", "actions")
+                 "button", "position", "raises", "actions")
 
 
 class HandResult:
@@ -105,7 +105,7 @@ def play_hand(bots, stacks, button, small_blind, big_blind, rng):
             view.max_raise_to = max_to
             view.can_raise = can_raise
             view.stack, view.bet, view.big_blind = stack[seat], bet[seat], big_blind
-            view.n_players, view.n_live = n, live
+            view.n_players, view.n_live, view.button = n, live, button
             view.position = position_name(seat, button, n)
             view.raises = raises
             view.actions = actions

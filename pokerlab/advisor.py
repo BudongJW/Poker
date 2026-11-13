@@ -55,12 +55,14 @@ def _next_cards(hero, board, n_opp, ranges, current, seed):
 
 
 def analyze(hero, board=(), n_players=2, pot=None, to_call=None, ranges=(), trials=200_000, seed=None,
-            precision=None, bet=None, lines=(), profile="all", model=DEFAULT_MODEL):
+            precision=None, bet=None, lines=(), profile="all", model=DEFAULT_MODEL, position=None, table=None):
     """All the numbers behind :func:`explain`, as a dict.
 
     ranges: known ranges of opponents; lines: action lines of opponents (see
     :func:`pokerlab.inference.parse_line`) from which a range is inferred with the action model
     ``model`` (a name from :data:`pokerlab.inference.MODELS` or a file) and its ``profile``.
+    A line may start with the opponent's seat ('btn: open/bet'); ``position`` is the hero's own seat
+    and ``table`` the number of players dealt in (``n_players`` is how many are in the hand now).
     Opponents with neither hold random hands. ``precision`` (e.g. 0.001) makes Monte Carlo run
     until that 95% interval.
     """
@@ -68,7 +70,7 @@ def analyze(hero, board=(), n_players=2, pot=None, to_call=None, ranges=(), tria
     n_opp = n_players - 1
     labels = ["지정 레인지"] * len(ranges) + list(lines)
     ranges = [as_range(r) for r in ranges] + [
-        range_from_line(line, hero, board, n_players, load_model(model), profile) for line in lines]
+        range_from_line(line, hero, board, n_players, load_model(model), profile, position, table) for line in lines]
     cls = hand_class(*hero)
     if not board and not ranges and n_opp == 1:                 # enumerated once and stored in the table
         win, tie, _ = heads_up_exact(cls)
@@ -134,9 +136,10 @@ def to_json(analysis):
 
 
 def explain(hero, board=(), n_players=2, pot=None, to_call=None, ranges=(), trials=200_000, seed=None,
-            precision=None, bet=None, lines=(), profile="all", model=DEFAULT_MODEL):
+            precision=None, bet=None, lines=(), profile="all", model=DEFAULT_MODEL, position=None, table=None):
     """Korean-language report for one spot."""
-    a = analyze(hero, board, n_players, pot, to_call, ranges, trials, seed, precision, bet, lines, profile, model)
+    a = analyze(hero, board, n_players, pot, to_call, ranges, trials, seed, precision, bet, lines, profile, model,
+                position, table)
     r = a["result"]
     n_opp = n_players - 1
     assumed = "레인지 지정" if a["ranged"] else "랜덤 핸드 가정"

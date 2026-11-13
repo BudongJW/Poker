@@ -33,7 +33,12 @@ MODELS = {      # bundled models by name
 }
 N_BUCKETS = 10
 GAVE_UP, PASSIVE, AGGRESSIVE = 0, 1, 2          # fold / check or call / bet or raise
-_SHAPE = (4, 3, 2, 4, N_BUCKETS, 3)             # street, raises faced, facing a bet, players left, bucket, action
+# street, raises faced, facing a bet, players left, table size, position, strength bucket, action
+_SHAPE = (4, 3, 2, 4, 3, 6, N_BUCKETS, 3)
+POSITIONS = ("ep", "mp", "co", "btn", "sb", "bb")        # pre-flop seat classes, in model index order
+_POSITION_ALIASES = {"utg": "ep", "lj": "mp", "hj": "mp", "button": "btn"}
+_ACTS_AFTER_FLOP = {"sb": 0, "bb": 1, "ep": 2, "mp": 3, "co": 4, "btn": 5}      # order of action after the flop
+SHRINK = 20.0       # pseudo-counts with which a detailed situation leans on the coarser one above it
 _BOARD_CARDS = (0, 3, 4, 5)
 
 
@@ -117,22 +122,55 @@ def _buckets(percentiles):
 
 # ---- the situations a player acts in ---------------------------------------------------
 
-def context(street, raises, facing_bet, n_live):
+def seat_class(seat, button, n_players):
+    """Index into POSITIONS of a seat: early, middle, cutoff, button, small blind, big blind."""
+    offset = (seat - button) % n_players
+    if n_players == 2:
+        return 3 if offset == 0 else 5              # heads-up the button posts the small blind
+    if offset < 3:
+        return (3, 4, 5)[offset]
+    before_button = n_players - offset
+    return 2 if before_button == 1 else 1 if before_button <= 3 else 0
+
+
+def position_now(seat, button, n_players, folded, street):
+    """A player's position as the model sees it: pre-flop the seat class; after the flop where
+    the player acts among those still in the hand (0 first, 1 in between, 2 last)."""
+    if street == 0:
+        return seat_class(seat, button, n_players)
+    live = [s for s in ((button + 1 + i) % n_players for i in range(n_players)) if s not in folded]
+    return 0 if live and live[0] == seat else 2 if live and live[-1] == seat else 1
+
+
+def table_class(n_players):
+    """0 heads-up, 1 short-handed (3-6 dealt in), 2 full ring (7+); -1 when unknown."""
+    return -1 if n_players is None else 0 if n_players == 2 else 1 if n_players <= 6 else 2
+
+
+def context(street, raises, facing_bet, n_live, n_players=None, position=-1):
     """The model's notion of a situation: (street, raises already made this street capped at 2,
-    whether there is a bet to call, players still in the hand capped at 5)."""
-    return street, min(raises, 2), int(bool(facing_bet)), min(max(n_live, 2), 5) - 2
+    whether there is a bet to call, players still in the hand capped at 5, table class, position).
+
+    position is what :func:`position_now` returns. A table class or position of -1 means
+    "unknown": the model then answers for the average over it.
+    """
+    return (street, min(raises, 2), int(bool(facing_bet)), min(max(n_live, 2), 5) - 2,
+            table_class(n_players), position)
 
 
-def observed(actions):
+def observed(actions, n_players, button):
     """Engine action log -> [(seat, street, context, action code)] in order."""
-    out = []
+    out, folded = [], set()
     street, raises = -1, 0
     for a in actions:
         if a[0] != street:
             street, raises = a[0], 0
         code = AGGRESSIVE if a[2] == RAISE else GAVE_UP if a[2] == FOLD else PASSIVE
-        out.append((a[1], street, context(street, raises, a[5] > 0, a[6]), code))
+        position = position_now(a[1], button, n_players, folded, street)
+        out.append((a[1], street, context(street, raises, a[5] > 0, a[6], n_players, position), code))
         raises += a[2] == RAISE
+        if code == GAVE_UP:
+            folded.add(a[1])
     return out
 
 
@@ -144,13 +182,58 @@ _LINE_WORDS = {      # word -> (action code, raises already made, facing a bet),
 }
 
 
-def parse_line(text, n_players):
-    """'open/bet/check' -> [(street, context, action code)]: one opponent's actions, streets split by '/'.
+def _position_name(text, table):
+    """'UTG' / 'hj' / 'button' -> a name from POSITIONS that exists at a table of that size; None for ''."""
+    name = (text or "").strip().lower()
+    if not name:
+        return None
+    name = _POSITION_ALIASES.get(name, name)
+    if name not in POSITIONS:
+        raise ValueError(f"unknown position {text!r}; use one of {', '.join(POSITIONS)} (or utg, hj, lj)")
+    exists = {POSITIONS[seat_class(seat, 0, table)] for seat in range(table)}
+    while name not in exists:                       # a short table has no early seats: use the next one round
+        name = POSITIONS[POSITIONS.index(name) + 1] if name in ("ep", "mp", "co") else "btn"
+    return name
+
+
+def default_table(n_players):
+    """Table size to assume when only the number of players in the hand is known."""
+    return 6 if n_players <= 6 else 9
+
+
+def parse_line(text, n_players, hero_position=None, table=None):
+    """'btn: open/bet/check' -> [(street, context, action code)]: one opponent's actions, streets split by '/'.
 
     Pre-flop words: limp, open, call, 3bet, call3bet, 4bet, check. Post-flop: check, bet, call,
     raise, callraise, reraise. Several words on one street are separated by spaces; an empty
     street ('open//bet') means the opponent did not act there.
+
+    n_players: players in the hand now. table: players dealt in (6, or 9 for more than six players,
+    when not given). The optional 'position:' prefix (ep, mp, co, btn, sb, bb) is the opponent's
+    seat; without it the model answers for the average seat. A line does not say who had folded
+    when the opponent acted, so this is assumed: pre-flop everybody in front of a known seat had
+    folded, and after the flop ``n_players`` were left. After the flop the model wants to know
+    who acts last: that follows from the two seats when ``hero_position`` is given too (as if only
+    the two of you were left), and otherwise only for the button and the blinds.
     """
+    table = table or default_table(n_players)
+    if not 2 <= table <= 10 or n_players > table:
+        raise ValueError("the table has 2-10 seats and at least as many as there are players in the hand")
+    seat = None
+    if ":" in text:
+        prefix, text = text.split(":", 1)
+        seat = _position_name(prefix, table)
+    hero_seat = _position_name(hero_position, table)
+    if seat is None:
+        after_flop, left_before_flop = -1, table
+    else:
+        left_before_flop = min(table, {"ep": table, "mp": 5, "co": 4, "btn": 3, "sb": 2, "bb": 2}[seat])
+        if table == 2 or seat == "btn":
+            after_flop = 2 if seat == "btn" else 0
+        elif hero_seat and hero_seat != seat:
+            after_flop = 2 if _ACTS_AFTER_FLOP[seat] > _ACTS_AFTER_FLOP[hero_seat] else 0
+        else:
+            after_flop = 0 if seat in ("sb", "bb") else -1
     out = []
     for street, part in enumerate(text.lower().split("/")):
         if street > 3:
@@ -160,7 +243,11 @@ def parse_line(text, n_players):
             if word not in words:
                 raise ValueError(f"unknown action {word!r} on street {street + 1}; use one of {', '.join(words)}")
             code, raises, facing = words[word]
-            out.append((street, context(street, raises, facing, n_players), code))
+            if street:
+                out.append((street, context(street, raises, facing, n_players, table, after_flop), code))
+            else:
+                position = -1 if seat is None else POSITIONS.index(seat)
+                out.append((street, context(street, raises, facing, left_before_flop, table, position), code))
     return out
 
 
@@ -172,25 +259,35 @@ class ActionModel:
     def __init__(self, counts, source=""):
         self.counts = {name: np.asarray(c, dtype=np.float64).reshape(_SHAPE) for name, c in counts.items()}
         self.source = source
-        self._likelihoods = {}
+        self._probabilities = {}
 
     def likelihood(self, ctx, action, profile="all"):
         """P(action | context, bucket) for every strength bucket -> array (N_BUCKETS,).
 
+        Situations are nested: (street, raises, facing a bet) > players left > table size > position.
+        Each level is estimated from its own counts plus SHRINK pseudo-counts of the level above,
+        so a seat that was rarely seen leans on the average seat instead of on a handful of hands.
         A profile the model has never seen falls back to the pooled 'all'.
         """
         if profile not in self.counts:
             profile = "all"
-        key = (profile, ctx, action)
-        if key not in self._likelihoods:
-            counts = self.counts[profile][ctx]
-            if counts.sum() < 200:                      # rarely seen: pool the table sizes
-                counts = self.counts[profile][ctx[0], ctx[1], ctx[2]].sum(axis=0)
-            # one pseudo-count per bucket keeps every action possible: real players do, rarely, fold
-            # with nothing to call, and an impossible observation would wipe out a whole range
-            prior = np.array([1 / 3] * 3 if ctx[2] else [0.02, 0.49, 0.49])
-            self._likelihoods[key] = ((counts + prior) / (counts.sum(axis=1, keepdims=True) + 1))[:, action]
-        return self._likelihoods[key]
+        key = (profile, ctx)
+        if key not in self._probabilities:
+            street, raises, facing, live, table, position = ctx
+            block = self.counts[profile][street, raises, facing]        # (players left, table, position, bucket, action)
+            levels = [block.sum(axis=(0, 1, 2)), block[live].sum(axis=(0, 1))]
+            if table >= 0:
+                levels.append(block[live, table].sum(axis=0))
+                if position >= 0:
+                    levels.append(block[live, table, position])
+            # one pseudo-count of a flat prior keeps every action possible: real players do, rarely,
+            # fold with nothing to call, and an impossible observation would wipe out a whole range
+            p, strength = np.array([1 / 3] * 3 if facing else [0.02, 0.49, 0.49]), 1.0
+            for counts in levels:
+                p = (counts + strength * p) / (counts.sum(axis=1, keepdims=True) + strength)
+                strength = SHRINK
+            self._probabilities[key] = p
+        return self._probabilities[key][:, action]
 
     def merged(self, newer, decay=1.0):
         """This model's counts scaled by ``decay`` plus the counts of ``newer``: learning across sessions."""
@@ -200,9 +297,16 @@ class ActionModel:
                            newer.source)
 
     def save(self, path=MODEL_PATH):
+        """Write the model as JSON; only the situations that were seen are stored."""
+        def seen(counts):
+            rows = np.round(counts, 1).reshape(-1, N_BUCKETS * 3)
+            return {",".join(str(i) for i in np.unravel_index(index, _SHAPE[:-2])):
+                    [int(x) if x == int(x) else x for x in row.tolist()]
+                    for index, row in enumerate(rows) if row.any()}
+
         with open(path, "w", encoding="utf-8") as fh:
             json.dump({"buckets": N_BUCKETS, "shape": _SHAPE, "source": self.source,
-                       "counts": {name: np.round(c, 1).ravel().tolist() for name, c in sorted(self.counts.items())}},
+                       "counts": {name: seen(c) for name, c in sorted(self.counts.items())}},
                       fh, separators=(",", ":"))
 
     @classmethod
@@ -210,8 +314,13 @@ class ActionModel:
         with open(path, encoding="utf-8") as fh:
             data = json.load(fh)
         if data["buckets"] != N_BUCKETS or tuple(data["shape"]) != _SHAPE:
-            raise ValueError(f"{path} was fitted with a different model layout")
-        return cls(data["counts"], data.get("source", ""))
+            raise ValueError(f"{path} was fitted with a different model layout; fit it again")
+        counts = {}
+        for name, cells in data["counts"].items():
+            counts[name] = np.zeros(_SHAPE)
+            for key, row in cells.items():
+                counts[name][tuple(int(i) for i in key.split(","))] = np.reshape(row, (N_BUCKETS, 3))
+        return cls(counts, data.get("source", ""))
 
 
 @lru_cache(maxsize=8)
@@ -250,23 +359,24 @@ def _range_from(model, actions, hero, board, profile, flop_runouts, rng, cache):
     return Range.from_vector(weights) if weights.sum() > 0 else None
 
 
-def range_from_line(line, hero=(), board=(), n_players=2, model=None, profile="all"):
-    """Range of an opponent described by an action line such as 'open/bet/bet' (see :func:`parse_line`)."""
+def range_from_line(line, hero=(), board=(), n_players=2, model=None, profile="all", hero_position=None, table=None):
+    """Range of an opponent described by an action line such as 'btn: open/bet/bet' (see :func:`parse_line`)."""
     hero, board = parse_cards(hero), parse_cards(board)
-    actions = parse_line(line, n_players)
+    actions = parse_line(line, n_players, hero_position, table)
     if any(_BOARD_CARDS[street] > len(board) for street, _, _ in actions):
         raise ValueError("the action line goes past the streets that are on the board")
     return _range_from(model or default_model(), actions, hero, board, profile, None, None, None)
 
 
-def infer_ranges(model, actions, hero_seat, hero, board, profile="all", flop_runouts=None, rng=None, cache=None):
+def infer_ranges(model, actions, hero_seat, hero, board, n_players, button, profile="all", flop_runouts=None,
+                 rng=None, cache=None):
     """Ranges of the opponents still in the hand, from an engine action log -> {seat: Range}.
 
     profile: one profile name for everybody, or {seat: name}. Opponents who have not acted yet
     are left out (treat them as random hands).
     """
     by_seat, folded = {}, set()
-    for seat, street, ctx, code in observed(actions):
+    for seat, street, ctx, code in observed(actions, n_players, button):
         if code == GAVE_UP:
             folded.add(seat)
         by_seat.setdefault(seat, []).append((street, ctx, code))
@@ -284,7 +394,8 @@ def infer_ranges(model, actions, hero_seat, hero, board, profile="all", flop_run
 # ---- fitting and scoring on a self-play database ---------------------------------------
 
 def _load_hands(db_path, n_hands, seed, held_out=None):
-    """A random sample of hands -> [{'board', 'holes': {seat: cards}, 'bots': {seat: name}, 'actions'}].
+    """A random sample of hands -> [{'board', 'n_players', 'button', 'holes': {seat: cards},
+    'bots': {seat: name}, 'actions'}].
 
     held_out: None for any hand; True for the fifth of the hands set aside for scoring
     (hand_id divisible by 5), False for the other four fifths.
@@ -298,8 +409,10 @@ def _load_hands(db_path, n_hands, seed, held_out=None):
         picked = random.Random(seed).sample(ids, min(n_hands, len(ids)))
         db.execute("CREATE TEMP TABLE picked (hand_id INTEGER PRIMARY KEY)")
         db.executemany("INSERT INTO picked VALUES (?)", [(i,) for i in picked])
-        hands = {hand_id: {"board": parse_cards(board), "holes": {}, "bots": {}, "actions": []}
-                 for hand_id, board in db.execute("SELECT hand_id, board FROM hands JOIN picked USING (hand_id)")}
+        hands = {hand_id: {"board": parse_cards(board), "n_players": n, "button": button,
+                           "holes": {}, "bots": {}, "actions": []}
+                 for hand_id, board, n, button in db.execute(
+                     "SELECT hand_id, board, n_players, button FROM hands JOIN picked USING (hand_id)")}
         for hand_id, seat, bot, hole in db.execute(
                 "SELECT hand_id, seat, bot, hole FROM players JOIN picked USING (hand_id)"):
             hands[hand_id]["holes"][seat] = tuple(parse_cards(hole))
@@ -321,7 +434,7 @@ def _prepare_chunk(job):
     out = []
     for hand in hands:
         by_seat = {}
-        for seat, street, ctx, code in observed(hand["actions"]):
+        for seat, street, ctx, code in observed(hand["actions"], hand["n_players"], hand["button"]):
             by_seat.setdefault(seat, []).append((street, ctx, code))
         buckets = {street: _buckets(hand_percentiles(hand["board"][:_BOARD_CARDS[street]], flop_runouts, rng)).astype(np.int8)
                    for street in {street for acts in by_seat.values() for street, _, _ in acts if street}}
@@ -344,26 +457,33 @@ def prepare(hands, flop_runouts=150, seed=0, processes=None):
         return [item for part in pool.imap(_prepare_chunk, jobs) for item in part]
 
 
-def _posterior(model, acts, buckets, preflop):
+def _coarse(ctx):
+    """The same situation with table size and position left out."""
+    return ctx[:4] + (-1, -1)
+
+
+def _posterior(model, acts, buckets, preflop, coarse=False):
     """Weights over the 1,326 combos for a player with hidden cards, the likelihood of their actions
     averaged over the possible combos, and the number of possible combos."""
     postflop = [street for street, _, _ in acts if street]
     weights = (buckets[max(postflop)] >= 0).astype(np.float64) if postflop else np.ones(1326)
     possible = weights.sum()
     for street, ctx, code in acts:      # a blocked combo (bucket -1) already has weight 0, whatever it indexes
-        weights *= model.likelihood(ctx, code)[buckets[street] if street else preflop]
+        weights *= model.likelihood(_coarse(ctx) if coarse else ctx, code)[buckets[street] if street else preflop]
     return weights, weights.sum() / possible, possible
 
 
-def expected_counts(prepared, model):
+def expected_counts(prepared, model, coarse=False):
     """One E-step -> ({label: counts}, log-likelihood of all observed actions, number of actions).
 
     A player whose cards are known adds one count per action. A player whose cards are hidden adds
     fractional counts, spread over the strength buckets in proportion to how likely each combo is
-    given everything that player did in the hand under ``model``.
+    given everything that player did in the hand under ``model``. With ``coarse`` the model is
+    asked without table size and position (the counts are still filed under the full situation).
     """
     preflop = _buckets(_preflop_percentiles())
     preflop_share = np.bincount(preflop, minlength=N_BUCKETS) / 1326
+    seen = _coarse if coarse else (lambda ctx: ctx)
     counts, folded_early = {}, {}
     log_likelihood, n_actions = 0.0, 0
     for players, buckets in prepared:
@@ -378,9 +498,9 @@ def expected_counts(prepared, model):
                 for street, ctx, code in acts:
                     bucket = int(buckets[street][combo] if street else preflop[combo])
                     target[ctx + (bucket, code)] += 1
-                    log_likelihood += np.log(model.likelihood(ctx, code)[bucket])
+                    log_likelihood += np.log(model.likelihood(seen(ctx), code)[bucket])
             else:
-                weights, likelihood, _ = _posterior(model, acts, buckets, preflop)
+                weights, likelihood, _ = _posterior(model, acts, buckets, preflop, coarse)
                 if likelihood <= 0:         # cannot happen with a smoothed model; never let one hand poison the fit
                     n_actions -= len(acts)
                     continue
@@ -392,7 +512,7 @@ def expected_counts(prepared, model):
     for (label, acts), n in folded_early.items():
         share = preflop_share.copy()
         for _, ctx, code in acts:
-            share *= model.likelihood(ctx, code)
+            share *= model.likelihood(seen(ctx), code)
         log_likelihood += n * np.log(share.sum())
         share *= n / share.sum()
         target = counts.setdefault(label, np.zeros(_SHAPE))
@@ -402,25 +522,34 @@ def expected_counts(prepared, model):
     return counts, float(log_likelihood), n_actions
 
 
-def fit_prepared(prepared, initial=None, iterations=12, tolerance=2e-4, source="", progress=None):
+def fit_prepared(prepared, initial=None, iterations=30, tolerance=5e-5, source="", progress=None):
     """Learn an :class:`ActionModel` from prepared hands.
 
-    With every hole card known this is plain counting. With hidden cards it is EM: starting from
-    ``initial``, infer what the hidden hands probably were, recount, and repeat until the
-    log-likelihood per action improves by less than ``tolerance``.
+    With every hole card known this is plain counting. With hidden cards it is EM: infer what the
+    hidden hands probably were, recount, and repeat until the log-likelihood per action improves by
+    less than ``tolerance`` (at most ``iterations`` passes per stage).
+
+    Without a starting model the fit runs in two stages. First the situations are learned without
+    table size and position: few probabilities, each backed by many hands, so EM separates weak
+    hands from strong ones quickly. The detailed model then starts from that answer. Started cold,
+    EM spreads the hidden hands thinly over the many detailed situations and takes very long to
+    sharpen them.
     """
     model = initial or ActionModel({"all": np.zeros(_SHAPE)})
-    hidden = any(combo < 0 for players, _ in prepared for _, combo, _ in players)
-    previous = None
-    for step in range(iterations if hidden else 1):
-        counts, log_likelihood, n_actions = expected_counts(prepared, model)
-        model = ActionModel(counts, source)
-        per_action = log_likelihood / max(n_actions, 1)
-        if progress:
-            progress(f"EM {step + 1}: log-likelihood per action {per_action:.5f} (of the model before this step)")
-        if previous is not None and per_action - previous < tolerance:
-            break
-        previous = per_action
+    if not any(combo < 0 for players, _ in prepared for _, combo, _ in players):
+        return ActionModel(expected_counts(prepared, model)[0], source)
+    for coarse in ((False,) if initial else (True, False)):
+        previous = None
+        for step in range(iterations):
+            counts, log_likelihood, n_actions = expected_counts(prepared, model, coarse)
+            model = ActionModel(counts, source)
+            per_action = log_likelihood / max(n_actions, 1)
+            if progress:
+                progress(f"EM {'coarse' if coarse else 'full'} {step + 1}: log-likelihood per action "
+                         f"{per_action:.5f} (of the model before this step)")
+            if previous is not None and per_action - previous < tolerance:
+                break
+            previous = per_action
     return model
 
 
@@ -476,7 +605,8 @@ def _score_chunk(job):
         row = {"street": street, "opponents": len(rivals), "truth": truth,
                "random": equity(hero, board, len(rivals), trials=trials, seed=np_seed).equity}
         for label, profile in (("model", "all"), ("model_profiled", hand["bots"])):
-            ranges = infer_ranges(model, before, hero_seat, hero, board, profile, 100, np.random.default_rng(np_seed))
+            ranges = infer_ranges(model, before, hero_seat, hero, board, hand["n_players"], hand["button"], profile,
+                                  100, np.random.default_rng(np_seed))
             row[label] = equity(hero, board, len(rivals), list(ranges.values()), trials=trials, seed=np_seed).equity
         rows.append(row)
     return rows
