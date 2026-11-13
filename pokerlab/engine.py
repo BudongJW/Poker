@@ -18,7 +18,7 @@ class View:
     """What a bot may know when it has to act."""
 
     __slots__ = ("seat", "hole", "board", "street", "pot", "to_call", "current_bet", "min_raise_to",
-                 "max_raise_to", "can_raise", "stack", "bet", "big_blind", "n_players", "n_live",
+                 "max_raise_to", "can_raise", "stack", "behind", "bet", "big_blind", "n_players", "n_live",
                  "button", "position", "raises", "actions")
 
 
@@ -55,7 +55,9 @@ def play_hand(bots, stacks, button, small_blind, big_blind, rng):
     invested = [0] * n          # chips put in over the whole hand
     bet = [0] * n               # chips put in on the current street
     folded_street = [-1] * n
-    actions = []                # (street, seat, action, chips added, pot before, to_call, n_live, info)
+    # (street, seat, action, chips added, pot before, to call, players in, info, behind): "behind" is what
+    # could still go in after calling, i.e. the player's remaining chips as far as an opponent can match them
+    actions = []
     live = n
 
     def put(seat, amount):
@@ -90,21 +92,24 @@ def play_hand(bots, stacks, button, small_blind, big_blind, rng):
             others = [i for i in range(n) if i != seat and folded_street[i] < 0]
             others_with_chips = sum(1 for i in others if stack[i] > 0)
             # never owe more than an opponent can cover (matters when the big blind is posted short)
-            to_call = min(current, max(bet[i] + stack[i] for i in others)) - bet[seat]
+            cover = max(bet[i] + stack[i] for i in others)
+            to_call = min(current, cover) - bet[seat]
             if to_call <= 0 and others_with_chips == 0:
                 break                                   # everyone else is all-in: nothing to decide
             max_to = bet[seat] + stack[seat]
             can_raise = may_raise[seat] and max_to > current and others_with_chips > 0
+            owed = min(to_call, stack[seat])
+            behind = max(0, min(max_to, cover) - max(current, bet[seat]))
 
             view = View()
             view.seat, view.hole, view.board, view.street = seat, hole[seat], board, street
             view.pot = pot = sum(invested)
-            view.to_call = min(to_call, stack[seat])
+            view.to_call = owed
             view.current_bet = current
             view.min_raise_to = min(current + min_raise, max_to)
             view.max_raise_to = max_to
             view.can_raise = can_raise
-            view.stack, view.bet, view.big_blind = stack[seat], bet[seat], big_blind
+            view.stack, view.behind, view.bet, view.big_blind = stack[seat], behind, bet[seat], big_blind
             view.n_players, view.n_live, view.button = n, live, button
             view.position = position_name(seat, button, n)
             view.raises = raises
@@ -124,14 +129,14 @@ def play_hand(bots, stacks, button, small_blind, big_blind, rng):
                 current = target
                 raises += 1
                 to_act = others_with_chips
-                actions.append((street, seat, RAISE, added, pot, to_call, live, info))
+                actions.append((street, seat, RAISE, added, pot, owed, live, info, behind))
             elif action == FOLD and to_call > 0:
                 folded_street[seat] = street
                 live -= 1
-                actions.append((street, seat, FOLD, 0, pot, to_call, live + 1, info))
+                actions.append((street, seat, FOLD, 0, pot, owed, live + 1, info, behind))
             else:
                 added = put(seat, to_call) if to_call > 0 else 0
-                actions.append((street, seat, CALL if to_call > 0 else CHECK, added, pot, to_call, live, info))
+                actions.append((street, seat, CALL if to_call > 0 else CHECK, added, pot, owed, live, info, behind))
             may_raise[seat] = False
             seat = (seat + 1) % n
 

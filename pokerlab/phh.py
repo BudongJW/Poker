@@ -6,8 +6,9 @@ self-play database, with two differences: ``holes`` only has the seats whose car
 (dealt face up in the log, or shown at showdown), and ``bots`` holds a label per seat that the
 caller chooses (a player type, a stake level, ...), which becomes a model profile.
 
-Only no-limit hold'em hands are read. Every action keeps the chips it added, the pot before it
-and the amount there was to call, like the engine's own action log.
+Only no-limit hold'em hands are read. Every action keeps the chips it added, the pot before it,
+the amount there was to call and the chips that could still go in after calling, like the
+engine's own action log.
 """
 
 import os
@@ -59,12 +60,21 @@ def parse_hand(text, label=None):
     names = [a or b for a, b in _QUOTED.findall(_field(text, "players") or "")]
     big_blind = max(bets)
     try:
-        pot = sum(bets) + sum(float(x) for x in (_field(text, "antes") or "").split(",") if x.strip())
+        antes = [float(x) for x in (_field(text, "antes") or "").split(",") if x.strip()] or [0.0] * n
+        stack = [float(x) for x in (_field(text, "starting_stacks") or "").split(",") if x.strip()]
     except ValueError:
         return None
+    if len(stack) != n or len(antes) != n or min(stack) <= 0:
+        return None         # without everybody's stack there is no telling who is all-in
+    pot = 0.0
+    for seat in range(n):   # a player too short for the ante or the blind posts what is there
+        ante = min(antes[seat], stack[seat])
+        bets[seat] = min(bets[seat], stack[seat] - ante)
+        stack[seat] -= ante + bets[seat]
+        pot += ante + bets[seat]
 
     current, street, live = big_blind, 0, set(range(n))
-    board, holes, actions = [], {}, []
+    board, holes, actions = [], {}, []      # an action: (street, seat, action, added, pot, to_call, players in, None, behind)
     for a, b in _QUOTED.findall(raw_actions):
         words = (a or b).split("#")[0].split()
         if len(words) < 2:
@@ -96,28 +106,32 @@ def parse_hand(text, label=None):
             if cards:
                 holes[seat] = cards
             continue
-        if seat not in live:
+        if seat not in live or len(live) < 2:
             return None
-        to_call = current - bets[seat]
+        # the most that can go in on this street: the player's own chips, as far as an opponent can match them
+        limit = min(bets[seat] + stack[seat], max(bets[i] + stack[i] for i in live if i != seat))
+        to_call = min(current, limit) - bets[seat]
+        behind = max(0.0, limit - max(current, bets[seat]))     # what can still go in after calling
         if words[1] == "f":
-            actions.append((street, seat, FOLD, 0, pot, to_call, len(live), None))
+            actions.append((street, seat, FOLD, 0, pot, to_call, len(live), None, behind))
             live.discard(seat)
-        elif words[1] == "cc":
-            added = max(to_call, 0.0)       # a short stack may really put in less; the log does not say
-            actions.append((street, seat, CALL if to_call > 0 else CHECK, added, pot, to_call, len(live), None))
-            bets[seat] += added
-            pot += added
+            continue
+        if words[1] == "cc":
+            added = max(to_call, 0.0)
+            actions.append((street, seat, CALL if to_call > 0 else CHECK, added, pot, to_call, len(live), None, behind))
         elif words[1] == "cbr" and len(words) > 2:
             try:
                 amount = float(words[2])        # the player's total bet on this street after raising
             except ValueError:
                 return None
-            added = max(amount, current) - bets[seat]
-            actions.append((street, seat, RAISE, added, pot, to_call, len(live), None))
-            bets[seat] = current = max(amount, current)
-            pot += added
+            added = min(max(amount, current) - bets[seat], stack[seat])
+            actions.append((street, seat, RAISE, added, pot, to_call, len(live), None, behind))
+            current = max(current, bets[seat] + added)
         else:
             return None
+        bets[seat] += added
+        stack[seat] -= added
+        pot += added
     if not actions or len(set(board)) != len(board):
         return None
     used = set(board)

@@ -33,7 +33,7 @@ CREATE TABLE IF NOT EXISTS players (
     PRIMARY KEY (hand_id, seat)) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS actions (
     hand_id INTEGER, seq INTEGER, street INTEGER, seat INTEGER, action TEXT, amount INTEGER,
-    pot INTEGER, to_call INTEGER, n_live INTEGER, equity REAL,
+    pot INTEGER, to_call INTEGER, n_live INTEGER, equity REAL, behind INTEGER,
     PRIMARY KEY (hand_id, seq)) WITHOUT ROWID;
 """
 
@@ -74,8 +74,8 @@ def run_batch(job):
                 int(result.final_street > 0 and result.folded_street[seat] != 0),
                 int(result.showdown and in_at_end), None if value is None else value >> 20))
         if log_actions:
-            for seq, (street, seat, action, amount, pot_before, to_call, n_live, info) in enumerate(result.actions):
-                action_rows.append((hand_id, seq, street, seat, action, amount, pot_before, to_call, n_live, info))
+            for seq, (street, seat, action, amount, pot_before, to_call, n_live, info, behind) in enumerate(result.actions):
+                action_rows.append((hand_id, seq, street, seat, action, amount, pot_before, to_call, n_live, info, behind))
     return job, hand_rows, player_rows, action_rows, time.time() - started
 
 
@@ -84,6 +84,8 @@ def connect(db_path):
     db.execute("PRAGMA journal_mode=WAL")
     db.execute("PRAGMA synchronous=OFF")
     db.executescript(SCHEMA)
+    if "behind" not in [row[1] for row in db.execute("PRAGMA table_info(actions)")]:
+        db.execute("ALTER TABLE actions ADD COLUMN behind INTEGER")     # a database from before stacks were logged
     return db
 
 
@@ -133,7 +135,7 @@ def run(db_path, hands=None, seconds=None, players=(6,), bots=("tag", "lag", "ni
                                    (job[0], job[1], len(job[3]), ",".join(job[3]), job[2], secs))
                         db.executemany("INSERT INTO hands VALUES (?,?,?,?,?,?,?,?)", hand_rows)
                         db.executemany("INSERT INTO players VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", player_rows)
-                        db.executemany("INSERT INTO actions VALUES (?,?,?,?,?,?,?,?,?,?)", action_rows)
+                        db.executemany("INSERT INTO actions VALUES (?,?,?,?,?,?,?,?,?,?,?)", action_rows)
                     played += len(hand_rows)
                     if progress and time.time() - last_report > 5:
                         last_report = time.time()

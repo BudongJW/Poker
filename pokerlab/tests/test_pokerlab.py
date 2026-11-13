@@ -410,12 +410,12 @@ def test_action_lines():
     line = inference.parse_line("open/bet/check call", 6)
     assert [(street, code) for street, _, code in line] == [(0, any_bet), (1, any_bet), (2, 1), (2, 1)]
     # seat unknown: pooled. Opening means paying the big blind into 1.5 big blinds: an expensive call
-    assert line[0][1] == (0, 0, expensive, 3, 1, -1) and line[3][1] == (2, 1, any_price, 3, 1, -1)
+    assert line[0][1] == (0, 0, expensive, 3, 1, -1, -1) and line[3][1] == (2, 1, any_price, 3, 1, -1, -1)
     # two players left in the hand at a six-handed table (the default): the button opened after three folds
     seated = inference.parse_line("BTN: open/bet", 2)
-    assert seated[0][1] == (0, 0, expensive, 1, 1, 3)       # pre-flop: three players left, short-handed table, button
-    assert seated[1][1] == (1, 0, 0, 0, 1, 2)               # flop: two left, the button acts last
-    assert inference.parse_line("utg: open/bet", 3, table=9)[0][1] == (0, 0, expensive, 3, 2, 0)   # full ring, early
+    assert seated[0][1] == (0, 0, expensive, 1, 1, 3, -1)   # pre-flop: three players left, short-handed table, button
+    assert seated[1][1] == (1, 0, 0, 0, 1, 2, -1)           # flop: two left, the button acts last; stacks unknown
+    assert inference.parse_line("utg: open/bet", 3, table=9)[0][1] == (0, 0, expensive, 3, 2, 0, -1)   # full ring, early
     # sizes: percent of the pot, or big blinds for a pre-flop open or call
     sized = inference.parse_line("btn: open3x/bet30/bet66 /raise120", 2)
     assert [code for _, _, code in sized] == [inference.BET_MEDIUM, inference.BET_SMALL, inference.BET_MEDIUM,
@@ -431,14 +431,15 @@ def test_action_lines():
     assert price("bb: call2x") == inference.CHEAP
     # at a heads-up table the button is the small blind, known seat or not
     assert price("open", table=2) == price("btn: open", table=2) == inference.NORMAL
-    assert price("call3x", table=2) == inference.NORMAL and price("bb: check", table=2) == inference.NO_BET
+    assert price("call3x", table=2) == expensive            # 2 more into the 4 that the two blinds and the raise make
+    assert price("call2.5x", table=2) == inference.NORMAL and price("bb: check", table=2) == inference.NO_BET
     assert inference.parse_line("btn: open3x", 2, table=2)[0][2] == inference.BET_LARGE    # 2 more into a pot of 2
     assert inference.parse_line("3bet90", 2)[0][2] == inference.BET_LARGE
     assert inference.parse_line("call3bet50", 2)[0][1][2] == inference.NORMAL
     with pytest.raises(ValueError):
         inference.parse_line("open/bet3x", 2)                                              # big blinds only pre-flop
-    assert inference.parse_line("utg: open", 2)[0][1][3:] == (3, 1, 1)                     # six-handed UTG is a middle seat
-    assert inference.parse_line("sb: open/bet", 2, table=2)[1][1][4:] == (0, 2)            # heads-up table: the button
+    assert inference.parse_line("utg: open", 2)[0][1][3:6] == (3, 1, 1)                    # six-handed UTG is a middle seat
+    assert inference.parse_line("sb: open/bet", 2, table=2)[1][1][4:6] == (0, 2)           # heads-up table: the button
     assert inference.parse_line("co: open/bet", 2)[1][1][5] == -1                          # last to act? unknown ...
     assert inference.parse_line("co: open/bet", 2, "bb")[1][1][5] == 2                     # ... unless my seat is known
     assert inference.parse_line("co: open/bet", 2, "btn")[1][1][5] == 0
@@ -449,9 +450,41 @@ def test_action_lines():
         inference.parse_line("dealer: open", 6)
     assert inference.parse_line("open//bet", 2)[1][0] == 2
     with pytest.raises(ValueError):
-        inference.parse_line("open/jam", 2)
+        inference.parse_line("open/donk", 2)
     with pytest.raises(ValueError):
         inference.range_from_line("open/bet/bet", "AsKs", "Qs Js 2d", 2)     # no turn on the board yet
+
+
+def test_action_lines_with_stacks_and_all_ins():
+    depths = lambda line, **more: [ctx[6] for _, ctx, _ in inference.parse_line(line, 2, **more)]
+    codes = lambda line, **more: [code for _, _, code in inference.parse_line(line, 2, **more)]
+    very_deep, deep, middling, shallow = inference.VERY_DEEP, inference.DEEP, inference.MIDDLING, inference.SHALLOW
+    # a hundred big blinds: lots behind before the flop, less with every bet that goes in
+    assert depths("btn: open/bet/bet/bet", stack=100) == [very_deep, deep, deep, middling]
+    assert depths("btn 20bb: open/bet/bet/bet") == [deep, middling, middling, shallow]     # the stack in the prefix
+    assert depths("btn 20bb: open/bet/bet/bet", stack=100) == depths("btn: open/bet/bet/bet", stack=20)
+    assert depths("btn: open/bet") == [inference.ANY_DEPTH] * 2                            # no stack given: the average
+    # all-ins: as a bet, and as the bet that was called
+    assert codes("btn: openallin", stack=12) == codes("shove", stack=12) == codes("btn: openallin") == [inference.ALL_IN]
+    assert codes("bb: call/check raiseallin", stack=40)[-1] == inference.ALL_IN
+    called = inference.parse_line("bb: call/call/call/callallin", 2)
+    assert called[-1][2] == inference.PASSIVE and called[-1][1][6] == inference.NOTHING_BEHIND
+    assert called[-1][1][2] == inference.ANY_PRICE                         # how big the shove was depends on the stack
+    assert inference.parse_line("bb: call/call/call/callallin", 2, stack=100)[-1][1][2] == inference.EXPENSIVE
+    assert inference.parse_line("bb: callallin", 2, stack=15)[0][1][2:] == (inference.EXPENSIVE, 0, 1, 5, 0)
+    # a bet of a size that the stack cannot pay is an all-in whether the line says so or not
+    assert codes("btn: open/bet100/bet100/bet100", stack=30)[-1] == inference.ALL_IN
+    assert codes("btn: open/bet100/bet100/bet100", stack=100)[-1] == inference.BET_LARGE
+    with pytest.raises(ValueError):
+        inference.parse_line("btn 0bb: open", 2)
+    with pytest.raises(ValueError):
+        inference.parse_line("open/bet3xallin", 2)
+    with pytest.raises(ValueError):
+        inference.parse_line("open/betallin/bet", 2)                       # nothing left to bet the turn with
+    share = lambda found: found.vector() / found.vector().sum()
+    short = share(inference.range_from_line("btn: openallin", "AsKs", (), 2, inference.load_model("pro"), stack=10))
+    deep_shove = share(inference.range_from_line("btn: openallin", "AsKs", (), 2, inference.load_model("pro"), stack=100))
+    assert np.abs(short - deep_shove).sum() > 0.01          # the same shove reads differently with ten big blinds
 
 
 def test_bet_sizes_and_prices():
@@ -468,7 +501,37 @@ def test_bet_sizes_and_prices():
     seen = inference.observed(result.actions, 3, 0)
     assert seen[0][2][2] == inference.EXPENSIVE                      # first in: 10 to call into the 15 of blinds
     raises = [(a, code) for a, (_, _, _, code) in zip(result.actions, seen) if a[2] == "raise"]
-    assert raises and all(code == inference.bet_class(a[3], a[4], a[5]) for a, code in raises)
+    assert raises and all(code == inference.bet_class(a[3], a[4], a[5], a[8]) for a, code in raises)
+
+
+def test_stack_depth_and_all_ins():
+    # what is left after calling, measured against the pot after the call
+    depths = [inference.depth_class(behind, 100, 0) for behind in (0, 50, 99, 100, 399, 400, 1999, 2000)]
+    assert depths == [inference.NOTHING_BEHIND, 1, 1, 2, 2, 3, 3, inference.VERY_DEEP]
+    assert inference.depth_class(100, 50, 50) == inference.MIDDLING
+    assert inference.depth_class(None, 100, 0) == inference.depth_class(float("inf"), 100, 0) == inference.ANY_DEPTH
+    # a bet that takes everything left is an all-in whatever its size; in a raise the call does not count
+    assert inference.bet_class(30, 100, 0, behind=30) == inference.ALL_IN
+    assert inference.bet_class(30, 100, 0, behind=31) == inference.BET_SMALL
+    assert inference.bet_class(250, 150, 100, behind=150) == inference.ALL_IN
+    assert inference.bet_class(250, 150, 100, behind=float("inf")) == inference.BET_MEDIUM       # stack unknown
+
+    class Shover:
+        def act(self, view):
+            return "raise", view.max_raise_to
+
+    for stacks in ([200, 1000], [1000, 200]):       # the short stack shoves, or the big stack puts it all-in
+        result = play_hand([Shover(), make_bot("station")], stacks, 0, 5, 10, random.Random(1))
+        shove, call = result.actions[:2]
+        assert (shove[2], shove[8]) == ("raise", 190)       # 200 is all that can go in; 10 of it is the big blind
+        assert (call[2], call[5], call[8]) == ("call", 190, 0)
+        seen = inference.observed(result.actions, 2, 0)
+        assert seen[0][3] == inference.ALL_IN and seen[0][2][6] == inference.DEEP          # 190 behind a pot of 20
+        assert seen[1][3] == inference.PASSIVE and seen[1][2][6] == inference.NOTHING_BEHIND
+        assert len(result.actions) == 2 and result.showdown and sum(result.net) == 0
+    # a log without stacks (a database from before they were kept) still reads: depth unknown, no all-ins
+    old = inference.observed([a[:8] for a in result.actions], 2, 0)
+    assert old[0][3] == inference.BET_LARGE and old[0][2][6] == old[1][2][6] == inference.ANY_DEPTH
 
 
 def test_seats_and_table_sizes():
@@ -486,15 +549,15 @@ def test_seats_and_table_sizes():
     bots = [make_bot("random", seed=i) for i in range(6)]
     result = play_hand(bots, [1000] * 6, 2, 5, 10, rng)
     seen = inference.observed(result.actions, 6, 2)
-    assert seen[0][0] == 5 and seen[0][2][4:] == (1, inference.POSITIONS.index("mp"))    # first to act six-handed
+    assert seen[0][0] == 5 and seen[0][2][4:6] == (1, inference.POSITIONS.index("mp"))   # first to act six-handed
     assert all(ctx[4] == 1 and 0 <= ctx[5] <= 5 for _, _, ctx, _ in seen)
 
 
 def test_model_shrinks_rare_seats_and_stores_only_what_it_saw(tmp_path):
     counts = np.zeros(inference._SHAPE)
     price = inference.EXPENSIVE
-    common = inference.context(0, 0, price, 6, 6, inference.POSITIONS.index("btn"))
-    rare = inference.context(0, 0, price, 6, 6, inference.POSITIONS.index("sb"))
+    common = inference.context(0, 0, price, 6, 6, inference.POSITIONS.index("btn"), inference.VERY_DEEP)
+    rare = inference.context(0, 0, price, 6, 6, inference.POSITIONS.index("sb"), inference.VERY_DEEP)
     counts[common][:, inference.BET_MEDIUM] = 600        # the button raised 90% of the time ...
     counts[common][:, inference.BET_LARGE] = 300
     counts[common][:, inference.GAVE_UP] = 100
@@ -515,9 +578,9 @@ def test_model_shrinks_rare_seats_and_stores_only_what_it_saw(tmp_path):
 
     path = str(tmp_path / "model.json")
     model.save(path)
-    assert len(json.load(open(path))["counts"]["all"]) == 2                      # two situations, not 3,456
+    assert len(json.load(open(path))["counts"]["all"]) == 2                      # two situations, not 20,736
     assert (inference.ActionModel.load(path).counts["all"] == counts).all()
-    old_layout = json.load(open(path)); old_layout["shape"] = [4, 3, 2, 4, 10, 3]
+    old_layout = json.load(open(path)); old_layout["shape"] = [4, 3, 4, 4, 3, 6, 10, 5]
     json.dump(old_layout, open(path, "w"))
     with pytest.raises(ValueError):
         inference.ActionModel.load(path)
@@ -525,8 +588,8 @@ def test_model_shrinks_rare_seats_and_stores_only_what_it_saw(tmp_path):
 
 def test_the_size_of_a_bet_is_a_separate_cautious_factor():
     counts = np.zeros(inference._SHAPE)
-    often = inference.context(1, 0, inference.NO_BET, 2, 6, 2)       # flop, checked to, last to act
-    rare = inference.context(1, 0, inference.NO_BET, 2, 6, 0)        # the same first to act: hardly ever seen
+    often = inference.context(1, 0, inference.NO_BET, 2, 6, 2, inference.DEEP)       # flop, checked to, last to act
+    rare = inference.context(1, 0, inference.NO_BET, 2, 6, 0, inference.DEEP)        # the same first to act: hardly ever seen
     small, large = inference.BET_SMALL, inference.BET_LARGE
     counts[often][:, inference.PASSIVE] = 500
     counts[often][1:5, small], counts[often][1:5, large] = 400, 100          # weak hands bet small ...
@@ -546,15 +609,43 @@ def test_the_size_of_a_bet_is_a_separate_cautious_factor():
         assert sum(model.likelihood(ctx, a) for a in range(inference.N_ACTIONS)) == pytest.approx(np.ones(10))
 
 
+def test_stack_depth_in_the_model():
+    counts = np.zeros(inference._SHAPE)
+    spot = lambda depth: inference.context(2, 0, inference.NO_BET, 2, 6, 2, depth)       # the turn, checked to
+    faced = lambda depth: inference.context(2, 1, inference.NORMAL, 2, 6, 2, depth)      # the turn, facing a bet
+    counts[spot(inference.DEEP)][:, inference.PASSIVE] = 700
+    counts[spot(inference.DEEP)][:, inference.BET_MEDIUM] = 300          # deep: a third bet, never all-in
+    counts[spot(inference.SHALLOW)][:, inference.PASSIVE] = 50
+    counts[spot(inference.SHALLOW)][5:, inference.ALL_IN] = 150          # shallow: strong hands shove
+    counts[spot(inference.ANY_DEPTH)][:, inference.PASSIVE] = 400        # hands whose stacks were not logged ...
+    counts[spot(inference.ANY_DEPTH)][:, inference.BET_LARGE] = 400      # ... where a shove looks like a large bet
+    counts[faced(inference.DEEP)][:, inference.BET_MEDIUM] = 200         # deep, people raise ...
+    counts[faced(inference.DEEP)][:, inference.PASSIVE] = 800
+    counts[faced(inference.NOTHING_BEHIND)][:, inference.PASSIVE] = 3    # ... facing an all-in nobody can
+    model = inference.ActionModel({"all": counts})
+    all_in = lambda ctx: model.likelihood(ctx, inference.ALL_IN)
+    assert all_in(spot(inference.DEEP)).max() < 0.01
+    assert all_in(spot(inference.SHALLOW))[9] > 0.7 > 0.05 > all_in(spot(inference.SHALLOW))[0]
+    # stacks unknown: the average over every depth for betting at all, hands with known stacks for the kind of bet
+    unknown = spot(inference.ANY_DEPTH)
+    assert model.likelihood(unknown, inference.AGGRESSIVE)[9] == pytest.approx((300 + 150 + 400) / 2000, abs=0.01)
+    assert model.likelihood(unknown, inference.BET_LARGE)[9] < 0.01 < all_in(unknown)[9]
+    # nothing behind: fold or call, even where three hands are all the model has seen
+    assert model.likelihood(faced(inference.DEEP), inference.AGGRESSIVE)[0] == pytest.approx(0.2, abs=0.01)
+    assert model.likelihood(faced(inference.NOTHING_BEHIND), inference.AGGRESSIVE).max() < 0.002
+    assert model.likelihood(faced(inference.NOTHING_BEHIND), inference.PASSIVE).min() > 0.7
+
+
 def test_hidden_hands_are_judged_without_bet_sizes():
-    priced = inference.context(1, 1, inference.NORMAL, 2, 6, 2)
-    any_price = priced[:2] + (inference.ANY_PRICE,) + priced[3:]
+    priced = inference.context(1, 1, inference.NORMAL, 2, 6, 2, inference.SHALLOW)
+    any_price = priced[:2] + (inference.ANY_PRICE,) + priced[3:6] + (inference.ANY_DEPTH,)
     assert inference._unsized(priced, inference.BET_LARGE) == (any_price, inference.AGGRESSIVE)
+    assert inference._unsized(priced, inference.ALL_IN) == (any_price, inference.AGGRESSIVE)
     assert inference._unsized(priced, inference.GAVE_UP) == (any_price, inference.GAVE_UP)
     assert inference._priced(priced, inference.BET_SMALL) == (priced, inference.AGGRESSIVE)
-    assert inference._coarse(priced, inference.PASSIVE) == ((1, 1, inference.ANY_PRICE, 0, -1, -1), inference.PASSIVE)
-    free = inference.context(1, 0, inference.NO_BET, 2, 6, 2)
-    assert inference._unsized(free, inference.PASSIVE) == (free, inference.PASSIVE)
+    assert inference._coarse(priced, inference.PASSIVE) == ((1, 1, inference.ANY_PRICE, 0, -1, -1, -1), inference.PASSIVE)
+    free = inference.context(1, 0, inference.NO_BET, 2, 6, 2, inference.DEEP)
+    assert inference._unsized(free, inference.PASSIVE) == (free[:6] + (inference.ANY_DEPTH,), inference.PASSIVE)
     assert inference.STAGES == ("coarse", "unsized")
 
     # everybody bets this flop, weak hands small and strong hands large; somebody whose cards stay hidden bets large
@@ -800,7 +891,9 @@ def test_phh_hand_is_replayed():
     # (street, raises, price, players left, table class, position): the button opens (paying 2 into 3 is
     # an expensive call), the small blind folds to the raise, and on the flop the big blind (first to
     # act of the two left) calls 8 into 21, a normal price
-    assert seen[0][2] == (0, 0, 3, 1, 1, 3) and seen[1][2] == (0, 1, 3, 1, 1, 4) and seen[5][2] == (1, 1, 2, 0, 1, 0)
+    # stacks of 100 big blinds: 198 behind a pot of 5 before the flop, 186 behind a pot of 29 when the bet is called
+    assert seen[0][2] == (0, 0, 3, 1, 1, 3, 4) and seen[1][2] == (0, 1, 3, 1, 1, 4, 3) and seen[5][2] == (1, 1, 2, 0, 1, 0, 3)
+    assert [a[8] for a in hand["actions"][:3]] == [198, 194, 194]
     assert seen[4][2][5] == 2                                                         # the button bets last to act
     # chips: the open adds 6 to a pot of 3, the flop bet 8 to 13, the river bet 20 to 29: all medium-sized
     assert [(a[3], a[4]) for a in hand["actions"] if a[2] == "raise"] == [(6, 3), (8, 13), (20, 29)]
@@ -815,11 +908,18 @@ def test_phh_hand_is_replayed():
     assert phh.stake_label("", 0.25) == "nl25-50" and phh.stake_label("", 10) == "nl1000"
 
     # heads-up the blinds are listed small, big but the last player (the button) posts the small one
-    duel = phh.parse_hand("variant = 'NT'\nblinds_or_straddles = [5, 10]\n"
+    assert phh.parse_hand(PHH_HAND.replace("[200, 200, 200]", "[200, 200]")) is None  # a stack is missing
+    unknown = phh.parse_hand(PHH_HAND.replace("[200, 200, 200]", "[inf, inf, inf]"))  # some sites do not log stacks
+    assert unknown["actions"][0][8] == float("inf")
+    assert {ctx[6] for _, _, ctx, _ in inference.observed(unknown["actions"], 3, 2)} == {inference.ANY_DEPTH}
+    short = phh.parse_hand(PHH_HAND.replace("[200, 200, 200]", "[200, 200, 14]"))     # the button has 14: the flop bet of 8 is all of it
+    seen_short = inference.observed(short["actions"], 3, 2)
+    assert seen_short[4][3] == inference.ALL_IN and seen_short[5][2][6] == inference.NOTHING_BEHIND
+    duel = phh.parse_hand("variant = 'NT'\nblinds_or_straddles = [5, 10]\nstarting_stacks = [1000, 1000]\n"
                           "actions = ['d dh p1 ????', 'd dh p2 ????', 'p2 cc', 'p1 cc', 'd db 2c3d4h', 'p1 cc', 'p2 f']\n")
     assert [(a[1], a[2], a[5]) for a in duel["actions"]] == [(1, "call", 5), (0, "check", 0), (0, "check", 0), (1, "fold", 0)]
     free_fold = inference.observed(duel["actions"], duel["n_players"], duel["button"])[-1]
-    assert free_fold[2][4:] == (0, 2)                                                 # heads-up table, the button acts last
+    assert free_fold[2][4:6] == (0, 2)                                                 # heads-up table, the button acts last
     assert free_fold[3] == inference.GAVE_UP and free_fold[2][2] == 0           # a fold with nothing to call ...
     assert (inference.default_model().likelihood(free_fold[2], inference.GAVE_UP) > 0).all()   # ... is never impossible
 

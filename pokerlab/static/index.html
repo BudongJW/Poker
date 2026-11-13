@@ -67,6 +67,8 @@ input[type=number] { width: 84px; }
 .streets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 6px; }
 .streets select { width: 100%; }
 .streets select + select { margin-top: 3px; font-size: 12.5px; }
+.known { display: grid; grid-template-columns: minmax(0, 1fr) 104px; gap: 6px; }
+.known input[type=number] { width: 100%; }
 @media (max-width: 480px) { .streets { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pick { font-size: 11.5px; } }
 .opponent input[type=text] { flex: 1; }
 label.field { display: grid; gap: 2px; font-size: 12px; color: var(--ink-2); }
@@ -209,8 +211,8 @@ const POSTFLOP_ACTIONS = [["", "—"], ["check", "체크"], ["bet", "벳"], ["ca
   ["check call", "체크 후 콜"], ["check raise", "체크레이즈"], ["bet callraise", "벳 후 레이즈에 콜"], ["reraise", "리레이즈"]];
 const STREETS = ["프리플랍", "플랍", "턴", "리버"];
 // bet sizes the model tells apart, as a share of the pot; a pre-flop open (or the open that was called) in big blinds
-const SIZES = [["", "크기 모름"], ["33", "작게"], ["66", "보통"], ["100", "크게"]];
-const OPEN_SIZES = [["", "크기 모름"], ["2x", "2bb"], ["2.5x", "2.5~3bb"], ["3.5x", "3.5bb 이상"]];
+const SIZES = [["", "크기 모름"], ["33", "작게"], ["66", "보통"], ["100", "크게"], ["allin", "올인"]];
+const OPEN_SIZES = [["", "크기 모름"], ["2x", "2bb"], ["2.5x", "2.5~3bb"], ["3.5x", "3.5bb 이상"], ["allin", "올인"]];
 function sizeOptions(street, action) {
   return street === 0 && ["open", "call"].includes(sizedWord(action)) ? OPEN_SIZES : SIZES;
 }
@@ -313,9 +315,14 @@ function renderOpponents() {
     remove.onclick = () => { state.opponents.splice(i, 1); renderOpponents(); schedule(); };
     head.append(kind, remove); box.append(head);
     if (opp.type === "line") {
-      const seat = el("label", "field", "상대 포지션 (알면 레인지가 더 정확해집니다)");
+      const seat = el("label", "field", "상대 포지션");
       seat.append(seatSelect(opp.position || "", v => { opp.position = v; schedule(); }));
-      box.append(seat);
+      const stack = el("label", "field", "유효 스택 (bb)"), chips = el("input");
+      chips.type = "number"; chips.min = "1"; chips.step = "1"; chips.placeholder = "모름"; chips.value = opp.stack || "";
+      chips.oninput = () => { opp.stack = chips.value; schedule(500); };
+      stack.append(chips);
+      const known = el("div", "known"); known.append(seat, stack);
+      box.append(known);
       const row = el("div", "streets");
       STREETS.forEach((name, s) => {
         const field = el("label", "field", name), sel = el("select"), size = el("select");
@@ -332,7 +339,7 @@ function renderOpponents() {
         size.onchange = () => { opp.sizes[s] = size.value; schedule(); };
         field.append(sel, size); row.append(field);
       });
-      box.append(row, el("p", "hint", "아랫줄은 크기입니다. 팟 대비 45% 미만이 작게, 90% 이상이 크게이고, 프리플랍 오픈은 빅 블라인드 배수로 고릅니다. 콜에는 받은 벳의 크기를 고릅니다."));
+      box.append(row, el("p", "hint", "아랫줄은 크기입니다. 팟 대비 45% 미만이 작게, 90% 이상이 크게이고, 프리플랍 오픈은 빅 블라인드 배수로 고릅니다. 콜에는 받은 벳의 크기를 고릅니다. 스택은 핸드를 시작할 때 상대와 나 중 작은 쪽의 칩이며, 포지션과 스택을 알면 레인지가 더 정확해집니다."));
     } else {
       const input = el("input"); input.type = "text"; input.value = opp.text;
       input.placeholder = opp.type === "range" ? "예: TT+, AQs+, KQs  또는  15%" : "예: QhQd";
@@ -352,7 +359,7 @@ async function request() {
   if (street < 0) { renderMessage("보드는 비워 두거나 플랍 3장, 턴, 리버 순서로 채워 주세요."); return; }
   const quality = {fast: {trials: 50000}, normal: {trials: 200000}, precise: {precision: 0.001}, ultra: {precision: 0.0005}}[$("quality").value];
   const opponents = state.opponents.map(o => o.type === "line"
-    ? {type: "line", position: o.position || "",
+    ? {type: "line", position: o.position || "", stack: o.stack || "",
        value: o.streets.slice(0, street + 1).map((a, i) => withSize(a, o.sizes[i])).join("/").replace(/\/+$/, "")}
     : {type: o.type, value: o.text});
   const [model, profile] = $("model").value.split(":");
@@ -499,7 +506,7 @@ $("players").onchange = () => { state.players = Number($("players").value); rend
 $("quality").onchange = () => schedule();
 $("model").onchange = () => schedule();
 for (const id of ["pot", "toCall", "bet"]) $(id).oninput = () => schedule(500);
-$("addOpponent").onclick = () => { state.opponents.push({type: "line", streets: ["", "", "", ""], sizes: ["", "", "", ""], text: "", position: ""}); renderOpponents(); };
+$("addOpponent").onclick = () => { state.opponents.push({type: "line", streets: ["", "", "", ""], sizes: ["", "", "", ""], text: "", position: "", stack: ""}); renderOpponents(); };
 for (const [v, t] of SEATS) { const o = el("option", null, t); o.value = v; $("position").append(o); }
 $("position").onchange = () => schedule();
 $("table").onchange = () => schedule();

@@ -37,12 +37,16 @@ def main(argv=None):
                         "inferred from it. Pre-flop: limp open call 3bet call3bet 4bet check. "
                         "Post-flop: check bet call raise callraise reraise. Put the opponent's seat in front "
                         "if you know it: 'btn: open/bet' (ep mp co btn sb bb). A size may follow a word, in "
-                        "percent of the pot ('bet66', 'call50' = called a half-pot bet) or pre-flop in big "
-                        "blinds ('open3x', 'call3x'). Repeatable")
+                        "percent of the pot ('bet66', 'call50' = called a half-pot bet), pre-flop in big "
+                        "blinds ('open3x', 'call3x'), or 'allin' ('betallin', 'callallin'). A stack may stand "
+                        "next to the seat: 'btn 40bb: open/bet'. Repeatable")
     p.add_argument("--position", help="your own seat (ep mp co btn sb bb); with a villain's seat it tells "
                                       "the model who acts last after the flop")
     p.add_argument("--table", type=int, help="players dealt in at the table (default 6, or 9 with more than "
                                              "six players in the hand); --players is who is still in")
+    p.add_argument("--stack", type=float, metavar="BB",
+                   help="effective stack in big blinds at the start of the hand, for --villain lines without their "
+                        "own; without it the model answers for the average stack depth")
     p.add_argument("--model", default=advisor.DEFAULT_MODEL,
                    help=f"action model that reads --villain lines: {', '.join(inference.MODELS)} or a model file "
                         f"(default: {advisor.DEFAULT_MODEL})")
@@ -137,7 +141,8 @@ def main(argv=None):
         spot = dict(hero=args.hand, board=args.board, n_players=args.players, pot=args.pot, to_call=args.to_call,
                     ranges=[preflop.parse_range(r) for r in args.ranges], trials=args.trials, seed=args.seed,
                     precision=args.precision and args.precision / 100, bet=args.bet, lines=args.lines,
-                    profile=args.profile, model=args.model, position=args.position, table=args.table)
+                    profile=args.profile, model=args.model, position=args.position, table=args.table,
+                    stack=args.stack)
         if args.json:
             print(json.dumps(advisor.to_json(advisor.analyze(**spot)), ensure_ascii=False, indent=1))
         else:

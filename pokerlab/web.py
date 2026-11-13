@@ -31,7 +31,9 @@ def analyze_request(body):
             continue
         if kind == "line":
             seat = str(opponent.get("position") or "").strip()
-            lines.append(f"{seat}: {value}" if seat else value)
+            stack = _number(opponent.get("stack"))
+            prefix = " ".join(([seat] if seat else []) + ([f"{stack:g}bb"] if stack else []))
+            lines.append(f"{prefix}: {value}" if prefix else value)
         elif kind == "range":
             ranges.append(parse_range(value))
         elif kind == "cards":
