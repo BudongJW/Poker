@@ -547,34 +547,55 @@ def prepare(hands, flop_runouts=150, seed=0, processes=None):
         return [item for part in pool.imap(_prepare_chunk, jobs) for item in part]
 
 
-def _coarse(ctx):
-    """The same situation with the price of calling, table size and position left out."""
-    return ctx[0], ctx[1], ANY_PRICE if ctx[2] else NO_BET, ctx[3], -1, -1
+def _unsized(ctx, code):
+    """An action without its sizes: a bet to call or none, and a bet or raise of any size."""
+    return ctx[:2] + (ANY_PRICE if ctx[2] else NO_BET,) + ctx[3:], AGGRESSIVE if code > PASSIVE else code
 
 
-def _posterior(model, acts, buckets, preflop, coarse=False):
+def _coarse(ctx, code):
+    """The same without table size and position either."""
+    ctx, code = _unsized(ctx, code)
+    return ctx[:4] + (-1, -1), code
+
+
+def _priced(ctx, code):
+    """An action with the price of calling but a bet or raise of any size."""
+    return ctx, AGGRESSIVE if code > PASSIVE else code
+
+
+def _as_it_is(ctx, code):
+    return ctx, code
+
+
+VIEWS = {"coarse": _coarse, "unsized": _unsized, "priced": _priced, "full": _as_it_is}
+
+
+def _posterior(model, acts, buckets, preflop, view=_as_it_is):
     """Weights over the 1,326 combos for a player with hidden cards, the likelihood of their actions
     averaged over the possible combos, and the number of possible combos."""
     postflop = [street for street, _, _ in acts if street]
     weights = (buckets[max(postflop)] >= 0).astype(np.float64) if postflop else np.ones(1326)
     possible = weights.sum()
     for street, ctx, code in acts:      # a blocked combo (bucket -1) already has weight 0, whatever it indexes
-        weights *= model.likelihood(_coarse(ctx) if coarse else ctx, code)[buckets[street] if street else preflop]
+        weights *= model.likelihood(*view(ctx, code))[buckets[street] if street else preflop]
     return weights, weights.sum() / possible, possible
 
 
-def expected_counts(prepared, model, coarse=False, tally=True):
+def expected_counts(prepared, model, view="full", tally=True):
     """One E-step -> ({label: counts}, log-likelihood of all observed actions, number of actions).
 
     A player whose cards are known adds one count per action. A player whose cards are hidden adds
     fractional counts, spread over the strength buckets in proportion to how likely each combo is
-    given everything that player did in the hand under ``model``. With ``coarse`` the model is
-    asked without price, table size and position (the counts are still filed under the full
-    situation). ``tally=False`` only computes the likelihood.
+    given everything that player did in the hand under ``model``.
+
+    view: how much of each action the model is shown while it judges the hidden hands (a name from
+    VIEWS): 'full', 'priced' (bet sizes merged), 'unsized' (the price of calling merged too) or
+    'coarse' (table size and position left out as well). The counts are filed under the full
+    situation and action whatever the view. ``tally=False`` only computes the likelihood.
     """
+    view = VIEWS[view]
     preflop = _buckets(_preflop_percentiles())
     preflop_share = np.bincount(preflop, minlength=N_BUCKETS) / 1326
-    seen = _coarse if coarse else (lambda ctx: ctx)
     counts, folded_early = {}, {}
     log_likelihood, n_actions = 0.0, 0
     for players, buckets in prepared:
@@ -590,9 +611,9 @@ def expected_counts(prepared, model, coarse=False, tally=True):
                     bucket = int(buckets[street][combo] if street else preflop[combo])
                     if tally:
                         target[ctx + (bucket, code)] += 1
-                    log_likelihood += np.log(model.likelihood(seen(ctx), code)[bucket])
+                    log_likelihood += np.log(model.likelihood(*view(ctx, code))[bucket])
             else:
-                weights, likelihood, _ = _posterior(model, acts, buckets, preflop, coarse)
+                weights, likelihood, _ = _posterior(model, acts, buckets, preflop, view)
                 if likelihood <= 0:         # cannot happen with a smoothed model; never let one hand poison the fit
                     n_actions -= len(acts)
                     continue
@@ -606,7 +627,7 @@ def expected_counts(prepared, model, coarse=False, tally=True):
     for (label, acts), n in folded_early.items():
         share = preflop_share.copy()
         for _, ctx, code in acts:
-            share *= model.likelihood(seen(ctx), code)
+            share *= model.likelihood(*view(ctx, code))
         log_likelihood += n * np.log(share.sum())
         if tally:
             share *= n / share.sum()
@@ -618,31 +639,33 @@ def expected_counts(prepared, model, coarse=False, tally=True):
     return counts, float(log_likelihood), n_actions
 
 
-def fit_prepared(prepared, initial=None, iterations=30, tolerance=5e-5, source="", progress=None):
+STAGES = ("coarse", "unsized")      # see fit_prepared
+
+
+def fit_prepared(prepared, initial=None, iterations=30, tolerance=5e-5, source="", progress=None, stages=None):
     """Learn an :class:`ActionModel` from prepared hands.
 
     With every hole card known this is plain counting. With hidden cards it is EM: infer what the
     hidden hands probably were, recount, and repeat until the log-likelihood per action improves by
     less than ``tolerance`` (at most ``iterations`` passes per stage).
 
-    Without a starting model the fit runs in two stages. First the situations are learned without
-    the price of calling, table size and position: few probabilities, each backed by many hands,
-    so EM separates weak hands from strong ones quickly. The detailed model then starts from that answer. Started cold,
-    EM spreads the hidden hands thinly over the many detailed situations and takes very long to
-    sharpen them.
+    stages: the views (see :func:`expected_counts`) under which the hidden hands are judged, one
+    EM run after the other. By default first 'coarse', then 'unsized'; with a starting model only
+    the last of them.
     """
     model = initial or ActionModel({"all": np.zeros(_SHAPE)})
     if not any(combo < 0 for players, _ in prepared for _, combo, _ in players):
         return ActionModel(expected_counts(prepared, model)[0], source)
-    for coarse in ((False,) if initial else (True, False)):
+    stages = stages or (STAGES[-1:] if initial else STAGES)
+    for view in stages:
         previous = None
         for step in range(iterations):
-            counts, log_likelihood, n_actions = expected_counts(prepared, model, coarse)
+            counts, log_likelihood, n_actions = expected_counts(prepared, model, view)
             model = ActionModel(counts, source)
             per_action = log_likelihood / max(n_actions, 1)
             if progress:
-                progress(f"EM {'coarse' if coarse else 'full'} {step + 1}: log-likelihood per action "
-                         f"{per_action:.5f} (of the model before this step)")
+                progress(f"EM {view} {step + 1}: log-likelihood per action {per_action:.5f} "
+                         f"(of the model before this step)")
             if previous is not None and per_action - previous < tolerance:
                 break
             previous = per_action
