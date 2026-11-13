@@ -10,6 +10,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from . import advisor
 from .cards import parse_cards
+from .inference import MODELS
 from .preflop import parse_range
 
 PAGE = os.path.join(os.path.dirname(__file__), "static", "index.html")
@@ -45,11 +46,14 @@ def analyze_request(body):
     if len(ranges) + len(lines) > n_players - 1:
         raise ValueError("상대 설정이 상대 수보다 많습니다")
     precision = _number(body.get("precision"))
+    model = str(body.get("model") or advisor.DEFAULT_MODEL)
+    if model not in MODELS:                 # names only: a request must not make the server open arbitrary files
+        raise ValueError(f"모델은 {', '.join(MODELS)} 중 하나여야 합니다")
     analysis = advisor.analyze(
         body["hand"], body.get("board", ""), n_players, _number(body.get("pot")), _number(body.get("to_call")),
         ranges, trials=min(int(body.get("trials", 200_000)), MAX_TRIALS),
         precision=max(precision, MIN_PRECISION) if precision else None,
-        bet=_number(body.get("bet")), lines=lines, profile=str(body.get("profile", "all")))
+        bet=_number(body.get("bet")), lines=lines, profile=str(body.get("profile", "all")), model=model)
     return advisor.to_json(analysis)
 
 

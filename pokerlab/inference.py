@@ -24,7 +24,13 @@ from .equity import ALL_COMBOS, COMBO_INDEX, Range, _boards, equity, matchup
 from .evaluator import evaluate_pairs, rank_counts
 from .preflop import preflop_equity
 
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "data", "action_model.json")
+_DATA = os.path.join(os.path.dirname(__file__), "data")
+MODEL_PATH = os.path.join(_DATA, "action_model.json")
+MODELS = {      # bundled models by name
+    "selfplay": MODEL_PATH,                                     # this package's bots; updated by the daily cycle
+    "online": os.path.join(_DATA, "action_model_online.json"),  # real-money online play, July 2009 (HandHQ)
+    "pro": os.path.join(_DATA, "action_model_pro.json"),        # Pluribus and the professionals it played
+}
 N_BUCKETS = 10
 GAVE_UP, PASSIVE, AGGRESSIVE = 0, 1, 2          # fold / check or call / bet or raise
 _SHAPE = (4, 3, 2, 4, N_BUCKETS, 3)             # street, raises faced, facing a bet, players left, bucket, action
@@ -180,7 +186,9 @@ class ActionModel:
             counts = self.counts[profile][ctx]
             if counts.sum() < 200:                      # rarely seen: pool the table sizes
                 counts = self.counts[profile][ctx[0], ctx[1], ctx[2]].sum(axis=0)
-            prior = np.array([1 / 3] * 3 if ctx[2] else [0.0, 0.5, 0.5])     # cannot fold without a bet
+            # one pseudo-count per bucket keeps every action possible: real players do, rarely, fold
+            # with nothing to call, and an impossible observation would wipe out a whole range
+            prior = np.array([1 / 3] * 3 if ctx[2] else [0.02, 0.49, 0.49])
             self._likelihoods[key] = ((counts + prior) / (counts.sum(axis=1, keepdims=True) + 1))[:, action]
         return self._likelihoods[key]
 
@@ -206,10 +214,10 @@ class ActionModel:
         return cls(data["counts"], data.get("source", ""))
 
 
-@lru_cache(maxsize=4)
-def load_model(path=MODEL_PATH):
-    """The action model stored at ``path`` (the bundled one by default), read once per process."""
-    return ActionModel.load(path)
+@lru_cache(maxsize=8)
+def load_model(name=MODEL_PATH):
+    """A bundled model by name (see :data:`MODELS`) or the model stored in a file, read once per process."""
+    return ActionModel.load(MODELS.get(name, name))
 
 
 def default_model():
@@ -218,15 +226,25 @@ def default_model():
 
 # ---- inference -------------------------------------------------------------------------
 
+def strength_buckets(board, flop_runouts=None, rng=None, cache=None):
+    """Strength bucket (0 weakest .. N_BUCKETS-1) of each row of ALL_COMBOS on ``board``; -1 if impossible.
+
+    ``cache`` (a dict) is filled and reused, so several callers looking at one board compute it once.
+    """
+    key = tuple(board)
+    if cache is None:
+        return _buckets(hand_percentiles(key, flop_runouts, rng))
+    if key not in cache:
+        cache[key] = _buckets(hand_percentiles(key, flop_runouts, rng))
+    return cache[key]
+
+
 def _range_from(model, actions, hero, board, profile, flop_runouts, rng, cache):
     """Bayes update over one opponent's [(street, context, code)] -> Range, or None without information."""
     cache = {} if cache is None else cache
     weights = np.ones(1326)
     for street, ctx, code in actions:
-        key = tuple(board[:_BOARD_CARDS[street]])
-        if key not in cache:
-            cache[key] = _buckets(hand_percentiles(key, flop_runouts, rng))
-        buckets = cache[key]
+        buckets = strength_buckets(board[:_BOARD_CARDS[street]], flop_runouts, rng, cache)
         weights *= np.where(buckets >= 0, model.likelihood(ctx, code, profile)[buckets], 0.0)
     weights[np.isin(ALL_COMBOS, list(hero) + list(board)).any(axis=1)] = 0.0
     return Range.from_vector(weights) if weights.sum() > 0 else None
@@ -293,24 +311,137 @@ def _load_hands(db_path, n_hands, seed, held_out=None):
     return [hands[i] for i in sorted(hands)]
 
 
-def _fit_chunk(job):
-    hands, flop_runouts, seed = job
-    rng = np.random.default_rng(seed)
-    counts = {}
-    for hand in hands:
-        buckets = {}
-        for seat, street, ctx, code in observed(hand["actions"]):
-            if street not in buckets:
-                buckets[street] = _buckets(hand_percentiles(hand["board"][:_BOARD_CARDS[street]], flop_runouts, rng))
-            hole = hand["holes"][seat]
-            cell = ctx + (buckets[street][COMBO_INDEX[hole[0], hole[1]]], code)
-            for name in ("all", hand["bots"][seat]):
-                counts.setdefault(name, np.zeros(_SHAPE))[cell] += 1
-    return counts
-
-
 def _in_chunks(items, size):
     return [items[i:i + size] for i in range(0, len(items), size)]
+
+
+def _prepare_chunk(job):
+    hands, flop_runouts, seed = job
+    rng = np.random.default_rng(seed)
+    out = []
+    for hand in hands:
+        by_seat = {}
+        for seat, street, ctx, code in observed(hand["actions"]):
+            by_seat.setdefault(seat, []).append((street, ctx, code))
+        buckets = {street: _buckets(hand_percentiles(hand["board"][:_BOARD_CARDS[street]], flop_runouts, rng)).astype(np.int8)
+                   for street in {street for acts in by_seat.values() for street, _, _ in acts if street}}
+        players = []
+        for seat, acts in by_seat.items():
+            hole = hand["holes"].get(seat)
+            players.append((hand["bots"][seat], -1 if hole is None else int(COMBO_INDEX[hole[0], hole[1]]), tuple(acts)))
+        out.append((players, buckets))
+    return out
+
+
+def prepare(hands, flop_runouts=150, seed=0, processes=None):
+    """Hand records -> what learning needs, computed once: per hand, each player's
+    (profile label, combo index or -1 if the cards are hidden, actions as (street, context, code))
+    and the strength bucket of every combo on each street that saw action."""
+    from multiprocessing import Pool
+
+    jobs = [(chunk, flop_runouts, [seed, i]) for i, chunk in enumerate(_in_chunks(hands, 250))]
+    with Pool(processes) as pool:
+        return [item for part in pool.imap(_prepare_chunk, jobs) for item in part]
+
+
+def _posterior(model, acts, buckets, preflop):
+    """Weights over the 1,326 combos for a player with hidden cards, the likelihood of their actions
+    averaged over the possible combos, and the number of possible combos."""
+    postflop = [street for street, _, _ in acts if street]
+    weights = (buckets[max(postflop)] >= 0).astype(np.float64) if postflop else np.ones(1326)
+    possible = weights.sum()
+    for street, ctx, code in acts:      # a blocked combo (bucket -1) already has weight 0, whatever it indexes
+        weights *= model.likelihood(ctx, code)[buckets[street] if street else preflop]
+    return weights, weights.sum() / possible, possible
+
+
+def expected_counts(prepared, model):
+    """One E-step -> ({label: counts}, log-likelihood of all observed actions, number of actions).
+
+    A player whose cards are known adds one count per action. A player whose cards are hidden adds
+    fractional counts, spread over the strength buckets in proportion to how likely each combo is
+    given everything that player did in the hand under ``model``.
+    """
+    preflop = _buckets(_preflop_percentiles())
+    preflop_share = np.bincount(preflop, minlength=N_BUCKETS) / 1326
+    counts, folded_early = {}, {}
+    log_likelihood, n_actions = 0.0, 0
+    for players, buckets in prepared:
+        for label, combo, acts in players:
+            n_actions += len(acts)
+            if combo < 0 and not any(street for street, _, _ in acts):
+                key = (label, acts)         # hidden and only acted pre-flop: identical for everyone alike
+                folded_early[key] = folded_early.get(key, 0) + 1
+                continue
+            target = counts.setdefault(label, np.zeros(_SHAPE))
+            if combo >= 0:
+                for street, ctx, code in acts:
+                    bucket = int(buckets[street][combo] if street else preflop[combo])
+                    target[ctx + (bucket, code)] += 1
+                    log_likelihood += np.log(model.likelihood(ctx, code)[bucket])
+            else:
+                weights, likelihood, _ = _posterior(model, acts, buckets, preflop)
+                if likelihood <= 0:         # cannot happen with a smoothed model; never let one hand poison the fit
+                    n_actions -= len(acts)
+                    continue
+                log_likelihood += np.log(likelihood)
+                weights /= weights.sum()
+                for street, ctx, code in acts:
+                    where = buckets[street].clip(0) if street else preflop
+                    target[ctx][:, code] += np.bincount(where, weights=weights, minlength=N_BUCKETS)
+    for (label, acts), n in folded_early.items():
+        share = preflop_share.copy()
+        for _, ctx, code in acts:
+            share *= model.likelihood(ctx, code)
+        log_likelihood += n * np.log(share.sum())
+        share *= n / share.sum()
+        target = counts.setdefault(label, np.zeros(_SHAPE))
+        for _, ctx, code in acts:
+            target[ctx][:, code] += share
+    counts["all"] = sum(counts.values())
+    return counts, float(log_likelihood), n_actions
+
+
+def fit_prepared(prepared, initial=None, iterations=12, tolerance=2e-4, source="", progress=None):
+    """Learn an :class:`ActionModel` from prepared hands.
+
+    With every hole card known this is plain counting. With hidden cards it is EM: starting from
+    ``initial``, infer what the hidden hands probably were, recount, and repeat until the
+    log-likelihood per action improves by less than ``tolerance``.
+    """
+    model = initial or ActionModel({"all": np.zeros(_SHAPE)})
+    hidden = any(combo < 0 for players, _ in prepared for _, combo, _ in players)
+    previous = None
+    for step in range(iterations if hidden else 1):
+        counts, log_likelihood, n_actions = expected_counts(prepared, model)
+        model = ActionModel(counts, source)
+        per_action = log_likelihood / max(n_actions, 1)
+        if progress:
+            progress(f"EM {step + 1}: log-likelihood per action {per_action:.5f} (of the model before this step)")
+        if previous is not None and per_action - previous < tolerance:
+            break
+        previous = per_action
+    return model
+
+
+def action_fit(prepared, model):
+    """How well ``model`` explains play it was not fitted on.
+
+    log_likelihood: average log-probability of each observed action (hidden cards averaged out).
+    shown_hands / shown_lift: for hands shown at showdown, how many times more probability the
+    range inferred from that player's actions put on the hand they really held than a uniform
+    guess over the possible combos (geometric mean).
+    """
+    preflop = _buckets(_preflop_percentiles())
+    _, log_likelihood, n_actions = expected_counts(prepared, model)
+    lifts = []
+    for players, buckets in prepared:
+        for _, combo, acts in players:
+            if combo >= 0:
+                weights, _, possible = _posterior(model, acts, buckets, preflop)
+                lifts.append(np.log(weights[combo] / weights.sum() * possible))
+    return {"actions": n_actions, "log_likelihood": log_likelihood / max(n_actions, 1),
+            "shown_hands": len(lifts), "shown_lift": float(np.exp(np.mean(lifts))) if lifts else float("nan")}
 
 
 def fit(db_path, hands=15_000, flop_runouts=300, seed=0, processes=None, held_out=None):
@@ -319,16 +450,9 @@ def fit(db_path, hands=15_000, flop_runouts=300, seed=0, processes=None, held_ou
     One profile per bot name found in the database, plus 'all'. ``held_out=False`` leaves the
     scoring fifth of the hands untouched (see :func:`score`).
     """
-    from multiprocessing import Pool
-
     sample = _load_hands(db_path, hands, seed, held_out)
-    jobs = [(chunk, flop_runouts, [seed, i]) for i, chunk in enumerate(_in_chunks(sample, 250))]
-    total = {}
-    with Pool(processes) as pool:
-        for part in pool.imap_unordered(_fit_chunk, jobs):
-            for name, counts in part.items():
-                total[name] = total.get(name, 0) + counts
-    return ActionModel(total, f"{len(sample)} hands from {os.path.basename(db_path)}")
+    return fit_prepared(prepare(sample, flop_runouts, seed, processes),
+                        source=f"{len(sample)} hands from {os.path.basename(db_path)}")
 
 
 def _score_chunk(job):
@@ -361,8 +485,8 @@ def _score_chunk(job):
 METHODS = ("random", "model", "model_profiled")
 
 
-def score(db_path, model=None, hands=4000, trials=4000, seed=1, processes=None, held_out=None):
-    """Equity estimates next to the truth, on one decision point from each of ``hands`` sampled hands.
+def score_hands(hands, model=None, trials=4000, seed=1, processes=None):
+    """Equity estimates next to the truth, on one decision point from each hand (all hole cards must be known).
 
     Returns a DataFrame with a row per decision: street, opponents, ``truth`` (the acting player's
     equity against the hole cards the opponents really held) and the estimate of each method:
@@ -375,10 +499,14 @@ def score(db_path, model=None, hands=4000, trials=4000, seed=1, processes=None, 
     import pandas as pd
 
     model = model or default_model()
-    sample = _load_hands(db_path, hands, seed, held_out)
-    jobs = [(chunk, model, trials, seed * 1000 + i) for i, chunk in enumerate(_in_chunks(sample, 100))]
+    jobs = [(chunk, model, trials, seed * 1000 + i) for i, chunk in enumerate(_in_chunks(hands, 100))]
     with Pool(processes) as pool:
-        return pd.DataFrame([row for part in pool.imap_unordered(_score_chunk, jobs) for row in part])
+        return pd.DataFrame([row for part in pool.imap(_score_chunk, jobs) for row in part])     # in hand order
+
+
+def score(db_path, model=None, hands=4000, trials=4000, seed=1, processes=None, held_out=None):
+    """:func:`score_hands` on hands sampled from a self-play database."""
+    return score_hands(_load_hands(db_path, hands, seed, held_out), model, trials, seed, processes)
 
 
 def summarize(rows):

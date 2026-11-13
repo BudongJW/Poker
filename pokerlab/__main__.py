@@ -3,7 +3,7 @@
 import argparse
 import json
 
-from . import advisor, daily, inference, preflop, report, selfplay
+from . import advisor, daily, inference, phh, preflop, report, selfplay
 from .bots import BOT_TYPES
 from .cards import cards_str, parse_cards
 from .equity import matchup
@@ -36,7 +36,10 @@ def main(argv=None):
                    help="what one opponent did, streets split by '/', e.g. 'open/bet/bet'; the range is "
                         "inferred from it. Pre-flop: limp open call 3bet call3bet 4bet check. "
                         "Post-flop: check bet call raise callraise reraise. Repeatable")
-    p.add_argument("--profile", default="all", help="opponent type the action model should assume (default: all)")
+    p.add_argument("--model", default=advisor.DEFAULT_MODEL,
+                   help=f"action model that reads --villain lines: {', '.join(inference.MODELS)} or a model file "
+                        f"(default: {advisor.DEFAULT_MODEL})")
+    p.add_argument("--profile", default="all", help="opponent type within the model (default: all)")
     p.add_argument("--pot", type=float, help="pot size before your call or bet")
     p.add_argument("--to-call", type=float, help="amount you must call")
     p.add_argument("--bet", type=float, help="bet size you are considering")
@@ -82,6 +85,22 @@ def main(argv=None):
     p.add_argument("--hands", type=int, default=4000)
     p.add_argument("--processes", type=int)
 
+    p = sub.add_parser("fit-history", help="learn an action model from public hand histories (PHH files)")
+    p.add_argument("paths", nargs="+", metavar="PATH", help=".phh / .phhs files or directories of them")
+    p.add_argument("--out", required=True, help="where to write the model")
+    p.add_argument("--labels", choices=["none", *phh.LABELS], default="none",
+                   help="profiles besides 'all': 'stake' = one per stake band, 'pluribus' = the bot vs the professionals")
+    p.add_argument("--init", metavar="MODEL", help="starting model for hands whose cards are hidden (a name or a file)")
+    p.add_argument("--hands", type=int, help="read at most this many hands, from files in random order")
+    p.add_argument("--iterations", type=int, default=12, help="most EM passes when cards are hidden (default 12)")
+    p.add_argument("--processes", type=int)
+
+    p = sub.add_parser("score-history", help="how well an action model explains hand histories it was not fitted on")
+    p.add_argument("paths", nargs="+", metavar="PATH")
+    p.add_argument("--model", default=advisor.DEFAULT_MODEL, help="a bundled model name or a model file")
+    p.add_argument("--hands", type=int, default=20_000)
+    p.add_argument("--processes", type=int)
+
     p = sub.add_parser("daily", help="one learning cycle: play, update the range model and the champion, record")
     p.add_argument("--cycles", type=int, default=1, help="cycles to run back to back; 0 = until Ctrl-C")
     p.add_argument("--hands", type=int, default=60_000, help="hands per challenger match (default 60000)")
@@ -106,7 +125,7 @@ def main(argv=None):
         spot = dict(hero=args.hand, board=args.board, n_players=args.players, pot=args.pot, to_call=args.to_call,
                     ranges=[preflop.parse_range(r) for r in args.ranges], trials=args.trials, seed=args.seed,
                     precision=args.precision and args.precision / 100, bet=args.bet, lines=args.lines,
-                    profile=args.profile)
+                    profile=args.profile, model=args.model)
         if args.json:
             print(json.dumps(advisor.to_json(advisor.analyze(**spot)), ensure_ascii=False, indent=1))
         else:
@@ -136,6 +155,24 @@ def main(argv=None):
         print(inference.summarize(rows).to_string(**show))
         print("\n추정 승률 구간별 실제 승률 (said = 추정 평균, truth = 실제 평균, n = 결정 수)")
         print(inference.reliability(rows).to_string(**show))
+    elif args.command == "fit-history":
+        hands = phh.load(args.paths, phh.LABELS.get(args.labels), args.hands)
+        print(f"{len(hands):,}핸드 읽음, 홀카드 공개 {sum(len(h['holes']) for h in hands):,}건")
+        model = inference.fit_prepared(
+            inference.prepare(hands, processes=args.processes), inference.load_model(args.init) if args.init else None,
+            args.iterations, source=f"{len(hands)} hands from {', '.join(args.paths)}"[:200], progress=print)
+        model.save(args.out)
+        print(f"written {args.out}; profiles {', '.join(sorted(model.counts))}")
+    elif args.command == "score-history":
+        hands = phh.load(args.paths, None, args.hands, seed=1)
+        model = inference.load_model(args.model)
+        fit = inference.action_fit(inference.prepare(hands, processes=args.processes), model)
+        print(f"{len(hands):,}핸드, 액션 {fit['actions']:,}개: 액션당 로그우도 {fit['log_likelihood']:.4f}")
+        print(f"홀카드가 공개된 {fit['shown_hands']:,}건: 액션으로 추정한 레인지가 실제 핸드에 준 확률 = 균등 추측의 {fit['shown_lift']:.2f}배")
+        if all(len(h["holes"]) == len(h["bots"]) for h in hands):      # every card known: equity can be checked
+            rows = inference.score_hands(hands, model, processes=args.processes)
+            print("실제 상대 핸드 기준 승률과의 평균 절대 오차(mae)와 편향(bias = 추정 - 실제)")
+            print(inference.summarize(rows).to_string(float_format=lambda x: f"{x:.4f}"))
     elif args.command == "daily":
         daily.run(args.cycles, state_dir=args.state, hands=args.hands, challengers=args.challengers,
                   processes=args.processes, keep_db=args.keep_db)

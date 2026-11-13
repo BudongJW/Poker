@@ -8,7 +8,7 @@ import urllib.request
 import numpy as np
 import pytest
 
-from pokerlab import advisor, daily, inference, preflop, report, selfplay, web
+from pokerlab import advisor, daily, inference, phh, preflop, report, selfplay, web
 from pokerlab.bots import BOT_TYPES, Bot, make_bot
 from pokerlab.cards import ALL_CLASSES, card, class_combos, hand_class, parse_cards
 from pokerlab.engine import CALL, FOLD, RAISE, play_hand, position_name
@@ -438,6 +438,46 @@ def test_bundled_action_model_reads_strength_from_aggression():
     assert tight < equity(hero, board).equity
 
 
+def test_models_fitted_on_public_hand_histories():
+    online, pro = inference.load_model("online"), inference.load_model("pro")
+    assert {"all", "nl25-50", "nl100-200", "nl400-600", "nl1000"} == set(online.counts)
+    assert {"all", "pro", "pluribus"} == set(pro.counts)
+    assert online.counts["all"].sum() > 1_000_000 and pro.counts["all"].sum() > 80_000
+    river_bet = (3, 1, 1, 0)                                     # heads-up on the river, facing a bet
+    for model in (online, pro):
+        fold = model.likelihood(river_bet, inference.GAVE_UP)
+        assert fold[0] > 0.8 > 0.2 > fold[-1]                    # weak hands fold, strong hands do not
+        assert model.likelihood(river_bet, inference.AGGRESSIVE)[0] > 0.01      # and people do bluff-raise
+    # real players bet weak hands when checked to far more often than the equity bots do
+    checked_to = (1, 0, 0, 0)
+    assert online.likelihood(checked_to, inference.AGGRESSIVE)[-1] < inference.default_model().likelihood(
+        checked_to, inference.AGGRESSIVE)[-1]
+
+    a = advisor.analyze("AsKs", "Qs Js 2d", lines=["open/bet"])                  # the default reads with 'online'
+    b = advisor.analyze("AsKs", "Qs Js 2d", lines=["open/bet"], model="selfplay")
+    assert advisor.DEFAULT_MODEL == "online" and a["ranges"][0]["width"] > b["ranges"][0]["width"]
+    assert web.analyze_request({"hand": "AsKs", "board": "QsJs2d", "model": "pro", "profile": "pluribus",
+                                "opponents": [{"type": "line", "value": "open/bet"}]})["ranged"]
+    with pytest.raises(ValueError):
+        web.analyze_request({"hand": "AsKs", "model": "/etc/passwd"})
+
+
+def test_population_bot_follows_the_model():
+    model = inference.default_model()
+    bot = make_bot("human", seed=1)
+    assert bot.name == "human" and bot.model is inference.load_model("online")
+    rng = random.Random(4)
+    table = [make_bot("pro", seed=i) for i in range(4)]
+    seen = {"fold": 0, "call": 0, "check": 0, "raise": 0}
+    for hand in range(300):
+        result = play_hand(table, [1000] * 4, hand % 4, 5, 10, rng)
+        assert sum(result.net) == 0
+        for action in result.actions:
+            seen[action[2]] += 1
+    assert min(seen.values()) > 20 and seen["fold"] > seen["raise"]             # it folds, calls, checks and raises
+    assert model is not bot.model
+
+
 def test_fit_and_score_on_self_play(tmp_path):
     path = str(tmp_path / "pool.sqlite")
     selfplay.run(path, hands=600, players=(2, 3), bots=("tag", "lag", "nit"), batch_size=150, processes=2,
@@ -558,3 +598,92 @@ def test_learning_cycle_keeps_state(tmp_path, capsys):
     assert {"champion", "challenger"} <= set(model.counts)
     daily.print_history(state)
     assert "현재 챔피언" in capsys.readouterr().out
+
+
+# ---- public hand histories -----------------------------------------------------------------
+
+PHH_HAND = """variant = 'NT'
+antes = [0, 0, 0]
+blinds_or_straddles = [1, 2, 0]
+min_bet = 2
+starting_stacks = [200, 200, 200]
+actions = ['d dh p1 ????', 'd dh p2 ????', 'd dh p3 AsKs', 'p3 cbr 6', 'p1 f', 'p2 cc', 'd db Qs7h2d', 'p2 cc', 'p3 cbr 8', 'p2 cc', 'd db 5c', 'p2 cc', 'p3 cc', 'd db 9d', 'p2 cbr 20 # a comment', 'p3 cc', 'p2 sm QhJh', 'p3 sm']
+players = ['ann', 'bob', 'Pluribus']
+"""
+
+
+def test_phh_hand_is_replayed():
+    hand = phh.parse_hand(PHH_HAND, phh.pluribus_label)
+    assert hand["board"] == parse_cards("Qs7h2d5c9d")
+    assert hand["holes"] == {2: tuple(parse_cards("AsKs")), 1: tuple(parse_cards("QhJh"))}   # dealt face up / shown
+    assert hand["bots"] == {0: "pro", 1: "pro", 2: "pluribus"}
+    assert [(a[0], a[1], a[2], a[5], a[6]) for a in hand["actions"]] == [
+        (0, 2, "raise", 2, 3), (0, 0, "fold", 5, 3), (0, 1, "call", 4, 2),
+        (1, 1, "check", 0, 2), (1, 2, "raise", 0, 2), (1, 1, "call", 8, 2),
+        (2, 1, "check", 0, 2), (2, 2, "check", 0, 2), (3, 1, "raise", 0, 2), (3, 2, "call", 20, 2)]
+    seen = inference.observed(hand["actions"])
+    assert seen[0][2] == (0, 0, 1, 1) and seen[1][2] == (0, 1, 1, 1) and seen[5][2] == (1, 1, 1, 0)
+
+    assert phh.parse_hand(PHH_HAND.replace("'NT'", "'FT'")) is None                   # not no-limit hold'em
+    assert phh.parse_hand(PHH_HAND.replace("p1 f", "p1 xyz")) is None                 # unknown action
+    clash = phh.parse_hand(PHH_HAND.replace("p2 sm QhJh", "p2 sm QsJh"))              # shows a card that is on the board
+    assert 1 not in clash["holes"] and 2 in clash["holes"]
+    assert phh.stake_label("", 0.25) == "nl25-50" and phh.stake_label("", 10) == "nl1000"
+
+    # heads-up the blinds are listed small, big but the last player (the button) posts the small one
+    duel = phh.parse_hand("variant = 'NT'\nblinds_or_straddles = [5, 10]\n"
+                          "actions = ['d dh p1 ????', 'd dh p2 ????', 'p2 cc', 'p1 cc', 'd db 2c3d4h', 'p1 cc', 'p2 f']\n")
+    assert [(a[1], a[2], a[5]) for a in duel["actions"]] == [(1, "call", 5), (0, "check", 0), (0, "check", 0), (1, "fold", 0)]
+    free_fold = inference.observed(duel["actions"])[-1]
+    assert free_fold[3] == inference.GAVE_UP and free_fold[2][2] == 0           # a fold with nothing to call ...
+    assert (inference.default_model().likelihood(free_fold[2], inference.GAVE_UP) > 0).all()   # ... is never impossible
+
+
+def test_phh_files(tmp_path):
+    (tmp_path / "one.phh").write_text(PHH_HAND)
+    (tmp_path / "many.phhs").write_text("[1]\n" + PHH_HAND + "\n[2]\n" + PHH_HAND.replace("'NT'", "'FT'") + "\n[3]\n" + PHH_HAND)
+    (tmp_path / "notes.txt").write_text("ignored")
+    assert len(phh.read_file(str(tmp_path / "many.phhs"))) == 2
+    hands = phh.load(str(tmp_path), "table")
+    assert len(hands) == 3 and hands[0]["bots"][0] == "table"
+    assert len(phh.load(str(tmp_path), limit=2)) == 2
+
+    model = inference.fit_prepared(inference.prepare(hands, flop_runouts=20, processes=1), inference.default_model(), iterations=3)
+    assert {"all", "table"} == set(model.counts)
+    assert model.counts["all"].sum() == pytest.approx(3 * 10)            # every action counted once, hidden hands as fractions
+    fit = inference.action_fit(inference.prepare(hands, flop_runouts=20, processes=1), inference.default_model())
+    assert fit["actions"] == 30 and fit["shown_hands"] == 6 and fit["log_likelihood"] < 0
+
+
+def test_em_recovers_the_model_when_cards_are_hidden(tmp_path):
+    """Hide every hand that did not reach a showdown, as a real hand history does, and learn anyway."""
+    path = str(tmp_path / "pool.sqlite")
+    selfplay.run(path, hands=3000, players=(2, 3), bots=("tag", "lag", "nit"), batch_size=750, processes=2,
+                 seed=9, progress=None)
+    full = inference.prepare(inference._load_hands(path, 3000, seed=0), flop_runouts=20, processes=2)
+    # player tuples are in the order the players first acted, so pair them up with the hands to hide cards
+    hands = inference._load_hands(path, 3000, seed=0)
+    hidden = []
+    for (players, buckets), hand in zip(full, hands):
+        folded = {a[1] for a in hand["actions"] if a[2] == FOLD}
+        seats = list(dict.fromkeys(a[1] for a in hand["actions"]))
+        hidden.append(([(label, combo if seat not in folded and len(hand["holes"]) - len(folded) > 1 else -1, acts)
+                        for (label, combo, acts), seat in zip(players, seats)], buckets))
+    shown_only = [([p for p in players if p[1] >= 0], buckets) for players, buckets in hidden]
+    assert 0.1 < sum(len(p) for p, _ in shown_only) / sum(len(p) for p, _ in full) < 0.6
+
+    truth = inference.fit_prepared(full)
+    naive = inference.fit_prepared(shown_only)
+    steps = []
+    learned = inference.fit_prepared(hidden, progress=steps.append)
+
+    def distance(model):                 # average gap in action probabilities, weighted by how often a cell occurs
+        weight = truth.counts["all"].sum(axis=-1, keepdims=True)
+        share = lambda m: m.counts["all"] / np.maximum(m.counts["all"].sum(axis=-1, keepdims=True), 1e-9)
+        return float((np.abs(share(model) - share(truth)) * weight).sum() / weight.sum() / 2)
+
+    assert len(steps) >= 3 and distance(learned) < 0.5 * distance(naive)
+    assert learned.counts["all"].sum() == pytest.approx(truth.counts["all"].sum())
+    fits = {name: inference.action_fit(full, model)["log_likelihood"] for name, model in
+            (("truth", truth), ("learned", learned), ("naive", naive))}
+    assert fits["truth"] >= fits["learned"] > fits["naive"]

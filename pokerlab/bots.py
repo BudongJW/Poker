@@ -12,8 +12,8 @@ import numpy as np
 
 from .cards import hand_class
 from .engine import CALL, CHECK, FOLD, RAISE
-from .equity import Range, quick_equity
-from .inference import default_model, infer_ranges, load_model
+from .equity import COMBO_INDEX, Range, quick_equity
+from .inference import context, default_model, infer_ranges, load_model, strength_buckets
 from .preflop import preflop_equity, top_range
 
 
@@ -128,6 +128,33 @@ class EquityBot(Bot):
         return FOLD, 0, eq
 
 
+class PopulationBot(Bot):
+    """Plays like the players an action model was fitted on.
+
+    In each situation it looks up how often those players folded, called and raised with a hand as
+    strong as its own (same strength bucket) and picks one of the three with those frequencies.
+    Bet sizes are not part of the model: raises are half to full pot.
+    """
+
+    def __init__(self, name, model, profile="all", seed=None):
+        super().__init__(seed)
+        self.name, self.model, self.profile = name, model, profile
+        self.np_rng = np.random.default_rng(seed)
+
+    def act(self, view):
+        if len(_BUCKETS) > 64:
+            _BUCKETS.clear()
+        bucket = strength_buckets(view.board, 60, self.np_rng, _BUCKETS)[COMBO_INDEX[view.hole[0], view.hole[1]]]
+        ctx = context(view.street, view.raises, view.to_call > 0, view.n_live)
+        fold, passive, _ = (self.model.likelihood(ctx, code, self.profile)[bucket] for code in range(3))
+        r = self.rng.random()
+        if r < fold:
+            return FOLD, 0
+        if r < fold + passive or not view.can_raise:
+            return CALL, 0
+        return RAISE, self._raise_to(view, 0.5 + 0.5 * self.rng.random())
+
+
 _BUCKETS = {}       # board -> strength bucket of every combo; shared by all model bots of a process
 
 
@@ -147,6 +174,9 @@ BOT_TYPES = {
     "tag_range": lambda seed: EquityBot("tag_range", value=0.15, margin=0.06, bluff=0.05,
                                         villain_range=0.2, seed=seed),
     "tag_model": lambda seed: EquityBot("tag_model", value=0.15, margin=0.06, bluff=0.05, model=True, seed=seed),
+    # players reconstructed from public hand histories: 2009 online cash games, and Pluribus with its opponents
+    "human": lambda seed: PopulationBot("human", load_model("online"), seed=seed),
+    "pro": lambda seed: PopulationBot("pro", load_model("pro"), seed=seed),
 }
 
 

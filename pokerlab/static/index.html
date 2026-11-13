@@ -164,6 +164,17 @@ th { color: var(--muted); }
         <h2 style="margin:0">상대 설정 <small>지정하지 않은 상대는 랜덤 핸드</small></h2>
         <button class="btn" id="addOpponent" type="button" style="margin-left:auto">상대 추가</button>
       </div>
+      <label class="field">액션을 해석할 모델 (어떤 플레이어들의 습관으로 레인지를 추정할지)
+        <select id="model">
+          <option value="online:all">실전 온라인 2009 · 전체</option>
+          <option value="online:nl25-50">실전 온라인 · 25~50NL</option>
+          <option value="online:nl100-200">실전 온라인 · 100~200NL</option>
+          <option value="online:nl400-600">실전 온라인 · 400~600NL</option>
+          <option value="online:nl1000">실전 온라인 · 1000NL</option>
+          <option value="pro:all">프로와 Pluribus (6인)</option>
+          <option value="selfplay:all">이 프로그램의 봇</option>
+        </select>
+      </label>
       <div id="opponents" class="stack" style="gap:8px"></div>
     </div>
   </section>
@@ -298,8 +309,9 @@ async function request() {
   const opponents = state.opponents.map(o => o.type === "line"
     ? {type: "line", value: o.streets.slice(0, street + 1).join("/").replace(/\/+$/, "")}
     : {type: o.type, value: o.text});
+  const [model, profile] = $("model").value.split(":");
   const body = {hand: h1 + h2, board: state.slots.slice(2).filter(Boolean).join(""), players: state.players,
-    opponents, pot: $("pot").value, to_call: $("toCall").value, bet: $("bet").value, ...quality};
+    opponents, pot: $("pot").value, to_call: $("toCall").value, bet: $("bet").value, model, profile, ...quality};
   const seq = ++state.seq;
   result.classList.add("loading");
   try {
@@ -438,6 +450,7 @@ function renderResult(d) {
 for (let n = 2; n <= 10; n++) { const o = el("option", null, n + "명"); o.value = n; $("players").append(o); }
 $("players").onchange = () => { state.players = Number($("players").value); renderOpponents(); schedule(); };
 $("quality").onchange = () => schedule();
+$("model").onchange = () => schedule();
 for (const id of ["pot", "toCall", "bet"]) $(id).oninput = () => schedule(500);
 $("addOpponent").onclick = () => { state.opponents.push({type: "line", streets: ["", "", "", ""], text: ""}); renderOpponents(); };
 $("reset").onclick = () => {

@@ -8,9 +8,10 @@ import numpy as np
 from .cards import ALL_CLASSES, card_str, cards_str, class_combos, hand_class, parse_cards
 from .equity import COMBO_INDEX, EquityResult, as_range, equity, next_card
 from .evaluator import CATEGORIES, CATEGORIES_KO, evaluate, evaluate_many
-from .inference import range_from_line
+from .inference import load_model, range_from_line
 from .preflop import DEALS_PER_COMBO, MAX_OPPONENTS, heads_up_exact, preflop_equity, preflop_stderr, ranking
 
+DEFAULT_MODEL = "online"        # which bundled action model reads opponents' actions
 STREET_KO = {0: "프리플랍", 3: "플랍", 4: "턴", 5: "리버"}
 # (minimum edge, label); edge = how far equity sits between the fair share 1/N (0) and certainty (1)
 VERDICTS = ((0.50, "매우 강함"), (0.25, "강함"), (0.08, "약간 우세"), (-0.05, "평균 수준"), (-1.0, "약함"))
@@ -54,18 +55,20 @@ def _next_cards(hero, board, n_opp, ranges, current, seed):
 
 
 def analyze(hero, board=(), n_players=2, pot=None, to_call=None, ranges=(), trials=200_000, seed=None,
-            precision=None, bet=None, lines=(), profile="all"):
+            precision=None, bet=None, lines=(), profile="all", model=DEFAULT_MODEL):
     """All the numbers behind :func:`explain`, as a dict.
 
     ranges: known ranges of opponents; lines: action lines of opponents (see
-    :func:`pokerlab.inference.parse_line`) from which a range is inferred. Opponents with neither
-    hold random hands. ``precision`` (e.g. 0.001) makes Monte Carlo run until that 95% interval.
+    :func:`pokerlab.inference.parse_line`) from which a range is inferred with the action model
+    ``model`` (a name from :data:`pokerlab.inference.MODELS` or a file) and its ``profile``.
+    Opponents with neither hold random hands. ``precision`` (e.g. 0.001) makes Monte Carlo run
+    until that 95% interval.
     """
     hero, board = parse_cards(hero), parse_cards(board)
     n_opp = n_players - 1
     labels = ["지정 레인지"] * len(ranges) + list(lines)
-    ranges = [as_range(r) for r in ranges] + [range_from_line(line, hero, board, n_players, profile=profile)
-                                              for line in lines]
+    ranges = [as_range(r) for r in ranges] + [
+        range_from_line(line, hero, board, n_players, load_model(model), profile) for line in lines]
     cls = hand_class(*hero)
     if not board and not ranges and n_opp == 1:                 # enumerated once and stored in the table
         win, tie, _ = heads_up_exact(cls)
@@ -131,9 +134,9 @@ def to_json(analysis):
 
 
 def explain(hero, board=(), n_players=2, pot=None, to_call=None, ranges=(), trials=200_000, seed=None,
-            precision=None, bet=None, lines=(), profile="all"):
+            precision=None, bet=None, lines=(), profile="all", model=DEFAULT_MODEL):
     """Korean-language report for one spot."""
-    a = analyze(hero, board, n_players, pot, to_call, ranges, trials, seed, precision, bet, lines, profile)
+    a = analyze(hero, board, n_players, pot, to_call, ranges, trials, seed, precision, bet, lines, profile, model)
     r = a["result"]
     n_opp = n_players - 1
     assumed = "레인지 지정" if a["ranged"] else "랜덤 핸드 가정"
