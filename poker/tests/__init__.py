@@ -5,16 +5,9 @@ import os
 import sys
 from unittest.mock import MagicMock
 
-import pandas as pd
-import requests
 from PIL import Image
 
-from poker import main
-from poker.tools.game_logger import GameLogger
-from poker.tools.helper import COMPUTER_NAME, get_config
-from poker.tools.mongo_manager import MongoManager
-from poker.tools.strategy_handler import StrategyHandler
-from poker.tools.update_checker import UpdateChecker
+from poker.tools.helper import get_config
 
 config = get_config()
 URL = config.config.get('main', 'db')
@@ -26,6 +19,16 @@ sys.path.insert(0, parentdir)
 
 
 def init_table(file, round_number=0, strategy='Default1', table_scraper_name='Official GGPoker 6player'):
+    # The bot, gui and database modules are imported here rather than at module level so
+    # that tests which don't need them (e.g. screen recognition) run without them.
+    import pandas as pd
+    import requests
+    from poker import main
+    from poker.tools.game_logger import GameLogger
+    from poker.tools.mongo_manager import MongoManager
+    from poker.tools.strategy_handler import StrategyHandler
+    from poker.tools.update_checker import UpdateChecker
+
     # LOG_FILENAME = 'testing.log'
     logger = logging.getLogger('tester')
     gui_signals = MagicMock()

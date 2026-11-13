@@ -221,6 +221,9 @@ poker.tests
 
 -  ``test_montecarlo_numpy.py``: tests for the numpy montecarlo
 -  ``test_pylint.py``: pylint and pydoc tests to ensure pep8 standards and static code analysis
+-  ``test_screen_recognition.py``: offline tests of the screen recognition (template matching,
+   card recognition and OCR of the numbers on real screenshots). They need neither the table
+   database nor a poker client: ``pytest poker/tests/test_screen_recognition.py``
 
 
 Graphical user interface (gui)

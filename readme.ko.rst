@@ -217,6 +217,8 @@ poker.tests
 
 - ``test_montecarlo_numpy.py``: NumPy 몬테카를로 테스트
 - ``test_pylint.py``: PEP8 준수와 정적 분석을 위한 pylint, pydoc 테스트
+- ``test_screen_recognition.py``: 화면 인식(템플릿 매칭, 카드 인식, 실제 스크린샷의 숫자 OCR) 오프라인 테스트.
+  테이블 데이터베이스나 포커 클라이언트 없이 실행된다: ``pytest poker/tests/test_screen_recognition.py``
 
 
 그래픽 사용자 인터페이스 (GUI)

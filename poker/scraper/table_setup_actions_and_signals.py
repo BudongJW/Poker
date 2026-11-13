@@ -12,6 +12,7 @@ from PyQt6.QtCore import Qt, QObject, pyqtSlot, pyqtSignal, QTimer, QCoreApplica
 from PyQt6.QtWidgets import QMessageBox, QSlider
 
 from poker.tools import constants as const
+from poker.tools.constants import CARD_SUITES, CARD_VALUES
 from poker.scraper.table_scraper_nn import TRAIN_FOLDER
 from poker.tools.helper import COMPUTER_NAME, get_config, get_dir
 from poker.tools.mongo_manager import MongoManager
@@ -22,9 +23,6 @@ from poker.tools.vbox_manager import VirtualBoxController
 log = logging.getLogger(__name__)
 
 mongo = MongoManager()
-
-CARD_VALUES = "23456789TJQKA"
-CARD_SUITES = "CDHS"
 
 
 # pylint: disable=unnecessary-lambda

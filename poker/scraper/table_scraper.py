@@ -2,12 +2,15 @@
 import logging
 
 from poker.scraper.table_scraper_nn import predict
-from poker.scraper.table_setup_actions_and_signals import CARD_SUITES, CARD_VALUES
+from poker.tools.constants import CARD_SUITES, CARD_VALUES
 from poker.tools.helper import get_dir
 from poker.tools.screen_operations import take_screenshot, crop_screenshot_with_topleft_corner, \
-    is_template_in_search_area, binary_pil_to_cv2, ocr
+    is_template_in_search_area, binary_pil_to_cv2, ocr, find_templates_in_search_area
 
 log = logging.getLogger(__name__)
+
+# Template names of the cards in the table mapping, e.g. 'ah' for the ace of hearts
+CARD_TEMPLATE_NAMES = [value.lower() + suit.lower() for value in CARD_VALUES for suit in CARD_SUITES]
 
 
 class TableScraper:
@@ -63,11 +66,7 @@ class TableScraper:
         if 'use_neural_network' in self.table_dict and (self.table_dict['use_neural_network'] == '2' or self.table_dict['use_neural_network'] == 'CheckState.Checked'):
             self.get_my_cards_nn()
         else:
-            for value in CARD_VALUES:
-                for suit in CARD_SUITES:
-                    if is_template_in_search_area(self.table_dict, self.screenshot,
-                                                value.lower() + suit.lower(), 'my_cards_area', extended=True):
-                        self.my_cards.append(value + suit)
+            self.my_cards = self.find_cards('my_cards_area')
 
         if len(self.my_cards) != 2:
             log.warning("My cards not recognized")
@@ -107,14 +106,20 @@ class TableScraper:
             log.debug("Did not find two player cards: " + str(self.my_cards))
             return False
 
+    def find_cards(self, image_area):
+        """
+        Recognize the cards in a search area by their templates.
+
+        Returns: list of cards such as ['AH', 'TS'] in the order they appear on the screen
+        (left to right). If two card templates match the same spot only the better one counts.
+        """
+        matches = find_templates_in_search_area(self.table_dict, self.screenshot,
+                                                CARD_TEMPLATE_NAMES, image_area)
+        return [card.upper() for card, _, _, _ in matches]
+
     def get_table_cards2(self):
         """Get the cards on the table"""
-        self.table_cards = []
-        for value in CARD_VALUES:
-            for suit in CARD_SUITES:
-                if is_template_in_search_area(self.table_dict, self.screenshot,
-                                              value.lower() + suit.lower(), 'table_cards_area'):
-                    self.table_cards.append(value + suit)
+        self.table_cards = self.find_cards('table_cards_area')
         log.info(f"Table cards: {self.table_cards}")
         if len(self.table_cards) == 1 or len(self.table_cards) == 2:
             log.warning(f"Only recognized {len(self.table_cards)} cards on the table. "
