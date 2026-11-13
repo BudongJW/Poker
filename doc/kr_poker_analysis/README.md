@@ -28,7 +28,6 @@ WPL, 피망, 한게임 등 국내 주요 포커 게임을 공개 자료로 분�
 | [`06_features_neowiz.md`](06_features_neowiz.md) | 피망 포커, 피망 쇼다운 홀덤 — 연혁, 채널·아레나, 재화·교환소, 오프라인 연계 대회 |
 | [`07_features_nhn.md`](07_features_nhn.md) | 한게임 4종 — 게임 간 관계, 경기장·시드, 딜러비·땡값, 회원제, HPT |
 | [`08_features_comparison.md`](08_features_comparison.md) | 8개 게임 특징 비교: 종목 매트릭스, 베팅·정산, 과금, 대회, 통합 연표 |
-| [`09_official_prices_channels.md`](09_official_prices_channels.md) | 게임머니 공식 가격과 판매 경로: 1만 원당 게임머니, 공식 상점·인앱 가격표, 공식 머니 이동 경로 |
 
 처음 읽는다면 비교 문서(`04`, `08`)로 전체 그림을 잡은 뒤 회사별 문서로 내려가는 순서를 권한다.
 
