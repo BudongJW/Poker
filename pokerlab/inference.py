@@ -344,11 +344,14 @@ class ActionModel:
     def likelihood(self, ctx, action, profile="all"):
         """P(action | context, bucket) for every strength bucket -> array (N_BUCKETS,).
 
-        Situations are nested: (street, raises, bet or no bet) > price of calling > players left >
-        table size > position. Each level is estimated from its own counts plus SHRINK
-        pseudo-counts of the level above, so a seat that was rarely seen leans on the average seat
-        instead of on a handful of hands. ``action`` may be AGGRESSIVE for "a bet of any size".
-        A profile the model has never seen falls back to the pooled 'all'.
+        The probability has two factors. Fold, check/call or bet: situations are nested, (street,
+        raises, bet or no bet) > price of calling > players left > table size > position, and
+        each level is estimated from its own counts plus SHRINK pseudo-counts of the level above,
+        so a seat that was rarely seen leans on the average seat instead of on a handful of hands.
+        The size of a bet: the same nesting without the price, starting from the sizes all hands
+        use together, so that a size only says something about the hand where the counts show it.
+        ``action`` may be AGGRESSIVE for "a bet of any size". A profile the model has never seen
+        falls back to the pooled 'all'.
         """
         if profile not in self.counts:
             profile = "all"
@@ -356,24 +359,32 @@ class ActionModel:
         if key not in self._probabilities:
             street, raises, price, live, table, position = ctx
             block = self.counts[profile][street, raises]        # (price, players left, table, position, bucket, action)
-            detail = block[NO_BET] if price == NO_BET else block[1:].sum(axis=0)
-            levels = [detail.sum(axis=(0, 1, 2))]
+            priced = pooled = block[NO_BET] if price == NO_BET else block[1:].sum(axis=0)
+            levels = [pooled.sum(axis=(0, 1, 2))]
             if price > NO_BET:
-                detail = block[price]
-                levels.append(detail.sum(axis=(0, 1, 2)))
-            levels.append(detail[live].sum(axis=(0, 1)))
+                priced = block[price]
+                levels.append(priced.sum(axis=(0, 1, 2)))
+            levels.append(priced[live].sum(axis=(0, 1)))
+            size_levels = [levels[0], pooled[live].sum(axis=(0, 1))]
             if table >= 0:
-                levels.append(detail[live, table].sum(axis=0))
+                levels.append(priced[live, table].sum(axis=0))
+                size_levels.append(pooled[live, table].sum(axis=0))
                 if position >= 0:
-                    levels.append(detail[live, table, position])
+                    levels.append(priced[live, table, position])
+                    size_levels.append(pooled[live, table, position])
             # one pseudo-count of a flat prior keeps every action possible: real players do, rarely,
             # fold with nothing to call, and an impossible observation would wipe out a whole range
-            flat = [1 / 3, 1 / 3] if price != NO_BET else [0.02, 0.49]
-            p, strength = np.array(flat + [(1 - sum(flat)) / 3] * 3), 1.0
+            p, strength = np.array([1 / 3, 1 / 3, 1 / 3] if price != NO_BET else [0.02, 0.49, 0.49]), 1.0
             for counts in levels:
+                counts = np.column_stack([counts[:, :BET_SMALL], counts[:, BET_SMALL:].sum(axis=1)])
                 p = (counts + strength * p) / (counts.sum(axis=1, keepdims=True) + strength)
                 strength = SHRINK
-            self._probabilities[key] = p
+            sizes = size_levels[0][:, BET_SMALL:].sum(axis=0)
+            split = np.tile((sizes + 1 / 3) / (sizes.sum() + 1), (N_BUCKETS, 1))
+            for counts in size_levels:
+                sizes = counts[:, BET_SMALL:]
+                split = (sizes + SHRINK * split) / (sizes.sum(axis=1, keepdims=True) + SHRINK)
+            self._probabilities[key] = np.column_stack([p[:, :BET_SMALL], p[:, BET_SMALL:] * split])
         p = self._probabilities[key]
         return p[:, BET_SMALL:].sum(axis=1) if action == AGGRESSIVE else p[:, action]
 
@@ -386,8 +397,8 @@ class ActionModel:
 
     def save(self, path=MODEL_PATH):
         """Write the model as JSON; only the situations that were seen are stored."""
-        def seen(counts):
-            rows = np.round(counts, 1).reshape(-1, N_BUCKETS * N_ACTIONS)
+        def seen(counts):       # hidden hands are counted in fractions: two decimals keep the rare cells
+            rows = np.round(counts, 2).reshape(-1, N_BUCKETS * N_ACTIONS)
             return {",".join(str(i) for i in np.unravel_index(index, _SHAPE[:-2])):
                     [int(x) if x == int(x) else x for x in row.tolist()]
                     for index, row in enumerate(rows) if row.any()}
@@ -651,7 +662,14 @@ def fit_prepared(prepared, initial=None, iterations=30, tolerance=5e-5, source="
 
     stages: the views (see :func:`expected_counts`) under which the hidden hands are judged, one
     EM run after the other. By default first 'coarse', then 'unsized'; with a starting model only
-    the last of them.
+    the last of them. Started cold on the detailed situations, EM spreads the hidden hands thinly
+    and takes very long to sharpen them, hence the coarse stage.
+
+    Bet sizes and call prices are left out of the judging by default. Bots that act on hand
+    strength alone are recovered a little better with them (stages ending in 'full'). On
+    real-money hands that fit read shown hands worse than one that ignored sizes: a bet that
+    takes the pot leaves no cards to check against, and whatever habit makes a player choose a
+    size gets blamed on the hand.
     """
     model = initial or ActionModel({"all": np.zeros(_SHAPE)})
     if not any(combo < 0 for players, _ in prepared for _, combo, _ in players):

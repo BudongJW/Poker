@@ -515,12 +515,60 @@ def test_model_shrinks_rare_seats_and_stores_only_what_it_saw(tmp_path):
 
     path = str(tmp_path / "model.json")
     model.save(path)
-    assert len(json.load(open(path))["counts"]["all"]) == 2                      # two situations, not 1,728
+    assert len(json.load(open(path))["counts"]["all"]) == 2                      # two situations, not 3,456
     assert (inference.ActionModel.load(path).counts["all"] == counts).all()
     old_layout = json.load(open(path)); old_layout["shape"] = [4, 3, 2, 4, 10, 3]
     json.dump(old_layout, open(path, "w"))
     with pytest.raises(ValueError):
         inference.ActionModel.load(path)
+
+
+def test_the_size_of_a_bet_is_a_separate_cautious_factor():
+    counts = np.zeros(inference._SHAPE)
+    often = inference.context(1, 0, inference.NO_BET, 2, 6, 2)       # flop, checked to, last to act
+    rare = inference.context(1, 0, inference.NO_BET, 2, 6, 0)        # the same first to act: hardly ever seen
+    small, large = inference.BET_SMALL, inference.BET_LARGE
+    counts[often][:, inference.PASSIVE] = 500
+    counts[often][1:5, small], counts[often][1:5, large] = 400, 100          # weak hands bet small ...
+    counts[often][5:, small], counts[often][5:, large] = 100, 400            # ... strong hands large
+    counts[rare][9, small] = 3                                               # three small bets with the best hands
+    model = inference.ActionModel({"all": counts})
+
+    def large_share(ctx, bucket):
+        return model.likelihood(ctx, large)[bucket] / model.likelihood(ctx, inference.AGGRESSIVE)[bucket]
+
+    assert large_share(often, 1) == pytest.approx(0.2, abs=0.02) and large_share(often, 9) == pytest.approx(0.8, abs=0.02)
+    assert large_share(rare, 9) > 0.6                           # three hands do not overturn what thousands said
+    # the weakest hands never bet here: should one, its size says what a bet of that size says of any hand
+    assert model.likelihood(often, inference.AGGRESSIVE)[0] < 0.01
+    assert large_share(often, 0) == pytest.approx(2400 / 4503, abs=0.01)
+    for ctx in (often, rare, inference.context(1, 0, inference.NO_BET, 2)):
+        assert sum(model.likelihood(ctx, a) for a in range(inference.N_ACTIONS)) == pytest.approx(np.ones(10))
+
+
+def test_hidden_hands_are_judged_without_bet_sizes():
+    priced = inference.context(1, 1, inference.NORMAL, 2, 6, 2)
+    any_price = priced[:2] + (inference.ANY_PRICE,) + priced[3:]
+    assert inference._unsized(priced, inference.BET_LARGE) == (any_price, inference.AGGRESSIVE)
+    assert inference._unsized(priced, inference.GAVE_UP) == (any_price, inference.GAVE_UP)
+    assert inference._priced(priced, inference.BET_SMALL) == (priced, inference.AGGRESSIVE)
+    assert inference._coarse(priced, inference.PASSIVE) == ((1, 1, inference.ANY_PRICE, 0, -1, -1), inference.PASSIVE)
+    free = inference.context(1, 0, inference.NO_BET, 2, 6, 2)
+    assert inference._unsized(free, inference.PASSIVE) == (free, inference.PASSIVE)
+    assert inference.STAGES == ("coarse", "unsized")
+
+    # everybody bets this flop, weak hands small and strong hands large; somebody whose cards stay hidden bets large
+    counts = np.zeros(inference._SHAPE)
+    counts[free][:5, inference.BET_SMALL] = 100
+    counts[free][5:, inference.BET_LARGE] = 100
+    model = inference.ActionModel({"all": counts})
+    buckets = {1: inference.strength_buckets(parse_cards("Qs 7h 2d"))}
+    prepared = [([("someone", -1, ((1, free, inference.BET_LARGE),))], buckets)]
+    told = inference.expected_counts(prepared, model, "full")[0]["all"][free][:, inference.BET_LARGE]
+    not_told = inference.expected_counts(prepared, model, "unsized")[0]["all"][free][:, inference.BET_LARGE]
+    assert told.sum() == pytest.approx(1) and not_told.sum() == pytest.approx(1)      # one bet, counted once
+    assert told[:5].sum() < 0.1                                  # the size gives the hand away ...
+    assert not_told[:5].sum() == pytest.approx(0.5, abs=0.05)    # ... unless the fit is not allowed to look at it
 
 
 def test_bundled_action_model_reads_strength_from_aggression():
@@ -749,8 +797,6 @@ def test_phh_hand_is_replayed():
         (2, 1, "check", 0, 2), (2, 2, "check", 0, 2), (3, 1, "raise", 0, 2), (3, 2, "call", 20, 2)]
     assert (hand["n_players"], hand["button"]) == (3, 2)                              # the last seat listed is the button
     seen = inference.observed(hand["actions"], hand["n_players"], hand["button"])
-    # (street, raises, facing, players left, table class, position): the button opens, the small blind
-    # folds to the raise, and on the flop the big blind (first to act of the two left) calls a bet
     # (street, raises, price, players left, table class, position): the button opens (paying 2 into 3 is
     # an expensive call), the small blind folds to the raise, and on the flop the big blind (first to
     # act of the two left) calls 8 into 21, a normal price
@@ -763,6 +809,7 @@ def test_phh_hand_is_replayed():
 
     assert phh.parse_hand(PHH_HAND.replace("'NT'", "'FT'")) is None                   # not no-limit hold'em
     assert phh.parse_hand(PHH_HAND.replace("p1 f", "p1 xyz")) is None                 # unknown action
+    assert phh.parse_hand(PHH_HAND.replace("[1, 2, 0]", "[1, 2, -1]")) is None        # a negative blind: pot unknown
     clash = phh.parse_hand(PHH_HAND.replace("p2 sm QhJh", "p2 sm QsJh"))              # shows a card that is on the board
     assert 1 not in clash["holes"] and 2 in clash["holes"]
     assert phh.stake_label("", 0.25) == "nl25-50" and phh.stake_label("", 10) == "nl1000"
@@ -821,6 +868,7 @@ def test_em_recovers_the_model_when_cards_are_hidden(tmp_path):
         return float((np.abs(share(model) - share(truth)) * weight).sum() / weight.sum() / 2)
 
     assert len(steps) >= 3 and distance(learned) < 0.5 * distance(naive)
+    assert "coarse" in steps[0] and "unsized" in steps[-1] and not any("full" in step for step in steps)
     assert learned.counts["all"].sum() == pytest.approx(truth.counts["all"].sum())
     fits = {name: inference.action_fit(full, model)["log_likelihood"] for name, model in
             (("truth", truth), ("learned", learned), ("naive", naive))}

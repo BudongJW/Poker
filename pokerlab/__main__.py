@@ -100,6 +100,9 @@ def main(argv=None):
     p.add_argument("--init", metavar="MODEL", help="starting model for hands whose cards are hidden (a name or a file)")
     p.add_argument("--hands", type=int, help="read at most this many hands, from files in random order")
     p.add_argument("--iterations", type=int, default=30, help="most EM passes per stage when cards are hidden (default 30)")
+    p.add_argument("--use-sizes", action="store_true",
+                   help="let bet sizes and call prices also count as evidence for what a hidden hand was. Right for "
+                        "players who act on hand strength alone; on real-money hands it read shown hands worse")
     p.add_argument("--processes", type=int)
 
     p = sub.add_parser("score-history", help="how well an action model explains hand histories it was not fitted on")
@@ -169,7 +172,8 @@ def main(argv=None):
         print(f"{len(hands):,}핸드 읽음, 홀카드 공개 {sum(len(h['holes']) for h in hands):,}건")
         model = inference.fit_prepared(
             inference.prepare(hands, processes=args.processes), inference.load_model(args.init) if args.init else None,
-            args.iterations, source=f"{len(hands)} hands from {', '.join(args.paths)}"[:200], progress=print)
+            args.iterations, source=f"{len(hands)} hands from {', '.join(args.paths)}"[:200], progress=print,
+            stages=(("full",) if args.init else ("coarse", "full")) if args.use_sizes else None)
         model.save(args.out)
         print(f"written {args.out}; profiles {', '.join(sorted(model.counts))}")
     elif args.command == "score-history":
