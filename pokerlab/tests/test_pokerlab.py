@@ -406,14 +406,37 @@ def test_hand_percentiles():
 
 
 def test_action_lines():
+    any_bet, any_price, expensive = inference.AGGRESSIVE, inference.ANY_PRICE, inference.EXPENSIVE
     line = inference.parse_line("open/bet/check call", 6)
-    assert [(street, code) for street, _, code in line] == [(0, 2), (1, 2), (2, 1), (2, 1)]
-    assert line[0][1] == (0, 0, 1, 3, 1, -1) and line[3][1] == (2, 1, 1, 3, 1, -1)      # seat unknown: pooled
+    assert [(street, code) for street, _, code in line] == [(0, any_bet), (1, any_bet), (2, 1), (2, 1)]
+    # seat unknown: pooled. Opening means paying the big blind into 1.5 big blinds: an expensive call
+    assert line[0][1] == (0, 0, expensive, 3, 1, -1) and line[3][1] == (2, 1, any_price, 3, 1, -1)
     # two players left in the hand at a six-handed table (the default): the button opened after three folds
     seated = inference.parse_line("BTN: open/bet", 2)
-    assert seated[0][1] == (0, 0, 1, 1, 1, 3)               # pre-flop: three players left, short-handed table, button
+    assert seated[0][1] == (0, 0, expensive, 1, 1, 3)       # pre-flop: three players left, short-handed table, button
     assert seated[1][1] == (1, 0, 0, 0, 1, 2)               # flop: two left, the button acts last
-    assert inference.parse_line("utg: open/bet", 3, table=9)[0][1] == (0, 0, 1, 3, 2, 0)   # full ring, early seat
+    assert inference.parse_line("utg: open/bet", 3, table=9)[0][1] == (0, 0, expensive, 3, 2, 0)   # full ring, early
+    # sizes: percent of the pot, or big blinds for a pre-flop open or call
+    sized = inference.parse_line("btn: open3x/bet30/bet66 /raise120", 2)
+    assert [code for _, _, code in sized] == [inference.BET_MEDIUM, inference.BET_SMALL, inference.BET_MEDIUM,
+                                              inference.BET_LARGE]
+    assert inference.parse_line("open2x", 2)[0][2] == inference.BET_SMALL                  # a min-raise
+    called = inference.parse_line("bb: call3x/call33/call66/call150", 2)
+    assert [ctx[2] for _, ctx, _ in called] == [inference.NORMAL, inference.CHEAP, inference.NORMAL, expensive]
+    assert inference.parse_line("sb: limp", 2)[0][1][2] == inference.NORMAL                # half a blind into 1.5
+    # calling an open is cheaper for the big blind than for anybody else, however the size is written
+    price = lambda line, **table: inference.parse_line(line, 2, **table)[0][1][2]
+    assert [price(f"{seat}: call3x") for seat in ("bb", "sb", "btn")] == [inference.NORMAL, expensive, expensive]
+    assert [price(f"{seat}: call80") for seat in ("bb", "sb", "btn")] == [inference.NORMAL, expensive, expensive]
+    assert price("bb: call2x") == inference.CHEAP
+    # at a heads-up table the button is the small blind, known seat or not
+    assert price("open", table=2) == price("btn: open", table=2) == inference.NORMAL
+    assert price("call3x", table=2) == inference.NORMAL and price("bb: check", table=2) == inference.NO_BET
+    assert inference.parse_line("btn: open3x", 2, table=2)[0][2] == inference.BET_LARGE    # 2 more into a pot of 2
+    assert inference.parse_line("3bet90", 2)[0][2] == inference.BET_LARGE
+    assert inference.parse_line("call3bet50", 2)[0][1][2] == inference.NORMAL
+    with pytest.raises(ValueError):
+        inference.parse_line("open/bet3x", 2)                                              # big blinds only pre-flop
     assert inference.parse_line("utg: open", 2)[0][1][3:] == (3, 1, 1)                     # six-handed UTG is a middle seat
     assert inference.parse_line("sb: open/bet", 2, table=2)[1][1][4:] == (0, 2)            # heads-up table: the button
     assert inference.parse_line("co: open/bet", 2)[1][1][5] == -1                          # last to act? unknown ...
@@ -429,6 +452,23 @@ def test_action_lines():
         inference.parse_line("open/jam", 2)
     with pytest.raises(ValueError):
         inference.range_from_line("open/bet/bet", "AsKs", "Qs Js 2d", 2)     # no turn on the board yet
+
+
+def test_bet_sizes_and_prices():
+    # a bet of 45% / 90% of the pot is where small ends and large begins
+    assert [inference.bet_class(x, 100, 0) for x in (20, 44, 45, 89, 90, 300)] == [2, 2, 3, 3, 4, 4]
+    # a raise is measured after the call: raising to 250 over a 100 bet into 150 adds 150 beyond the call to a pot of 250
+    assert inference.bet_class(250, 150, 100) == inference.BET_MEDIUM
+    assert inference.bet_class(350, 150, 100) == inference.BET_LARGE
+    # the price of calling those same bets: 45% of the pot costs 0.45 / 1.45 of the pot it makes
+    assert [inference.price_class(x, 100 + x) for x in (0, 30, 44, 46, 89, 91, 500)] == [0, 1, 1, 2, 2, 3, 3]
+    assert inference.price_class(10, 0) == inference.ANY_PRICE and inference.bet_class(10, 0, 0) == inference.AGGRESSIVE
+
+    result = play_hand([make_bot("maniac", seed=i) for i in range(3)], [1000] * 3, 0, 5, 10, random.Random(5))
+    seen = inference.observed(result.actions, 3, 0)
+    assert seen[0][2][2] == inference.EXPENSIVE                      # first in: 10 to call into the 15 of blinds
+    raises = [(a, code) for a, (_, _, _, code) in zip(result.actions, seen) if a[2] == "raise"]
+    assert raises and all(code == inference.bet_class(a[3], a[4], a[5]) for a, code in raises)
 
 
 def test_seats_and_table_sizes():
@@ -452,16 +492,24 @@ def test_seats_and_table_sizes():
 
 def test_model_shrinks_rare_seats_and_stores_only_what_it_saw(tmp_path):
     counts = np.zeros(inference._SHAPE)
-    common = inference.context(0, 0, True, 6, 6, inference.POSITIONS.index("btn"))
-    rare = inference.context(0, 0, True, 6, 6, inference.POSITIONS.index("sb"))
-    counts[common][:, inference.AGGRESSIVE] = 900        # the button raised 90% of the time ...
+    price = inference.EXPENSIVE
+    common = inference.context(0, 0, price, 6, 6, inference.POSITIONS.index("btn"))
+    rare = inference.context(0, 0, price, 6, 6, inference.POSITIONS.index("sb"))
+    counts[common][:, inference.BET_MEDIUM] = 600        # the button raised 90% of the time ...
+    counts[common][:, inference.BET_LARGE] = 300
     counts[common][:, inference.GAVE_UP] = 100
     counts[rare][:, inference.GAVE_UP] = 2               # ... the small blind was seen twice, folding
     model = inference.ActionModel({"all": counts})
     assert model.likelihood(common, inference.AGGRESSIVE)[0] == pytest.approx(0.9, abs=0.01)
+    assert model.likelihood(common, inference.BET_MEDIUM)[0] == pytest.approx(0.6, abs=0.01)    # sizes add up to "a bet"
+    assert model.likelihood(common, inference.BET_SMALL)[0] < 0.01
     assert 0.5 < model.likelihood(rare, inference.AGGRESSIVE)[0] < 0.9           # leans on the table average
-    unknown_seat = inference.context(0, 0, True, 6, 6)
-    unknown_table = inference.context(0, 0, True, 6)
+    unknown_seat = inference.context(0, 0, price, 6, 6)
+    unknown_table = inference.context(0, 0, price, 6)
+    any_price = inference.context(0, 0, True, 6, 6, inference.POSITIONS.index("btn"))         # a bet, size unknown
+    assert any_price[2] == inference.ANY_PRICE
+    assert model.likelihood(any_price, inference.AGGRESSIVE)[0] == pytest.approx(0.9, abs=0.01)
+    assert model.likelihood(inference.context(0, 0, inference.CHEAP, 6, 6), inference.AGGRESSIVE)[0] > 0.8   # unseen price
     assert model.likelihood(unknown_seat, inference.AGGRESSIVE)[0] == pytest.approx(900 / 1002, abs=0.01)
     assert model.likelihood(unknown_table, inference.AGGRESSIVE)[0] == pytest.approx(900 / 1002, abs=0.01)
 
@@ -479,9 +527,11 @@ def test_bundled_action_model_reads_strength_from_aggression():
     model = inference.default_model()
     assert {"all", "tag", "lag", "nit"} <= set(model.counts)
     for ctx in (inference.context(0, 0, True, 2), inference.context(1, 0, False, 2, 6, 2),
-                inference.context(3, 1, True, 2, 9, 0)):
-        total = sum(model.likelihood(ctx, action) for action in range(3))
+                inference.context(3, 1, inference.NORMAL, 2, 9, 0)):
+        total = sum(model.likelihood(ctx, action) for action in range(inference.N_ACTIONS))
         assert total == pytest.approx(np.ones(inference.N_BUCKETS))
+        sizes = sum(model.likelihood(ctx, action) for action in range(inference.BET_SMALL, inference.N_ACTIONS))
+        assert model.likelihood(ctx, inference.AGGRESSIVE) == pytest.approx(sizes)
     flop_bet = inference.context(1, 0, False, 2)                                 # betting the flop heads-up
     raise_by_strength = model.likelihood(flop_bet, inference.AGGRESSIVE)
     assert raise_by_strength[-1] > 3 * raise_by_strength[0]
@@ -701,8 +751,15 @@ def test_phh_hand_is_replayed():
     seen = inference.observed(hand["actions"], hand["n_players"], hand["button"])
     # (street, raises, facing, players left, table class, position): the button opens, the small blind
     # folds to the raise, and on the flop the big blind (first to act of the two left) calls a bet
-    assert seen[0][2] == (0, 0, 1, 1, 1, 3) and seen[1][2] == (0, 1, 1, 1, 1, 4) and seen[5][2] == (1, 1, 1, 0, 1, 0)
+    # (street, raises, price, players left, table class, position): the button opens (paying 2 into 3 is
+    # an expensive call), the small blind folds to the raise, and on the flop the big blind (first to
+    # act of the two left) calls 8 into 21, a normal price
+    assert seen[0][2] == (0, 0, 3, 1, 1, 3) and seen[1][2] == (0, 1, 3, 1, 1, 4) and seen[5][2] == (1, 1, 2, 0, 1, 0)
     assert seen[4][2][5] == 2                                                         # the button bets last to act
+    # chips: the open adds 6 to a pot of 3, the flop bet 8 to 13, the river bet 20 to 29: all medium-sized
+    assert [(a[3], a[4]) for a in hand["actions"] if a[2] == "raise"] == [(6, 3), (8, 13), (20, 29)]
+    assert [code for _, _, _, code in seen if code > inference.PASSIVE] == [inference.BET_MEDIUM] * 3
+    assert hand["actions"][2][3:5] == (4, 9)                                          # the big blind calls 4 more
 
     assert phh.parse_hand(PHH_HAND.replace("'NT'", "'FT'")) is None                   # not no-limit hold'em
     assert phh.parse_hand(PHH_HAND.replace("p1 f", "p1 xyz")) is None                 # unknown action

@@ -8,11 +8,15 @@ a hand, Bayes' rule turns a uniform prior over the 1,326 hole-card combos into a
 Hand strength is measured as a percentile: where a combo ranks, among all combos possible on
 the board, by its chance of beating one random hand at showdown. Ten equal buckets of that
 percentile mean "top 10% of possible hands", whatever the board texture.
+
+An action is a fold, a check or call, or a bet or raise in one of three sizes relative to the
+pot. The situation says, among other things, how expensive the bet being faced is.
 """
 
 import json
 import os
 import random
+import re
 import sqlite3
 from functools import lru_cache
 
@@ -32,9 +36,19 @@ MODELS = {      # bundled models by name
     "pro": os.path.join(_DATA, "action_model_pro.json"),        # Pluribus and the professionals it played
 }
 N_BUCKETS = 10
-GAVE_UP, PASSIVE, AGGRESSIVE = 0, 1, 2          # fold / check or call / bet or raise
-# street, raises faced, facing a bet, players left, table size, position, strength bucket, action
-_SHAPE = (4, 3, 2, 4, 3, 6, N_BUCKETS, 3)
+# What a player can do. A bet or raise comes in three sizes, measured by the chips put in beyond the
+# call as a share of the pot after calling: small (under 45%), medium, large (90% and more).
+GAVE_UP, PASSIVE, BET_SMALL, BET_MEDIUM, BET_LARGE = range(5)       # fold / check or call / bet or raise
+N_ACTIONS = 5
+AGGRESSIVE = 5      # "a bet or raise, size unknown": the three sizes together. For asking a model only
+SIZE_EDGES = (0.45, 0.9)
+# What it costs to stay in: nothing, or the amount to call as a share of the pot, cut at the prices that
+# bets of those two sizes create (a bet of b pots asks for b / (1 + b) of the pot).
+NO_BET, CHEAP, NORMAL, EXPENSIVE = range(4)
+ANY_PRICE = -1      # facing a bet whose size is unknown
+PRICE_EDGES = tuple(b / (1 + b) for b in SIZE_EDGES)
+# street, raises faced, price to call, players left, table size, position, strength bucket, action
+_SHAPE = (4, 3, 4, 4, 3, 6, N_BUCKETS, N_ACTIONS)
 POSITIONS = ("ep", "mp", "co", "btn", "sb", "bb")        # pre-flop seat classes, in model index order
 _POSITION_ALIASES = {"utg": "ep", "lj": "mp", "hj": "mp", "button": "btn"}
 _ACTS_AFTER_FLOP = {"sb": 0, "bb": 1, "ep": 2, "mp": 3, "co": 4, "btn": 5}      # order of action after the flop
@@ -147,15 +161,36 @@ def table_class(n_players):
     return -1 if n_players is None else 0 if n_players == 2 else 1 if n_players <= 6 else 2
 
 
-def context(street, raises, facing_bet, n_live, n_players=None, position=-1):
-    """The model's notion of a situation: (street, raises already made this street capped at 2,
-    whether there is a bet to call, players still in the hand capped at 5, table class, position).
+def price_class(to_call, pot):
+    """NO_BET, or how expensive the call is: CHEAP, NORMAL or EXPENSIVE (ANY_PRICE if the pot is unknown)."""
+    if to_call <= 0:
+        return NO_BET
+    if pot <= 0:
+        return ANY_PRICE
+    price = to_call / pot
+    return CHEAP if price < PRICE_EDGES[0] else NORMAL if price < PRICE_EDGES[1] else EXPENSIVE
 
-    position is what :func:`position_now` returns. A table class or position of -1 means
-    "unknown": the model then answers for the average over it.
+
+def bet_class(added, pot, to_call):
+    """Size of a bet or raise that put ``added`` chips in: BET_SMALL, BET_MEDIUM or BET_LARGE
+    (AGGRESSIVE, i.e. unknown, without a pot to measure against)."""
+    call = max(to_call, 0)
+    if pot + call <= 0:
+        return AGGRESSIVE
+    size = (added - call) / (pot + call)
+    return BET_SMALL if size < SIZE_EDGES[0] else BET_MEDIUM if size < SIZE_EDGES[1] else BET_LARGE
+
+
+def context(street, raises, price, n_live, n_players=None, position=-1):
+    """The model's notion of a situation: (street, raises already made this street capped at 2,
+    price of calling, players still in the hand capped at 5, table class, position).
+
+    price is what :func:`price_class` returns; True stands for "there is a bet, size unknown".
+    position is what :func:`position_now` returns. A price of ANY_PRICE and a table class or
+    position of -1 mean "unknown": the model then answers for the average over it.
     """
-    return (street, min(raises, 2), int(bool(facing_bet)), min(max(n_live, 2), 5) - 2,
-            table_class(n_players), position)
+    price = ANY_PRICE if price is True else int(price)
+    return street, min(raises, 2), price, min(max(n_live, 2), 5) - 2, table_class(n_players), position
 
 
 def observed(actions, n_players, button):
@@ -165,21 +200,67 @@ def observed(actions, n_players, button):
     for a in actions:
         if a[0] != street:
             street, raises = a[0], 0
-        code = AGGRESSIVE if a[2] == RAISE else GAVE_UP if a[2] == FOLD else PASSIVE
+        code = bet_class(a[3], a[4], a[5]) if a[2] == RAISE else GAVE_UP if a[2] == FOLD else PASSIVE
         position = position_now(a[1], button, n_players, folded, street)
-        out.append((a[1], street, context(street, raises, a[5] > 0, a[6], n_players, position), code))
+        out.append((a[1], street, context(street, raises, price_class(a[5], a[4]), a[6], n_players, position), code))
         raises += a[2] == RAISE
         if code == GAVE_UP:
             folded.add(a[1])
     return out
 
 
-_LINE_WORDS = {      # word -> (action code, raises already made, facing a bet), pre-flop and post-flop
-    0: {"limp": (PASSIVE, 0, 1), "open": (AGGRESSIVE, 0, 1), "raise": (AGGRESSIVE, 0, 1), "call": (PASSIVE, 1, 1),
-        "3bet": (AGGRESSIVE, 1, 1), "call3bet": (PASSIVE, 2, 1), "4bet": (AGGRESSIVE, 2, 1), "check": (PASSIVE, 0, 0)},
-    1: {"check": (PASSIVE, 0, 0), "bet": (AGGRESSIVE, 0, 0), "call": (PASSIVE, 1, 1), "raise": (AGGRESSIVE, 1, 1),
-        "callraise": (PASSIVE, 2, 1), "reraise": (AGGRESSIVE, 2, 1)},
+_LINE_WORDS = {      # word -> (bets or raises?, raises already made, facing a bet?), pre-flop and post-flop
+    0: {"limp": (False, 0, True), "open": (True, 0, True), "raise": (True, 0, True), "call": (False, 1, True),
+        "3bet": (True, 1, True), "call3bet": (False, 2, True), "4bet": (True, 2, True), "check": (False, 0, False)},
+    1: {"check": (False, 0, False), "bet": (True, 0, False), "call": (False, 1, True), "raise": (True, 1, True),
+        "callraise": (False, 2, True), "reraise": (True, 2, True)},
 }
+_SIZED_WORD = re.compile(r"([a-z0-9]*[a-z])(\d+(?:\.\d+)?)(x?)")
+
+
+def _line_word(word, street, seat, heads_up=False):
+    """One word of an action line -> (action code, raises already made, price class).
+
+    A number after the word is a bet size in percent of the pot: for a bet or raise its own size
+    ('bet66'), for a call the size of the bet that was called ('call66'). Pre-flop, 'open3x' and
+    'call3x' give the raise as a multiple of the big blind instead.
+    """
+    words = _LINE_WORDS[min(street, 1)]
+    size = big_blinds = None
+    match = _SIZED_WORD.fullmatch(word)
+    if word not in words and match and match.group(1) in words:
+        word = match.group(1)
+        size, big_blinds = float(match.group(2)) / 100, bool(match.group(3))
+    if word not in words:
+        raise ValueError(f"unknown action {word!r} on street {street + 1}; use one of {', '.join(words)}, "
+                         f"optionally followed by a size in percent of the pot, e.g. bet66")
+    aggressive, raises, facing = words[word]
+    posted = {"sb": 0.5, "bb": 1.0}.get(seat, 0.0)             # big blinds already in before acting
+    if heads_up and seat != "bb":
+        posted = 0.5 if raises == 0 else 1.0                    # the button is the small blind; the other seat the big
+    opened_to = None                                            # pre-flop: the open raise, in big blinds
+    if big_blinds:
+        if street or word not in ("open", "raise", "call"):
+            raise ValueError(f"a size in big blinds is only understood for a pre-flop open or call, not {word!r}")
+        opened_to, size = size * 100, None
+        if aggressive:
+            size = (opened_to - 1) / (2.5 - posted)             # raise beyond the call / pot after calling
+    elif street == 0 and word == "call" and size is not None:
+        opened_to = 1 + 2.5 * size                              # the open that was called, as its raiser sized it
+    code = PASSIVE
+    if aggressive:
+        code = AGGRESSIVE if size is None else bet_class(size, 1.0, 0.0)
+    if not facing:
+        price = NO_BET
+    elif street == 0 and raises == 0:
+        price = price_class(1 - posted, 1.5)                    # limping or opening: the big blind is the bet
+    elif opened_to is not None:
+        price = price_class(opened_to - posted, 1.5 + opened_to)    # the blinds are dead money for the caller
+    elif size is not None and not aggressive:
+        price = price_class(size, 1 + size)                     # calling a bet or raise of that share of the pot
+    else:
+        price = ANY_PRICE
+    return code, raises, price
 
 
 def _position_name(text, table):
@@ -206,7 +287,9 @@ def parse_line(text, n_players, hero_position=None, table=None):
 
     Pre-flop words: limp, open, call, 3bet, call3bet, 4bet, check. Post-flop: check, bet, call,
     raise, callraise, reraise. Several words on one street are separated by spaces; an empty
-    street ('open//bet') means the opponent did not act there.
+    street ('open//bet') means the opponent did not act there. A word may carry a size in percent
+    of the pot ('bet66', 'raise100', 'call50' = called a half-pot bet) or, pre-flop, in big blinds
+    ('open3x', 'call3x'); without one the model answers for the average size.
 
     n_players: players in the hand now. table: players dealt in (6, or 9 for more than six players,
     when not given). The optional 'position:' prefix (ep, mp, co, btn, sb, bb) is the opponent's
@@ -238,16 +321,13 @@ def parse_line(text, n_players, hero_position=None, table=None):
     for street, part in enumerate(text.lower().split("/")):
         if street > 3:
             raise ValueError("an action line has at most four streets")
-        words = _LINE_WORDS[min(street, 1)]
         for word in part.replace(",", " ").split():
-            if word not in words:
-                raise ValueError(f"unknown action {word!r} on street {street + 1}; use one of {', '.join(words)}")
-            code, raises, facing = words[word]
+            code, raises, price = _line_word(word, street, seat, table == 2)
             if street:
-                out.append((street, context(street, raises, facing, n_players, table, after_flop), code))
+                out.append((street, context(street, raises, price, n_players, table, after_flop), code))
             else:
                 position = -1 if seat is None else POSITIONS.index(seat)
-                out.append((street, context(street, raises, facing, left_before_flop, table, position), code))
+                out.append((street, context(street, raises, price, left_before_flop, table, position), code))
     return out
 
 
@@ -264,30 +344,38 @@ class ActionModel:
     def likelihood(self, ctx, action, profile="all"):
         """P(action | context, bucket) for every strength bucket -> array (N_BUCKETS,).
 
-        Situations are nested: (street, raises, facing a bet) > players left > table size > position.
-        Each level is estimated from its own counts plus SHRINK pseudo-counts of the level above,
-        so a seat that was rarely seen leans on the average seat instead of on a handful of hands.
+        Situations are nested: (street, raises, bet or no bet) > price of calling > players left >
+        table size > position. Each level is estimated from its own counts plus SHRINK
+        pseudo-counts of the level above, so a seat that was rarely seen leans on the average seat
+        instead of on a handful of hands. ``action`` may be AGGRESSIVE for "a bet of any size".
         A profile the model has never seen falls back to the pooled 'all'.
         """
         if profile not in self.counts:
             profile = "all"
         key = (profile, ctx)
         if key not in self._probabilities:
-            street, raises, facing, live, table, position = ctx
-            block = self.counts[profile][street, raises, facing]        # (players left, table, position, bucket, action)
-            levels = [block.sum(axis=(0, 1, 2)), block[live].sum(axis=(0, 1))]
+            street, raises, price, live, table, position = ctx
+            block = self.counts[profile][street, raises]        # (price, players left, table, position, bucket, action)
+            detail = block[NO_BET] if price == NO_BET else block[1:].sum(axis=0)
+            levels = [detail.sum(axis=(0, 1, 2))]
+            if price > NO_BET:
+                detail = block[price]
+                levels.append(detail.sum(axis=(0, 1, 2)))
+            levels.append(detail[live].sum(axis=(0, 1)))
             if table >= 0:
-                levels.append(block[live, table].sum(axis=0))
+                levels.append(detail[live, table].sum(axis=0))
                 if position >= 0:
-                    levels.append(block[live, table, position])
+                    levels.append(detail[live, table, position])
             # one pseudo-count of a flat prior keeps every action possible: real players do, rarely,
             # fold with nothing to call, and an impossible observation would wipe out a whole range
-            p, strength = np.array([1 / 3] * 3 if facing else [0.02, 0.49, 0.49]), 1.0
+            flat = [1 / 3, 1 / 3] if price != NO_BET else [0.02, 0.49]
+            p, strength = np.array(flat + [(1 - sum(flat)) / 3] * 3), 1.0
             for counts in levels:
                 p = (counts + strength * p) / (counts.sum(axis=1, keepdims=True) + strength)
                 strength = SHRINK
             self._probabilities[key] = p
-        return self._probabilities[key][:, action]
+        p = self._probabilities[key]
+        return p[:, BET_SMALL:].sum(axis=1) if action == AGGRESSIVE else p[:, action]
 
     def merged(self, newer, decay=1.0):
         """This model's counts scaled by ``decay`` plus the counts of ``newer``: learning across sessions."""
@@ -299,7 +387,7 @@ class ActionModel:
     def save(self, path=MODEL_PATH):
         """Write the model as JSON; only the situations that were seen are stored."""
         def seen(counts):
-            rows = np.round(counts, 1).reshape(-1, N_BUCKETS * 3)
+            rows = np.round(counts, 1).reshape(-1, N_BUCKETS * N_ACTIONS)
             return {",".join(str(i) for i in np.unravel_index(index, _SHAPE[:-2])):
                     [int(x) if x == int(x) else x for x in row.tolist()]
                     for index, row in enumerate(rows) if row.any()}
@@ -319,7 +407,7 @@ class ActionModel:
         for name, cells in data["counts"].items():
             counts[name] = np.zeros(_SHAPE)
             for key, row in cells.items():
-                counts[name][tuple(int(i) for i in key.split(","))] = np.reshape(row, (N_BUCKETS, 3))
+                counts[name][tuple(int(i) for i in key.split(","))] = np.reshape(row, (N_BUCKETS, N_ACTIONS))
         return cls(counts, data.get("source", ""))
 
 
@@ -435,6 +523,8 @@ def _prepare_chunk(job):
     for hand in hands:
         by_seat = {}
         for seat, street, ctx, code in observed(hand["actions"], hand["n_players"], hand["button"]):
+            if code == AGGRESSIVE or ctx[2] == ANY_PRICE:
+                raise ValueError("a hand record has a bet without a pot to measure it against")
             by_seat.setdefault(seat, []).append((street, ctx, code))
         buckets = {street: _buckets(hand_percentiles(hand["board"][:_BOARD_CARDS[street]], flop_runouts, rng)).astype(np.int8)
                    for street in {street for acts in by_seat.values() for street, _, _ in acts if street}}
@@ -458,8 +548,8 @@ def prepare(hands, flop_runouts=150, seed=0, processes=None):
 
 
 def _coarse(ctx):
-    """The same situation with table size and position left out."""
-    return ctx[:4] + (-1, -1)
+    """The same situation with the price of calling, table size and position left out."""
+    return ctx[0], ctx[1], ANY_PRICE if ctx[2] else NO_BET, ctx[3], -1, -1
 
 
 def _posterior(model, acts, buckets, preflop, coarse=False):
@@ -473,13 +563,14 @@ def _posterior(model, acts, buckets, preflop, coarse=False):
     return weights, weights.sum() / possible, possible
 
 
-def expected_counts(prepared, model, coarse=False):
+def expected_counts(prepared, model, coarse=False, tally=True):
     """One E-step -> ({label: counts}, log-likelihood of all observed actions, number of actions).
 
     A player whose cards are known adds one count per action. A player whose cards are hidden adds
     fractional counts, spread over the strength buckets in proportion to how likely each combo is
     given everything that player did in the hand under ``model``. With ``coarse`` the model is
-    asked without table size and position (the counts are still filed under the full situation).
+    asked without price, table size and position (the counts are still filed under the full
+    situation). ``tally=False`` only computes the likelihood.
     """
     preflop = _buckets(_preflop_percentiles())
     preflop_share = np.bincount(preflop, minlength=N_BUCKETS) / 1326
@@ -493,11 +584,12 @@ def expected_counts(prepared, model, coarse=False):
                 key = (label, acts)         # hidden and only acted pre-flop: identical for everyone alike
                 folded_early[key] = folded_early.get(key, 0) + 1
                 continue
-            target = counts.setdefault(label, np.zeros(_SHAPE))
+            target = counts.setdefault(label, np.zeros(_SHAPE)) if tally else None
             if combo >= 0:
                 for street, ctx, code in acts:
                     bucket = int(buckets[street][combo] if street else preflop[combo])
-                    target[ctx + (bucket, code)] += 1
+                    if tally:
+                        target[ctx + (bucket, code)] += 1
                     log_likelihood += np.log(model.likelihood(seen(ctx), code)[bucket])
             else:
                 weights, likelihood, _ = _posterior(model, acts, buckets, preflop, coarse)
@@ -505,6 +597,8 @@ def expected_counts(prepared, model, coarse=False):
                     n_actions -= len(acts)
                     continue
                 log_likelihood += np.log(likelihood)
+                if not tally:
+                    continue
                 weights /= weights.sum()
                 for street, ctx, code in acts:
                     where = buckets[street].clip(0) if street else preflop
@@ -514,11 +608,13 @@ def expected_counts(prepared, model, coarse=False):
         for _, ctx, code in acts:
             share *= model.likelihood(seen(ctx), code)
         log_likelihood += n * np.log(share.sum())
-        share *= n / share.sum()
-        target = counts.setdefault(label, np.zeros(_SHAPE))
-        for _, ctx, code in acts:
-            target[ctx][:, code] += share
-    counts["all"] = sum(counts.values())
+        if tally:
+            share *= n / share.sum()
+            target = counts.setdefault(label, np.zeros(_SHAPE))
+            for _, ctx, code in acts:
+                target[ctx][:, code] += share
+    if tally:
+        counts["all"] = sum(counts.values())
     return counts, float(log_likelihood), n_actions
 
 
@@ -530,8 +626,8 @@ def fit_prepared(prepared, initial=None, iterations=30, tolerance=5e-5, source="
     less than ``tolerance`` (at most ``iterations`` passes per stage).
 
     Without a starting model the fit runs in two stages. First the situations are learned without
-    table size and position: few probabilities, each backed by many hands, so EM separates weak
-    hands from strong ones quickly. The detailed model then starts from that answer. Started cold,
+    the price of calling, table size and position: few probabilities, each backed by many hands,
+    so EM separates weak hands from strong ones quickly. The detailed model then starts from that answer. Started cold,
     EM spreads the hidden hands thinly over the many detailed situations and takes very long to
     sharpen them.
     """
@@ -562,7 +658,7 @@ def action_fit(prepared, model):
     guess over the possible combos (geometric mean).
     """
     preflop = _buckets(_preflop_percentiles())
-    _, log_likelihood, n_actions = expected_counts(prepared, model)
+    _, log_likelihood, n_actions = expected_counts(prepared, model, tally=False)
     lifts = []
     for players, buckets in prepared:
         for _, combo, acts in players:

@@ -6,8 +6,8 @@ self-play database, with two differences: ``holes`` only has the seats whose car
 (dealt face up in the log, or shown at showdown), and ``bots`` holds a label per seat that the
 caller chooses (a player type, a stake level, ...), which becomes a model profile.
 
-Only no-limit hold'em hands are read. Bet sizes are not kept: the model looks at who folded,
-called or raised, on which street, facing what.
+Only no-limit hold'em hands are read. Every action keeps the chips it added, the pot before it
+and the amount there was to call, like the engine's own action log.
 """
 
 import os
@@ -19,7 +19,7 @@ from .engine import CALL, CHECK, FOLD, RAISE
 
 _HAND_SPLIT = re.compile(r"^\[\d+\]\s*$", re.MULTILINE)
 _LIST = {name: re.compile(rf"^{name} = \[(.*)\]\s*$", re.MULTILINE)
-         for name in ("actions", "blinds_or_straddles", "players", "starting_stacks")}
+         for name in ("actions", "antes", "blinds_or_straddles", "players", "starting_stacks")}
 _VARIANT = re.compile(r"^variant = '(\w+)'", re.MULTILINE)
 _QUOTED = re.compile(r"'([^']*)'|\"([^\"]*)\"")
 
@@ -52,12 +52,16 @@ def parse_hand(text, label=None):
     except ValueError:
         return None
     n = len(bets)
-    if not 2 <= n <= 10:
-        return None
+    if not 2 <= n <= 10 or min(bets) < 0 or max(bets) <= 0:
+        return None         # a few logs carry negative "blinds"; what they mean for the pot is unclear
     if n == 2:
         bets.reverse()      # heads-up the last player is the button and posts the small blind
     names = [a or b for a, b in _QUOTED.findall(_field(text, "players") or "")]
     big_blind = max(bets)
+    try:
+        pot = sum(bets) + sum(float(x) for x in (_field(text, "antes") or "").split(",") if x.strip())
+    except ValueError:
+        return None
 
     current, street, live = big_blind, 0, set(range(n))
     board, holes, actions = [], {}, []
@@ -96,18 +100,22 @@ def parse_hand(text, label=None):
             return None
         to_call = current - bets[seat]
         if words[1] == "f":
-            actions.append((street, seat, FOLD, 0, 0, to_call, len(live), None))
+            actions.append((street, seat, FOLD, 0, pot, to_call, len(live), None))
             live.discard(seat)
         elif words[1] == "cc":
-            actions.append((street, seat, CALL if to_call > 0 else CHECK, 0, 0, to_call, len(live), None))
-            bets[seat] = max(bets[seat], current)
+            added = max(to_call, 0.0)       # a short stack may really put in less; the log does not say
+            actions.append((street, seat, CALL if to_call > 0 else CHECK, added, pot, to_call, len(live), None))
+            bets[seat] += added
+            pot += added
         elif words[1] == "cbr" and len(words) > 2:
             try:
-                amount = float(words[2])
+                amount = float(words[2])        # the player's total bet on this street after raising
             except ValueError:
                 return None
-            actions.append((street, seat, RAISE, amount, 0, to_call, len(live), None))
+            added = max(amount, current) - bets[seat]
+            actions.append((street, seat, RAISE, added, pot, to_call, len(live), None))
             bets[seat] = current = max(amount, current)
+            pot += added
         else:
             return None
     if not actions or len(set(board)) != len(board):

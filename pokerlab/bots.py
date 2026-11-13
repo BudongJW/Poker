@@ -13,7 +13,8 @@ import numpy as np
 from .cards import hand_class
 from .engine import CALL, CHECK, FOLD, RAISE
 from .equity import COMBO_INDEX, Range, quick_equity
-from .inference import context, default_model, infer_ranges, load_model, position_now, strength_buckets
+from .inference import (BET_LARGE, BET_MEDIUM, BET_SMALL, GAVE_UP, N_ACTIONS, PASSIVE, context, default_model,
+                        infer_ranges, load_model, position_now, price_class, strength_buckets)
 from .preflop import preflop_equity, top_range
 
 
@@ -131,10 +132,11 @@ class EquityBot(Bot):
 class PopulationBot(Bot):
     """Plays like the players an action model was fitted on.
 
-    In each situation it looks up how often those players folded, called and raised with a hand as
-    strong as its own (same strength bucket) and picks one of the three with those frequencies.
-    Bet sizes are not part of the model: raises are half to full pot.
+    In each situation it looks up how often those players folded, called and bet small, medium or
+    large with a hand as strong as its own (same strength bucket) and picks one with those
+    frequencies. Within a size class the exact bet is drawn at random.
     """
+    SIZES = {BET_SMALL: (0.25, 0.44), BET_MEDIUM: (0.5, 0.8), BET_LARGE: (0.9, 1.3)}    # share of the pot
 
     def __init__(self, name, model, profile="all", seed=None):
         super().__init__(seed)
@@ -147,14 +149,18 @@ class PopulationBot(Bot):
         bucket = strength_buckets(view.board, 60, self.np_rng, _BUCKETS)[COMBO_INDEX[view.hole[0], view.hole[1]]]
         folded = {a[1] for a in view.actions if a[2] == FOLD}
         position = position_now(view.seat, view.button, view.n_players, folded, view.street)
-        ctx = context(view.street, view.raises, view.to_call > 0, view.n_live, view.n_players, position)
-        fold, passive, _ = (self.model.likelihood(ctx, code, self.profile)[bucket] for code in range(3))
+        ctx = context(view.street, view.raises, price_class(view.to_call, view.pot), view.n_live, view.n_players,
+                      position)
         r = self.rng.random()
-        if r < fold:
+        for code in range(N_ACTIONS):
+            r -= self.model.likelihood(ctx, code, self.profile)[bucket]
+            if r < 0:
+                break
+        if code == GAVE_UP:
             return FOLD, 0
-        if r < fold + passive or not view.can_raise:
+        if code == PASSIVE or not view.can_raise:
             return CALL, 0
-        return RAISE, self._raise_to(view, 0.5 + 0.5 * self.rng.random())
+        return RAISE, self._raise_to(view, self.rng.uniform(*self.SIZES[code]))
 
 
 _BUCKETS = {}       # board -> strength bucket of every combo; shared by all model bots of a process

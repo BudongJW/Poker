@@ -36,7 +36,9 @@ def main(argv=None):
                    help="what one opponent did, streets split by '/', e.g. 'open/bet/bet'; the range is "
                         "inferred from it. Pre-flop: limp open call 3bet call3bet 4bet check. "
                         "Post-flop: check bet call raise callraise reraise. Put the opponent's seat in front "
-                        "if you know it: 'btn: open/bet' (ep mp co btn sb bb). Repeatable")
+                        "if you know it: 'btn: open/bet' (ep mp co btn sb bb). A size may follow a word, in "
+                        "percent of the pot ('bet66', 'call50' = called a half-pot bet) or pre-flop in big "
+                        "blinds ('open3x', 'call3x'). Repeatable")
     p.add_argument("--position", help="your own seat (ep mp co btn sb bb); with a villain's seat it tells "
                                       "the model who acts last after the flop")
     p.add_argument("--table", type=int, help="players dealt in at the table (default 6, or 9 with more than "
