@@ -10,11 +10,12 @@ RANKS = "23456789TJQKA"
 SUITS = "cdhs"
 
 _CARD_RE = re.compile(r"(10|[2-9TJQKA])([CDHS])", re.IGNORECASE)
+_SUIT_SYMBOLS = str.maketrans("♣♧♦♢♥♡♠♤", "ccddhhss")
 
 
 def card(text):
-    """'As' / 'AS' / '10h' -> card int."""
-    m = _CARD_RE.fullmatch(text.strip())
+    """'As' / 'AS' / '10h' / 'A♠' -> card int."""
+    m = _CARD_RE.fullmatch(text.strip().translate(_SUIT_SYMBOLS))
     if not m:
         raise ValueError(f"not a card: {text!r}")
     rank = "T" if m.group(1) == "10" else m.group(1).upper()
@@ -26,8 +27,9 @@ def card_str(c):
 
 
 def parse_cards(cards):
-    """Accept 'AsKd', 'As Kd', 'As,Kd', ['AS', 'KD'] or card ints; reject duplicates."""
+    """Accept 'AsKd', 'As Kd', 'As,Kd', 'A♠K♦', ['AS', 'KD'] or card ints; reject duplicates."""
     if isinstance(cards, str):
+        cards = cards.translate(_SUIT_SYMBOLS)
         found = _CARD_RE.findall(cards)
         leftover = _CARD_RE.sub("", cards).strip(" ,/|-")
         if leftover:

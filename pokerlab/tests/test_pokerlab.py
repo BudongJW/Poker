@@ -1,17 +1,20 @@
 import itertools
+import json
 import random
 import sqlite3
+import threading
+import urllib.request
 
 import numpy as np
 import pytest
 
-from pokerlab import advisor, report, selfplay
+from pokerlab import advisor, daily, inference, preflop, report, selfplay, web
 from pokerlab.bots import BOT_TYPES, Bot, make_bot
 from pokerlab.cards import ALL_CLASSES, card, class_combos, hand_class, parse_cards
 from pokerlab.engine import CALL, FOLD, RAISE, play_hand, position_name
-from pokerlab.equity import equity
-from pokerlab.evaluator import evaluate, evaluate_many
-from pokerlab.preflop import parse_range, preflop_equity, ranking, top_range
+from pokerlab.equity import ALL_COMBOS, COMBO_INDEX, Range, _index_combos, equity, matchup, next_card
+from pokerlab.evaluator import evaluate, evaluate_many, rank_counts
+from pokerlab.preflop import heads_up_exact, parse_range, preflop_equity, preflop_stderr, ranking, top_range
 
 
 def value(text):
@@ -23,6 +26,7 @@ def value(text):
 def test_card_parsing():
     assert parse_cards("AsKd") == parse_cards(["AS", "KD"]) == parse_cards("as, kd") == [card("As"), card("Kd")]
     assert parse_cards("10h") == [card("Th")]
+    assert parse_cards("A♠K♦ 10♥") == parse_cards("AsKdTh")
     with pytest.raises(ValueError):
         parse_cards("AsAs")
     with pytest.raises(ValueError):
@@ -120,6 +124,53 @@ def test_ranges():
         equity("AsAh", "AdAc2s", ranges=[class_combos("AA")])
 
 
+def test_known_hands_are_enumerated():
+    ak, qq = matchup(["AhKd", "QsQc"])
+    assert ak.exact and ak.trials == 1_712_304                   # C(48, 5) boards
+    assert ak.equity == pytest.approx(0.42835, abs=1e-5) and ak.equity + qq.equity == pytest.approx(1.0)
+    assert equity("AhKd", ranges=[[tuple(parse_cards("QsQc"))]]).equity == pytest.approx(ak.equity)
+    three = matchup(["AsAh", "KsKh", "7c2d"], "Kd 7h 2s")
+    assert sum(r.equity for r in three) == pytest.approx(1.0) and three[1].equity > 0.9
+    with pytest.raises(ValueError):
+        matchup(["AsAh", "AsKh"])
+
+
+def test_matchup_with_ranges_and_random_hands():
+    results = matchup(["AsKs", parse_range("TT+"), None], trials=60_000, seed=1)
+    assert not results[0].exact and sum(r.equity for r in results) == pytest.approx(1.0)
+    assert results[1].equity > results[0].equity > results[2].equity
+
+
+def test_precision_target_is_met():
+    r = equity("AsKs", n_opponents=3, precision=0.002, seed=1)
+    assert r.ci95 <= 0.002 and r.trials % 100_000 == 0 and r.trials < 2_000_000
+    loose = equity("AsKs", n_opponents=3, precision=0.01, seed=1)
+    assert loose.trials < r.trials
+
+
+def test_weighted_range():
+    aa, kk = class_combos("AA"), class_combos("KK")
+    weighted = Range(aa + kk, [3.0] * 6 + [1.0] * 6)
+    parts = [equity("QsQh", "Jd 7c 2s", ranges=[r]).equity for r in (aa, kk)]
+    exact = equity("QsQh", "Jd 7c 2s", ranges=[weighted])
+    assert exact.exact and exact.equity == pytest.approx((3 * parts[0] + parts[1]) / 4)
+    mc = equity("QsQh", "Jd 7c 2s", ranges=[weighted], exact=False, trials=200_000, seed=2)
+    assert abs(mc.equity - exact.equity) < 4 * mc.stderr
+    assert equity("QsQh", ranges=[{aa[0]: 1.0, kk[0]: 0.0}], trials=20_000, seed=1).equity < 0.25   # only aces left
+    vector = weighted.vector()
+    assert vector.sum() == 24 and len(Range.from_vector(vector)) == 12
+    assert len(weighted.without(parse_cards("As"))) == 9
+    assert (ALL_COMBOS[COMBO_INDEX[5, 40]] == [40, 5]).all()
+
+
+def test_next_card_averages_back_to_current_equity():
+    after = next_card("AsKs", "Qs Js 2d")
+    assert len(after) == 47 and after[card("Ts")].equity == 1.0             # royal flush
+    assert np.mean([r.equity for r in after.values()]) == pytest.approx(equity("AsKs", "Qs Js 2d").equity)
+    pinned = next_card("AsKs", "Qs Js 2d 7h", ranges=[[tuple(parse_cards("QhQd"))]])
+    assert len(pinned) == 44 and card("Qh") not in pinned                    # the opponent's cards cannot come
+
+
 def test_hand_distribution_sums_to_one():
     for kwargs in ({"board": "QsJs2d"}, {"n_opponents": 4, "trials": 20_000, "seed": 1}):
         assert sum(equity("AsKs", **kwargs).hand_dist.values()) == pytest.approx(1.0)
@@ -128,13 +179,45 @@ def test_hand_distribution_sums_to_one():
 # ---- pre-flop table and ranges -------------------------------------------------------------
 
 def test_preflop_table():
-    assert preflop_equity("AA", 1) == pytest.approx(0.852, abs=0.003)
-    assert preflop_equity("72o", 1) == pytest.approx(0.346, abs=0.003)
-    assert ranking(1)[0] == "AA" and ranking(8)[0] == "AA"
+    assert ranking(1)[0] == "AA" and ranking(9)[0] == "AA"
     for cls in ALL_CLASSES:
-        row = [preflop_equity(cls, n) for n in range(1, 9)]
+        row = [preflop_equity(cls, n) for n in range(1, 10)]
         assert row == sorted(row, reverse=True)
-        assert preflop_equity(cls, 30) == row[-1]            # more than 8 opponents: clamp
+        assert preflop_equity(cls, 30) == row[-1]            # more than 9 opponents: clamp
+        assert preflop_stderr(cls, 1) == 0 and 0 < preflop_stderr(cls, 5) < 0.0005
+
+
+def test_heads_up_column_is_exact():
+    # 72o against one random hand, counted independently: 665,146,081 wins and 120,541,920 ties
+    # out of 2,097,572,400 deals for each of its 12 combos
+    assert preflop._data()["heads_up_counts"]["72o"] == [12 * 665_146_081, 12 * 120_541_920]
+    win, tie, lose = heads_up_exact("AA")
+    assert (round(win, 4), round(tie, 4), round(lose, 4)) == (0.8493, 0.0054, 0.1452)
+    assert preflop_equity("AA", 1) == pytest.approx(win + tie / 2, abs=1e-6)
+    counts = preflop._data()["heads_up_counts"]
+    assert sum(2 * w + t for w, t in counts.values()) == 1326 * preflop.DEALS_PER_COMBO
+
+
+def test_heads_up_enumeration_against_brute_force():
+    start = 777_777
+    board = _index_combos(52, 5)[start].tolist()
+    pairs = list(itertools.combinations([c for c in range(52) if c not in board], 2))
+    values = {p: evaluate(list(p) + board) for p in pairs}
+    wins, ties = np.zeros(169, dtype=np.int64), np.zeros(169, dtype=np.int64)
+    for h in pairs:
+        cls = ALL_CLASSES.index(hand_class(*h))
+        for g in pairs:
+            if g[0] not in h and g[1] not in h:
+                wins[cls] += values[g] < values[h]
+                ties[cls] += values[g] == values[h]
+    fast = preflop._heads_up_chunk((start, start + 1))
+    assert (fast[0] == wins).all() and (fast[1] == ties).all()
+
+
+def test_rank_counts():
+    below, equal, rank = rank_counts(np.array([[5, 1, 5, 3, 1, 9]]))
+    assert below.tolist() == [[3, 0, 3, 2, 0, 5]] and equal.tolist() == [[1, 1, 1, 0, 1, 0]]
+    assert rank.tolist() == [[2, 0, 2, 1, 0, 3]]
 
 
 def test_range_parsing():
@@ -301,3 +384,169 @@ def test_advisor_report():
     assert "약함" in text and "손실 콜" in text
     ranged = advisor.explain("AhKd", n_players=2, ranges=[parse_range("QQ+")], trials=20_000, seed=1)
     assert "레인지 지정" in ranged
+
+
+# ---- range inference -----------------------------------------------------------------------
+
+def test_hand_percentiles():
+    preflop_pct = inference.hand_percentiles([])
+    aces = COMBO_INDEX[card("As"), card("Ah")]
+    assert preflop_pct[aces] == np.nanmax(preflop_pct) > 0.99
+    board = parse_cards("Qs Js 2d 7h 7c")
+    river = inference.hand_percentiles(board)
+    assert np.isnan(river).sum() == 1326 - 1081                  # combos that use a board card
+    assert river[COMBO_INDEX[card("7s"), card("7d")]] == 1.0     # quads: the nuts
+    assert river[COMBO_INDEX[card("3c"), card("4d")]] < 0.1
+    flop = inference.hand_percentiles(parse_cards("Qs Js 2d"))
+    draw, air = COMBO_INDEX[card("As"), card("Ks")], COMBO_INDEX[card("8c"), card("3h")]
+    assert flop[draw] > 0.8 > 0.3 > flop[air]                    # a big draw counts, although it is ace-high now
+    sampled = inference.hand_percentiles(parse_cards("Qs Js 2d"), 200, np.random.default_rng(1))
+    ok = ~np.isnan(flop)
+    assert np.abs(sampled[ok] - flop[ok]).mean() < 0.04
+
+
+def test_action_lines():
+    line = inference.parse_line("open/bet/check call", 6)
+    assert [(street, code) for street, _, code in line] == [(0, 2), (1, 2), (2, 1), (2, 1)]
+    assert line[0][1] == (0, 0, 1, 3) and line[3][1] == (2, 1, 1, 3)
+    assert inference.parse_line("open//bet", 2)[1][0] == 2
+    with pytest.raises(ValueError):
+        inference.parse_line("open/jam", 2)
+    with pytest.raises(ValueError):
+        inference.range_from_line("open/bet/bet", "AsKs", "Qs Js 2d", 2)     # no turn on the board yet
+
+
+def test_bundled_action_model_reads_strength_from_aggression():
+    model = inference.default_model()
+    assert {"all", "tag", "lag", "nit"} <= set(model.counts)
+    for ctx in ((0, 0, 1, 0), (1, 0, 0, 0), (3, 1, 1, 0)):
+        total = sum(model.likelihood(ctx, action) for action in range(3))
+        assert total == pytest.approx(np.ones(inference.N_BUCKETS))
+    raise_by_strength = model.likelihood((1, 0, 0, 0), inference.AGGRESSIVE)     # betting the flop heads-up
+    assert raise_by_strength[-1] > 3 * raise_by_strength[0]
+
+    hero, board = parse_cards("AsKs"), parse_cards("Qs Js 2d")
+    pct = inference.hand_percentiles(board)
+    strength = {}
+    for line in ("open/bet", "limp/check"):
+        vector = inference.range_from_line(line, hero, board, 2).vector()
+        assert vector[COMBO_INDEX[card("As"), card("Qh")]] == 0             # uses one of hero's cards
+        strength[line] = np.nansum(vector * pct) / vector.sum()
+    assert strength["open/bet"] > strength["limp/check"] + 0.1
+    tight = equity(hero, board, ranges=[inference.range_from_line("open/bet", hero, board, 2)]).equity
+    assert tight < equity(hero, board).equity
+
+
+def test_fit_and_score_on_self_play(tmp_path):
+    path = str(tmp_path / "pool.sqlite")
+    selfplay.run(path, hands=600, players=(2, 3), bots=("tag", "lag", "nit"), batch_size=150, processes=2,
+                 seed=5, progress=None)
+    model = inference.fit(path, hands=120, flop_runouts=20, processes=2)
+    assert {"all", "tag", "lag", "nit"} == set(model.counts)
+    assert model.counts["all"].sum() == sum(model.counts[name].sum() for name in ("tag", "lag", "nit")) > 500
+    assert model.counts["all"][:, :, 0, :, :, inference.GAVE_UP].sum() == 0   # nobody folds without a bet
+    model.save(str(tmp_path / "model.json"))
+    again = inference.ActionModel.load(str(tmp_path / "model.json"))
+    assert (again.counts["all"] == model.counts["all"]).all()
+    rows = inference.score(path, again, hands=60, trials=1000, processes=2)
+    table = inference.summarize(rows)
+    assert table.loc["all", "decisions"] == 60 and 0 < table.loc["all", "mae_model"] < 0.5
+    assert inference.reliability(rows)["n_model"].sum() == 60
+
+    hands = inference._load_hands(path, 20, seed=0)
+    hand = max(hands, key=lambda h: len(h["actions"]))
+    hero_seat = hand["actions"][-1][1]
+    ranges = inference.infer_ranges(again, hand["actions"][:-1], hero_seat, hand["holes"][hero_seat], hand["board"])
+    assert hero_seat not in ranges and all(len(r) > 0 for r in ranges.values())
+
+
+# ---- advisor extras and the web page -------------------------------------------------------
+
+def test_advisor_new_sections():
+    a = advisor.analyze("AsKs", "Qs Js 2d", n_players=2, pot=100, bet=50, lines=["open/bet"])
+    assert a["ranged"] and a["ranges"][0]["label"] == "open/bet" and 0 < a["ranges"][0]["width"] < 1
+    assert sum(a["ranges"][0]["classes"].values()) == pytest.approx(1.0)
+    assert len(a["next_cards"]["cards"]) == 47 and a["next_cards"]["groups"][0]["equity"] > a["result"].equity
+    assert a["bet"]["bluff_breakeven_folds"] == pytest.approx(1 / 3) and a["bet"]["called_breakeven_equity"] == 0.25
+    data = json.loads(json.dumps(advisor.to_json(a)))
+    assert data["hero"] == ["As", "Ks"] and data["made_hand"] == "high card" and "Ts" in data["next_cards"]["cards"]
+    exact = advisor.analyze("AsAh")
+    assert exact["result"].exact and exact["result"].equity == pytest.approx(0.85204, abs=1e-5)
+    assert "전수 계산" in advisor.explain("AsAh") and "다음 카드별" in advisor.explain("AsKs", "Qs Js 2d", seed=1)
+
+
+def test_web_request_handling():
+    out = web.analyze_request({"hand": "AsKs", "board": "QsJs2d", "players": 3, "trials": 20000, "pot": "100",
+                               "to_call": "50", "bet": "", "opponents": [{"type": "line", "value": "open/bet"},
+                                                                          {"type": "cards", "value": "Qh Qd"}]})
+    assert out["n_players"] == 3 and len(out["ranges"]) == 2 and out["pot_odds"]["required_equity"] == pytest.approx(1 / 3)
+    json.dumps(out)
+    for bad in ({"hand": "AsKs", "players": 2, "opponents": [{"type": "range", "value": "QQ"}] * 2},
+                {"hand": "AsAs"}, {"hand": "AsKs", "players": 99}, {"hand": "AsKs", "opponents": [{"type": "cards", "value": "Qh"}]}):
+        with pytest.raises(ValueError):
+            web.analyze_request(bad)
+
+
+def test_web_server_round_trip():
+    server = web.ThreadingHTTPServer(("127.0.0.1", 0), web.Handler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_address[1]}"
+    try:
+        assert "승률 계산기" in urllib.request.urlopen(base + "/").read().decode()
+
+        def post(payload):
+            request = urllib.request.Request(base + "/api/analyze", json.dumps(payload).encode(),
+                                             {"Content-Type": "application/json"})
+            try:
+                with urllib.request.urlopen(request) as response:
+                    return response.status, json.loads(response.read())
+            except urllib.error.HTTPError as error:
+                return error.code, json.loads(error.read())
+
+        status, data = post({"hand": "9h9d", "board": "9sKd4c2h7s", "players": 2})
+        assert status == 200 and data["exact"] and data["equity"] > 0.99
+        status, data = post({"hand": "9h9h"})
+        assert status == 400 and "error" in data
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+# ---- the daily learning cycle --------------------------------------------------------------
+
+def test_custom_bot_specs_and_mutation():
+    bot = make_bot("equity:name=mine;value=0.2;margin=0.01;bluff=0.1;respect=0;model=1;trials=50", seed=1)
+    assert (bot.name, bot.value, bot.margin, bot.bluff, bot.respect, bot.trials) == ("mine", 0.2, 0.01, 0.1, 0.0, 50)
+    assert bot.model is inference.default_model()
+    assert make_bot(daily._spec("challenger", daily.START)).name == "challenger"
+    rng = random.Random(3)
+    for _ in range(200):
+        child = daily.mutate(daily.START, rng)
+        assert all(daily.BOUNDS[k][0] <= v <= daily.BOUNDS[k][1] for k, v in child.items())
+        assert sum(child[k] != daily.START[k] for k in child) <= 2
+
+
+def test_models_merge_with_decay():
+    model = inference.default_model()
+    merged = model.merged(model, decay=0.5)
+    assert merged.counts["all"].sum() == pytest.approx(1.5 * model.counts["all"].sum())
+    assert set(merged.counts) == set(model.counts)
+
+
+def test_learning_cycle_keeps_state(tmp_path, capsys):
+    state = str(tmp_path / "state")
+    options = dict(state_dir=state, hands=300, challengers=1, fit_hands=120, score_hands=40, processes=2,
+                   work_dir=str(tmp_path), progress=None)
+    first = daily.run_cycle(**options)
+    assert first["cycle"] == 1 and first["hands"] == 300 and first["model"]["mae_before"] is None and first["model"]["kept"]
+    assert {"champion", "challenger", "tag", "lag", "nit", "tag_range"} == set(first["standings"])
+    assert sum(first["standings"].values()) == pytest.approx(0, abs=1)          # chips only change hands
+    assert not list(tmp_path.glob("*.sqlite"))                                  # the hand database is cleaned up
+    second = daily.run_cycle(**options)
+    assert second["cycle"] == 2 and second["model"]["mae_before"] is not None
+    assert [e["cycle"] for e in daily.load_history(state)] == [1, 2]
+    assert daily.load_champion(state) == second["champion"]
+    model = inference.ActionModel.load(str(tmp_path / "state" / "action_model.json"))
+    assert {"champion", "challenger"} <= set(model.counts)
+    daily.print_history(state)
+    assert "현재 챔피언" in capsys.readouterr().out

@@ -238,3 +238,4 @@ Poker.code-workspace
 *.sqlite
 *.sqlite-wal
 *.sqlite-shm
+pokerlab-daily.log

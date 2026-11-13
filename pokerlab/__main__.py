@@ -1,9 +1,25 @@
-"""Command line: ``python -m pokerlab {equity,simulate,report,preflop-table} ...``"""
+"""Command line: ``python -m pokerlab <command> ...`` (see ``--help`` of each command)."""
 
 import argparse
+import json
 
-from . import advisor, preflop, report, selfplay
+from . import advisor, daily, inference, preflop, report, selfplay
 from .bots import BOT_TYPES
+from .cards import cards_str, parse_cards
+from .equity import matchup
+
+
+def _player(text):
+    """A matchup seat: '?' (random hand), two cards ('AsKs') or a range ('TT+,AQs+', '15%')."""
+    if text in ("?", "random"):
+        return None
+    try:
+        cards = parse_cards(text)
+        if len(cards) == 2:
+            return tuple(cards)
+    except ValueError:
+        pass
+    return preflop.parse_range(text)
 
 
 def main(argv=None):
@@ -15,9 +31,26 @@ def main(argv=None):
     p.add_argument("--board", default="", help="0, 3, 4 or 5 board cards, e.g. 'Qs Js 2d'")
     p.add_argument("--players", type=int, default=2, help="players in the hand including you (default 2)")
     p.add_argument("--range", action="append", default=[], dest="ranges", metavar="RANGE",
-                   help="range of one opponent, e.g. 'TT+,AQs+' or '15%%'; repeat for more opponents")
-    p.add_argument("--pot", type=float, help="pot size before your call")
+                   help="known range of one opponent, e.g. 'TT+,AQs+', '15%%' or exact cards 'QhQd'; repeatable")
+    p.add_argument("--villain", action="append", default=[], dest="lines", metavar="LINE",
+                   help="what one opponent did, streets split by '/', e.g. 'open/bet/bet'; the range is "
+                        "inferred from it. Pre-flop: limp open call 3bet call3bet 4bet check. "
+                        "Post-flop: check bet call raise callraise reraise. Repeatable")
+    p.add_argument("--profile", default="all", help="opponent type the action model should assume (default: all)")
+    p.add_argument("--pot", type=float, help="pot size before your call or bet")
     p.add_argument("--to-call", type=float, help="amount you must call")
+    p.add_argument("--bet", type=float, help="bet size you are considering")
+    p.add_argument("--precision", type=float, metavar="PCT",
+                   help="simulate until the 95%% interval is within +-PCT percentage points, e.g. 0.05")
+    p.add_argument("--trials", type=int, default=200_000, help="Monte Carlo trials when --precision is not given")
+    p.add_argument("--seed", type=int)
+    p.add_argument("--json", action="store_true", help="print the numbers as JSON instead of a report")
+
+    p = sub.add_parser("matchup", help="equity of every player: known hands, ranges or random hands")
+    p.add_argument("players", nargs="+", metavar="PLAYER", help="'AsKs', a range such as 'TT+,AQs+' or '15%%', or '?'")
+    p.add_argument("--board", default="")
+    p.add_argument("--dead", default="", help="cards known to be out of the deck")
+    p.add_argument("--precision", type=float, metavar="PCT")
     p.add_argument("--trials", type=int, default=200_000)
     p.add_argument("--seed", type=int)
 
@@ -37,22 +70,82 @@ def main(argv=None):
     p = sub.add_parser("report", help="statistics over a self-play database")
     p.add_argument("--db", default="selfplay.sqlite")
 
-    p = sub.add_parser("preflop-table", help="recompute the 169-hand pre-flop equity table")
-    p.add_argument("--trials", type=int, default=1_000_000)
+    p = sub.add_parser("fit-model", help="learn how players act with each hand strength from a self-play database")
+    p.add_argument("--db", default="selfplay.sqlite")
+    p.add_argument("--out", default=inference.MODEL_PATH, help="where to write the model (default: the bundled one)")
+    p.add_argument("--hands", type=int, default=15_000, help="hands sampled from the database (default 15000)")
+    p.add_argument("--processes", type=int)
+
+    p = sub.add_parser("score-model", help="measure equity error with and without range inference on a database")
+    p.add_argument("--db", default="selfplay.sqlite")
+    p.add_argument("--model", default=inference.MODEL_PATH)
+    p.add_argument("--hands", type=int, default=4000)
+    p.add_argument("--processes", type=int)
+
+    p = sub.add_parser("daily", help="one learning cycle: play, update the range model and the champion, record")
+    p.add_argument("--cycles", type=int, default=1, help="cycles to run back to back; 0 = until Ctrl-C")
+    p.add_argument("--hands", type=int, default=30_000, help="hands per challenger match (default 30000)")
+    p.add_argument("--challengers", type=int, default=2, help="challengers tried per cycle (default 2)")
+    p.add_argument("--state", default=daily.STATE_DIR, help="directory holding the learned state")
+    p.add_argument("--processes", type=int)
+    p.add_argument("--keep-db", action="store_true", help="keep the cycle's hand database instead of deleting it")
+
+    sub.add_parser("history", help="what the learning cycles have done so far").add_argument(
+        "--state", default=daily.STATE_DIR)
+
+    p = sub.add_parser("serve", help="local web page for the equity calculator")
+    p.add_argument("--port", type=int, default=8765)
+    p.add_argument("--host", default="127.0.0.1")
+
+    p = sub.add_parser("preflop-table", help="recompute the 169-hand pre-flop equity table (about 25 minutes)")
+    p.add_argument("--trials", type=int, default=4_000_000)
     p.add_argument("--processes", type=int)
 
     args = parser.parse_args(argv)
     if args.command == "equity":
-        print(advisor.explain(args.hand, args.board, args.players, args.pot, args.to_call,
-                              [preflop.parse_range(r) for r in args.ranges], args.trials, args.seed))
+        spot = dict(hero=args.hand, board=args.board, n_players=args.players, pot=args.pot, to_call=args.to_call,
+                    ranges=[preflop.parse_range(r) for r in args.ranges], trials=args.trials, seed=args.seed,
+                    precision=args.precision and args.precision / 100, bet=args.bet, lines=args.lines,
+                    profile=args.profile)
+        if args.json:
+            print(json.dumps(advisor.to_json(advisor.analyze(**spot)), ensure_ascii=False, indent=1))
+        else:
+            print(advisor.explain(**spot))
+    elif args.command == "matchup":
+        results = matchup([_player(text) for text in args.players], args.board, args.dead, args.trials,
+                          seed=args.seed, precision=args.precision and args.precision / 100)
+        how = f"전수 계산 ({results[0].trials:,}가지)" if results[0].exact else f"몬테카를로 {results[0].trials:,}회"
+        print(f"보드 {cards_str(parse_cards(args.board)) or '없음'} | {how}")
+        for text, r in zip(args.players, results):
+            error = "" if r.exact else f"  ±{r.ci95:.2%}p"
+            print(f"  {text:<16} 승률 {r.equity:7.2%}  (승 {r.win:.2%} / 무 {r.tie:.2%}){error}")
     elif args.command == "simulate":
         selfplay.run(args.db, args.hands, args.seconds, [int(x) for x in args.players.split(",")],
                      args.bots.split(","), args.batch_size, args.processes, args.seed, args.stack_bb,
                      not args.no_actions)
     elif args.command == "report":
         report.print_report(args.db)
+    elif args.command == "fit-model":
+        model = inference.fit(args.db, args.hands, processes=args.processes)
+        model.save(args.out)
+        print(f"written {args.out}: {model.source}; profiles {', '.join(sorted(model.counts))}")
+    elif args.command == "score-model":
+        rows = inference.score(args.db, inference.ActionModel.load(args.model), args.hands, processes=args.processes)
+        show = dict(float_format=lambda x: f"{x:.4f}", na_rep="-")
+        print("실제 상대 핸드 기준 승률과의 평균 절대 오차(mae)와 편향(bias = 추정 - 실제)")
+        print(inference.summarize(rows).to_string(**show))
+        print("\n추정 승률 구간별 실제 승률 (said = 추정 평균, truth = 실제 평균, n = 결정 수)")
+        print(inference.reliability(rows).to_string(**show))
+    elif args.command == "daily":
+        daily.run(args.cycles, state_dir=args.state, hands=args.hands, challengers=args.challengers,
+                  processes=args.processes, keep_db=args.keep_db)
+    elif args.command == "history":
+        daily.print_history(args.state)
+    elif args.command == "serve":
+        from . import web
+        web.serve(args.host, args.port)
     elif args.command == "preflop-table":
-        preflop.build_table(args.trials, args.processes)
+        preflop.build_table(args.trials, args.processes, progress=print)
         print("written", preflop.TABLE_PATH)
 
 

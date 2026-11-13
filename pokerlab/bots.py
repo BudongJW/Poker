@@ -2,7 +2,8 @@
 
 Three bots need no hand reading at all (random, calling station, maniac). The others are one
 parameterised :class:`EquityBot` that decides from its estimated win probability: a pre-flop
-table lookup, a small Monte Carlo simulation after the flop.
+table lookup, a small Monte Carlo simulation after the flop, optionally against opponent ranges
+inferred from the betting.
 """
 
 import random
@@ -11,7 +12,8 @@ import numpy as np
 
 from .cards import hand_class
 from .engine import CALL, CHECK, FOLD, RAISE
-from .equity import simulate
+from .equity import Range, quick_equity
+from .inference import default_model, infer_ranges
 from .preflop import preflop_equity, top_range
 
 
@@ -65,40 +67,52 @@ class Maniac(Bot):
 class EquityBot(Bot):
     """Bets by estimated equity against the opponents still in the hand.
 
-    value:  how far above the fair share (1/players) equity must be to bet or raise, as a
-            fraction of the gap between fair share and 1. Lower = looser and more aggressive.
-    margin: extra equity demanded on top of pot odds before calling. Higher = tighter.
-    bluff:  probability of betting a hand that does not qualify when checked to.
+    value:   how far above the fair share (1/players) equity must be to bet or raise, as a
+             fraction of the gap between fair share and 1. Lower = looser and more aggressive.
+    margin:  extra equity demanded on top of pot odds before calling. Higher = tighter.
+    bluff:   probability of betting a hand that does not qualify when checked to.
+    respect: how much each raise already made on the street lifts the bar for raising again.
     villain_range: if set (e.g. 0.2), an opponent who has raised in this hand is assumed to hold
-            a top-x% starting hand instead of a random one.
+             a top-x% starting hand instead of a random one.
+    model:   an :class:`~pokerlab.inference.ActionModel` (or True for the bundled one): every
+             opponent's range is inferred from their actions so far. Replaces ``villain_range``.
     """
 
-    def __init__(self, name, value, margin, bluff, trials=300, villain_range=None, seed=None):
+    def __init__(self, name, value, margin, bluff, respect=0.2, trials=300, villain_range=None, model=None,
+                 seed=None):
         super().__init__(seed)
         self.name = name
-        self.value, self.margin, self.bluff = value, margin, bluff
+        self.value, self.margin, self.bluff, self.respect = value, margin, bluff, respect
         self.trials, self.villain_range = trials, villain_range
+        self.model = default_model() if model is True else model
         self.np_rng = np.random.default_rng(seed)
         self._cache_key = self._cache_value = None
 
     def estimate(self, view):
         n_opp = view.n_live - 1
+        if self.model:
+            if len(_BUCKETS) > 64:
+                _BUCKETS.clear()
+            ranges = list(infer_ranges(self.model, view.actions, view.seat, view.hole, view.board,
+                                       flop_runouts=60, rng=self.np_rng, cache=_BUCKETS).values())
+            if not ranges and view.street == 0:
+                return preflop_equity(hand_class(*view.hole), n_opp)
+            return quick_equity(view.hole, view.board, n_opp, self.trials, self.np_rng, ranges)
         ranged = bool(self.villain_range) and _live_raiser(view)
-        key = (view.hole, view.street, n_opp, ranged)
+        key = (view.hole, tuple(view.board), n_opp, ranged)
         if key != self._cache_key:
             if view.street == 0 and not ranged:
                 value = preflop_equity(hand_class(*view.hole), n_opp)
             else:
-                ranges = [top_range(self.villain_range)] if ranged else ()
-                share = simulate(list(view.hole), list(view.board), n_opp, self.trials, self.np_rng, ranges)[1]
-                value = float(share.mean())
+                ranges = [Range(top_range(self.villain_range))] if ranged else ()
+                value = quick_equity(view.hole, view.board, n_opp, self.trials, self.np_rng, ranges)
             self._cache_key, self._cache_value = key, value
         return self._cache_value
 
     def act(self, view):
         eq = self.estimate(view)
         fair = 1.0 / view.n_live
-        strong = fair + (1.0 - fair) * (self.value + 0.2 * view.raises)
+        strong = fair + (1.0 - fair) * (self.value + self.respect * view.raises)
         if view.can_raise and eq > strong:
             target = self._raise_to(view, 0.5 + 0.5 * self.rng.random())
             if target > 0.6 * view.max_raise_to:         # pot-committed: move all-in
@@ -112,6 +126,9 @@ class EquityBot(Bot):
         if eq >= pot_odds + self.margin:
             return CALL, 0, eq
         return FOLD, 0, eq
+
+
+_BUCKETS = {}       # board -> strength bucket of every combo; shared by all model bots of a process
 
 
 def _live_raiser(view):
@@ -129,10 +146,28 @@ BOT_TYPES = {
     "lag": lambda seed: EquityBot("lag", value=0.05, margin=0.0, bluff=0.20, seed=seed),
     "tag_range": lambda seed: EquityBot("tag_range", value=0.15, margin=0.06, bluff=0.05,
                                         villain_range=0.2, seed=seed),
+    "tag_model": lambda seed: EquityBot("tag_model", value=0.15, margin=0.06, bluff=0.05, model=True, seed=seed),
 }
 
 
+def _champion(seed):
+    from .daily import load_champion
+    return EquityBot("champion", model=True, seed=seed, **load_champion()["params"])
+
+
+BOT_TYPES["champion"] = _champion       # the betting parameters the daily cycle has settled on so far
+
+
 def make_bot(kind, seed=None):
+    """A bot by type name, or a custom equity bot written as
+    'equity:name=mine;value=0.15;margin=0.06;bluff=0.05;respect=0.2;model=1'."""
+    if kind.startswith("equity:"):
+        options = dict(item.split("=", 1) for item in kind[len("equity:"):].split(";") if item)
+        name = options.pop("name", "custom")
+        model = options.pop("model", "0") not in ("0", "false", "")
+        trials = int(options.pop("trials", 300))
+        return EquityBot(name, model=model or None, trials=trials, seed=seed,
+                         **{key: float(value) for key, value in options.items()})
     if kind not in BOT_TYPES:
         raise ValueError(f"unknown bot {kind!r}; choose from {sorted(BOT_TYPES)}")
     return BOT_TYPES[kind](seed)
