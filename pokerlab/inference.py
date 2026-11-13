@@ -169,7 +169,12 @@ class ActionModel:
         self._likelihoods = {}
 
     def likelihood(self, ctx, action, profile="all"):
-        """P(action | context, bucket) for every strength bucket -> array (N_BUCKETS,)."""
+        """P(action | context, bucket) for every strength bucket -> array (N_BUCKETS,).
+
+        A profile the model has never seen falls back to the pooled 'all'.
+        """
+        if profile not in self.counts:
+            profile = "all"
         key = (profile, ctx, action)
         if key not in self._likelihoods:
             counts = self.counts[profile][ctx]
@@ -201,9 +206,14 @@ class ActionModel:
         return cls(data["counts"], data.get("source", ""))
 
 
-@lru_cache(maxsize=1)
+@lru_cache(maxsize=4)
+def load_model(path=MODEL_PATH):
+    """The action model stored at ``path`` (the bundled one by default), read once per process."""
+    return ActionModel.load(path)
+
+
 def default_model():
-    return ActionModel.load()
+    return load_model(MODEL_PATH)
 
 
 # ---- inference -------------------------------------------------------------------------

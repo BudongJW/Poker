@@ -57,8 +57,10 @@ def mutate(params, rng):
     return out
 
 
-def _spec(name, params):
-    return f"equity:name={name};model=1;" + ";".join(f"{key}={value}" for key, value in sorted(params.items()))
+def _spec(name, params, model_path=None):
+    """Bot spec for :func:`pokerlab.bots.make_bot`; the bot reads ranges with the model at ``model_path``."""
+    model = model_path if model_path and os.path.exists(model_path) else 1
+    return f"equity:name={name};model={model};" + ";".join(f"{key}={value}" for key, value in sorted(params.items()))
 
 
 def _paired_difference(db_path, first_batch):
@@ -72,7 +74,7 @@ def _paired_difference(db_path, first_batch):
     return n, 100 * mean, 196 * (max(squares - mean * mean, 0.0) / n) ** 0.5
 
 
-def run_cycle(state_dir=STATE_DIR, hands=30_000, challengers=2, fit_hands=8000, score_hands=1500, decay=0.9,
+def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, score_hands=1500, decay=0.9,
               processes=None, seed=None, work_dir=None, keep_db=False, progress=print):
     """Play, learn, evaluate and record once -> the history entry that was appended."""
     started = time.time()
@@ -85,63 +87,66 @@ def run_cycle(state_dir=STATE_DIR, hands=30_000, challengers=2, fit_hands=8000, 
     model_path = os.path.join(state_dir, "action_model.json")
     db_path = os.path.join(work_dir or tempfile.gettempdir(), f"pokerlab-cycle-{cycle}-{os.getpid()}.sqlite")
 
-    # 1. play: each challenger meets the champion at six-handed tables; everything is logged
-    matches, played = [], 0
-    for index in range(challengers):
-        first_batch = 1
-        if index:                           # later matches append to the same database
-            with closing(sqlite3.connect(db_path)) as db:
-                first_batch = db.execute("SELECT MAX(batch) FROM batches").fetchone()[0] + 1
-        candidate = mutate(champion["params"], rng)
-        lineup = [_spec("champion", champion["params"]), _spec("challenger", candidate), *REFERENCES]
-        n, _ = selfplay.run(db_path, hands=hands, players=(6,), bots=lineup, batch_size=500, processes=processes,
-                            seed=rng.getrandbits(30), progress=None)
-        played += n
-        _, diff, ci = _paired_difference(db_path, first_batch)
-        promoted = diff - ci > 0
-        matches.append({"params": candidate, "diff_bb100": round(diff, 1), "ci95": round(ci, 1), "promoted": promoted})
-        say(f"도전자 {index + 1}/{challengers}: {candidate} -> 챔피언 대비 {diff:+.1f} ± {ci:.1f} bb/100"
-            f" ({'교체' if promoted else '유지'})")
-        if promoted:
-            champion = {"generation": champion["generation"] + 1, "params": candidate}
-    standings = {row.bot: round(row.bb100, 1) for row in report.bot_summary(db_path).itertuples()}
+    try:
+        # 1. play: each challenger meets the champion at six-handed tables; everything is logged
+        matches, played = [], 0
+        for index in range(challengers):
+            first_batch = 1
+            if index:                           # later matches append to the same database
+                with closing(sqlite3.connect(db_path)) as db:
+                    first_batch = db.execute("SELECT MAX(batch) FROM batches").fetchone()[0] + 1
+            candidate = mutate(champion["params"], rng)
+            lineup = [_spec("champion", champion["params"], model_path),
+                      _spec("challenger", candidate, model_path), *REFERENCES]
+            n, _ = selfplay.run(db_path, hands=hands, players=(6,), bots=lineup, batch_size=500, processes=processes,
+                                seed=rng.getrandbits(30), progress=None)
+            played += n
+            _, diff, ci = _paired_difference(db_path, first_batch)
+            promoted = diff - ci > 0
+            matches.append({"params": candidate, "diff_bb100": round(diff, 1), "ci95": round(ci, 1), "promoted": promoted})
+            say(f"도전자 {index + 1}/{challengers}: {candidate} -> 챔피언 대비 {diff:+.1f} ± {ci:.1f} bb/100"
+                f" ({'교체' if promoted else '유지'})")
+            if promoted:
+                champion = {"generation": champion["generation"] + 1, "params": candidate}
+        standings = {row.bot: round(row.bb100, 1) for row in report.bot_summary(db_path).itertuples()}
 
-    # 2. learn what opponents hold, 3. check it on the fifth of the hands that was not fitted on
-    today = inference.fit(db_path, fit_hands, flop_runouts=150, seed=cycle, processes=processes, held_out=False)
-    current = inference.ActionModel.load(model_path) if os.path.exists(model_path) else None
-    merged = current.merged(today, decay) if current else today
+        # 2. learn what opponents hold, 3. check it on the fifth of the hands that was not fitted on
+        today = inference.fit(db_path, fit_hands, flop_runouts=150, seed=cycle, processes=processes, held_out=False)
+        current = inference.ActionModel.load(model_path) if os.path.exists(model_path) else None
+        merged = current.merged(today, decay) if current else today
 
-    def error(model):
-        rows = inference.score(db_path, model, score_hands, trials=3000, seed=cycle, processes=processes, held_out=True)
-        return inference.summarize(rows).loc["all"]
+        def error(model):
+            rows = inference.score(db_path, model, score_hands, trials=3000, seed=cycle, processes=processes, held_out=True)
+            return inference.summarize(rows).loc["all"]
 
-    after = error(merged)
-    before = error(current) if current else None
-    keep_model = before is None or after["mae_model"] <= before["mae_model"] * 1.02
-    say(f"레인지 모델: 평균 오차 {'-' if before is None else format(before['mae_model'], '.4f')} -> "
-        f"{after['mae_model']:.4f} (랜덤 가정 {after['mae_random']:.4f}) -> {'반영' if keep_model else '기각'}")
+        after = error(merged)
+        before = error(current) if current else None
+        keep_model = before is None or after["mae_model"] <= before["mae_model"] * 1.02
+        say(f"레인지 모델: 평균 오차 {'-' if before is None else format(before['mae_model'], '.4f')} -> "
+            f"{after['mae_model']:.4f} (랜덤 가정 {after['mae_random']:.4f}) -> {'반영' if keep_model else '기각'}")
 
-    # 4. keep what passed, 5. record
-    if keep_model:
-        merged.save(model_path)
-        inference.default_model.cache_clear()
-    with open(os.path.join(state_dir, "champion.json"), "w", encoding="utf-8") as fh:
-        json.dump(champion, fh, indent=1)
-    entry = {
-        "cycle": cycle, "date": datetime.date.today().isoformat(), "hands": played,
-        "seconds": round(time.time() - started),
-        "model": {"mae_random": round(float(after["mae_random"]), 4),
-                  "mae_before": None if before is None else round(float(before["mae_model"]), 4),
-                  "mae_after": round(float(after["mae_model"]), 4), "bias_after": round(float(after["bias_model"]), 4),
-                  "kept": bool(keep_model)},
-        "matches": matches, "champion": champion, "standings": standings,
-    }
-    with open(os.path.join(state_dir, "history.jsonl"), "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    if not keep_db:
-        for suffix in ("", "-wal", "-shm"):
-            if os.path.exists(db_path + suffix):
-                os.remove(db_path + suffix)
+        # 4. keep what passed, 5. record
+        if keep_model:
+            merged.save(model_path)
+            inference.load_model.cache_clear()          # bots created from now on read the new model
+        with open(os.path.join(state_dir, "champion.json"), "w", encoding="utf-8") as fh:
+            json.dump(champion, fh, indent=1)
+        entry = {
+            "cycle": cycle, "date": datetime.date.today().isoformat(), "hands": played,
+            "seconds": round(time.time() - started),
+            "model": {"mae_random": round(float(after["mae_random"]), 4),
+                      "mae_before": None if before is None else round(float(before["mae_model"]), 4),
+                      "mae_after": round(float(after["mae_model"]), 4), "bias_after": round(float(after["bias_model"]), 4),
+                      "kept": bool(keep_model)},
+            "matches": matches, "champion": champion, "standings": standings,
+        }
+        with open(os.path.join(state_dir, "history.jsonl"), "a", encoding="utf-8") as fh:
+            fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    finally:
+        if not keep_db:
+            for suffix in ("", "-wal", "-shm"):
+                if os.path.exists(db_path + suffix):
+                    os.remove(db_path + suffix)
     say(f"사이클 {cycle} 완료: {played:,}핸드, {entry['seconds']}초, 챔피언 {champion['generation']}세대 {champion['params']}")
     return entry
 

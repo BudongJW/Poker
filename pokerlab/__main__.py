@@ -84,8 +84,8 @@ def main(argv=None):
 
     p = sub.add_parser("daily", help="one learning cycle: play, update the range model and the champion, record")
     p.add_argument("--cycles", type=int, default=1, help="cycles to run back to back; 0 = until Ctrl-C")
-    p.add_argument("--hands", type=int, default=30_000, help="hands per challenger match (default 30000)")
-    p.add_argument("--challengers", type=int, default=2, help="challengers tried per cycle (default 2)")
+    p.add_argument("--hands", type=int, default=60_000, help="hands per challenger match (default 60000)")
+    p.add_argument("--challengers", type=int, default=3, help="challengers tried per cycle (default 3)")
     p.add_argument("--state", default=daily.STATE_DIR, help="directory holding the learned state")
     p.add_argument("--processes", type=int)
     p.add_argument("--keep-db", action="store_true", help="keep the cycle's hand database instead of deleting it")

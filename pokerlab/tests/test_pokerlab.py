@@ -424,6 +424,7 @@ def test_bundled_action_model_reads_strength_from_aggression():
         assert total == pytest.approx(np.ones(inference.N_BUCKETS))
     raise_by_strength = model.likelihood((1, 0, 0, 0), inference.AGGRESSIVE)     # betting the flop heads-up
     assert raise_by_strength[-1] > 3 * raise_by_strength[0]
+    assert (model.likelihood((1, 0, 0, 0), inference.AGGRESSIVE, "someone new") == raise_by_strength).all()
 
     hero, board = parse_cards("AsKs"), parse_cards("Qs Js 2d")
     pct = inference.hand_percentiles(board)
@@ -539,6 +540,13 @@ def test_learning_cycle_keeps_state(tmp_path, capsys):
                    work_dir=str(tmp_path), progress=None)
     first = daily.run_cycle(**options)
     assert first["cycle"] == 1 and first["hands"] == 300 and first["model"]["mae_before"] is None and first["model"]["kept"]
+
+    # starting from the bundled model, which has never seen a 'champion' or 'challenger' profile
+    seeded = tmp_path / "seeded"
+    seeded.mkdir()
+    inference.default_model().save(str(seeded / "action_model.json"))
+    entry = daily.run_cycle(**dict(options, state_dir=str(seeded)))
+    assert entry["model"]["mae_before"] is not None and entry["cycle"] == 1
     assert {"champion", "challenger", "tag", "lag", "nit", "tag_range"} == set(first["standings"])
     assert sum(first["standings"].values()) == pytest.approx(0, abs=1)          # chips only change hands
     assert not list(tmp_path.glob("*.sqlite"))                                  # the hand database is cleaned up

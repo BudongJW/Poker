@@ -13,7 +13,7 @@ import numpy as np
 from .cards import hand_class
 from .engine import CALL, CHECK, FOLD, RAISE
 from .equity import Range, quick_equity
-from .inference import default_model, infer_ranges
+from .inference import default_model, infer_ranges, load_model
 from .preflop import preflop_equity, top_range
 
 
@@ -160,13 +160,17 @@ BOT_TYPES["champion"] = _champion       # the betting parameters the daily cycle
 
 def make_bot(kind, seed=None):
     """A bot by type name, or a custom equity bot written as
-    'equity:name=mine;value=0.15;margin=0.06;bluff=0.05;respect=0.2;model=1'."""
+    'equity:name=mine;value=0.15;margin=0.06;bluff=0.05;respect=0.2;model=1'.
+
+    ``model=1`` uses the bundled action model, ``model=<path>`` the one stored in that file.
+    """
     if kind.startswith("equity:"):
         options = dict(item.split("=", 1) for item in kind[len("equity:"):].split(";") if item)
         name = options.pop("name", "custom")
-        model = options.pop("model", "0") not in ("0", "false", "")
+        model = options.pop("model", "0")
+        model = None if model in ("0", "false", "") else True if model in ("1", "true") else load_model(model)
         trials = int(options.pop("trials", 300))
-        return EquityBot(name, model=model or None, trials=trials, seed=seed,
+        return EquityBot(name, model=model, trials=trials, seed=seed,
                          **{key: float(value) for key, value in options.items()})
     if kind not in BOT_TYPES:
         raise ValueError(f"unknown bot {kind!r}; choose from {sorted(BOT_TYPES)}")
