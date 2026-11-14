@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pokerlab"
+version = "0.2.0"
+description = "Hold'em equity calculator, opponent range inference and bot self-play"
+readme = "pokerlab/README.md"
+requires-python = ">=3.9"
+dependencies = ["numpy", "pandas", "anthropic>=1.0"]      # anthropic: the default reader of table pictures (vision.py)
+
+[project.scripts]
+pokerlab = "pokerlab.__main__:main"
+
+[tool.setuptools]
+packages = ["pokerlab"]
+
+[tool.setuptools.package-data]
+pokerlab = ["data/*.json", "static/*.html"]

@@ -1,0 +1,9 @@
+{
+ "generation": 0,
+ "params": {
+  "value": 0.15,
+  "margin": 0.06,
+  "bluff": 0.05,
+  "respect": 0.2
+ }
+}
