@@ -80,6 +80,12 @@ def main(argv=None):
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--stack-bb", type=int, default=100)
     p.add_argument("--no-actions", action="store_true", help="do not store the per-action log")
+    p.add_argument("--format", metavar="NAMES",
+                   help="play tables of tournament formats instead (see 'formats'): a name, several with commas, or a mix")
+
+    p = sub.add_parser("formats", help="the tournament formats self-play can use, each value with how it is known")
+    p.add_argument("--depths", type=int, metavar="HANDS",
+                   help="also play this many hands of each format and show how deep the stacks are")
 
     p = sub.add_parser("report", help="statistics over a self-play database")
     p.add_argument("--db", default="selfplay.sqlite")
@@ -124,6 +130,9 @@ def main(argv=None):
     p.add_argument("--state", default=daily.STATE_DIR, help="directory holding the learned state")
     p.add_argument("--processes", type=int)
     p.add_argument("--keep-db", action="store_true", help="keep the cycle's hand database instead of deleting it")
+    p.add_argument("--formats", metavar="NAMES",
+                   help="also play tables of tournament formats for the range model to learn from, e.g. kr_mtt (see 'formats')")
+    p.add_argument("--format-hands", type=int, help="hands of those formats per cycle (default: as many as one match)")
 
     sub.add_parser("history", help="what the learning cycles have done so far").add_argument(
         "--state", default=daily.STATE_DIR)
@@ -160,7 +169,23 @@ def main(argv=None):
     elif args.command == "simulate":
         selfplay.run(args.db, args.hands, args.seconds, [int(x) for x in args.players.split(",")],
                      args.bots.split(","), args.batch_size, args.processes, args.seed, args.stack_bb,
-                     not args.no_actions)
+                     not args.no_actions, format=args.format)
+    elif args.command == "formats":
+        import random
+
+        from . import formats
+        from .bots import make_bot
+        print("\n".join(formats.describe()))
+        if args.depths:
+            pool = [make_bot(kind, seed=index) for index, kind in enumerate(("tag", "lag", "nit", "tag_range", "human", "pro"))]
+            turn = iter(range(10 ** 9))
+            print(f"\n형식별 스택 깊이 ({args.depths:,}핸드, 봇: tag·lag·nit·tag_range·human·pro)")
+            for name, fmt in formats.load().items():
+                if fmt.playable:
+                    found = formats.depths(fmt, lambda: pool[next(turn) % len(pool)], random.Random(1), args.depths)
+                    share = " · ".join(f"{key} {value:.0%}" for key, value in found["share"].items())
+                    print(f"  {name:<12} 테이블 {found['tables']}개 · 평균 {found['players']:.1f}명 · 스택 중앙값 {found['median_bb']:.0f}BB"
+                          f" · {share} · 최고 레벨 {found['max_level']}")
     elif args.command == "report":
         report.print_report(args.db)
     elif args.command == "fit-model":
@@ -195,7 +220,8 @@ def main(argv=None):
             print(inference.summarize(rows).to_string(float_format=lambda x: f"{x:.4f}"))
     elif args.command == "daily":
         daily.run(args.cycles, state_dir=args.state, hands=args.hands, challengers=args.challengers,
-                  references=tuple(args.opponents.split(",")), processes=args.processes, keep_db=args.keep_db)
+                  references=tuple(args.opponents.split(",")), processes=args.processes, keep_db=args.keep_db,
+                  formats=args.formats, format_hands=args.format_hands)
     elif args.command == "history":
         daily.print_history(args.state)
     elif args.command == "serve":

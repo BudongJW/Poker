@@ -8,7 +8,7 @@ import urllib.request
 import numpy as np
 import pytest
 
-from pokerlab import advisor, daily, follow, inference, phh, preflop, report, selfplay, table, vision, web
+from pokerlab import advisor, daily, follow, formats, inference, phh, preflop, report, selfplay, table, vision, web
 from pokerlab.bots import BOT_TYPES, Bot, make_bot
 from pokerlab.cards import ALL_CLASSES, card, class_combos, hand_class, parse_cards
 from pokerlab.engine import CALL, FOLD, RAISE, play_hand, position_name
@@ -1379,3 +1379,105 @@ def test_recognizer_extras(tmp_path, monkeypatch):
     assert [vision.recognize(b"x"), vision.recognize(b"y")] == shots[:2]
     with pytest.raises(vision.VisionError, match="더 없습니다"):
         vision.recognize(b"z")
+
+
+# ---- tournament formats ------------------------------------------------------------------
+
+def test_antes_are_dead_money():
+    rng = random.Random(3)
+    bots = [make_bot(kind, seed=index) for index, kind in enumerate(("tag", "lag", "station", "maniac", "random", "nit"))]
+    for stacks in ([1000] * 6, [5, 12, 1000, 30, 1000, 8]):
+        for hand in range(300):
+            result = play_hand(bots, stacks, hand % 6, 5, 10, rng, ante=10)
+            assert sum(result.payouts) == sum(result.invested)
+            assert all(min(10, stack) <= put <= stack for put, stack in zip(result.invested, stacks))
+    # the first to act owes the big blind, not the antes, and sees the antes in the pot
+    result = play_hand([make_bot("station")] * 3, [1000] * 3, 0, 5, 10, random.Random(1), ante=2)
+    _, seat, action, added, pot, owed, *_ = result.actions[0]
+    assert (seat, action, added, pot, owed) == (0, CALL, 10, 21, 10) and result.invested == [12, 12, 12]
+
+
+def test_formats_say_how_each_value_is_known():
+    found = formats.load()
+    assert {"mtt_turbo", "mtt_regular", "satellite", "jackpot_sng"} <= set(found)
+    turbo = found["mtt_turbo"]
+    assert (turbo.seats, turbo.start_bb, turbo.hands_per_level, turbo.late_reg_levels) == (9, 100, 4, 14)
+    assert turbo.blinds(1) == (50, 100, 0) and turbo.blinds(12) == (300, 600, 0)       # the two levels that were seen
+    assert (turbo.basis["seats"], turbo.basis["level_min"], turbo.basis["hand_sec"]) == ("observed", "estimated", "assumed")
+    assert found["jackpot_sng"].start_bb == 7.5 and found["satellite"].finish == 9
+    for fmt in found.values():
+        assert fmt.playable and set(fmt.basis.values()) <= set(formats.BASES)
+        levels = [fmt.blinds(level)[1] for level in range(1, 40)]
+        assert levels == sorted(levels) and all(big % 2 == 0 for big in levels)
+    speeds = formats.schedule_speeds()                      # the mix is what the published schedule says
+    assert formats.mixes()["kr_mtt"] == {"mtt_turbo": speeds["turbo"], "mtt_regular": speeds["regular"]}
+    assert speeds == {"turbo": 30, "regular": 87}
+    assert len(formats.source("league_wpl_schedule")) == 154 and len(formats.source("league_parameters")) == 51
+    assert [fmt.name for fmt, _ in formats.resolve("kr_mtt")] == ["mtt_turbo", "mtt_regular"]
+    assert formats.resolve("satellite, jackpot_sng")[1][0].seats == 3
+    for bad in ("nothing", ""):
+        with pytest.raises(ValueError):
+            formats.resolve(bad)
+    assert any("관찰 WEB-28" in line for line in formats.describe())
+
+
+def test_a_table_of_a_format_plays_to_its_end():
+    pool = [make_bot(kind, seed=index) for index, kind in enumerate(("tag", "lag", "nit", "station", "maniac", "random"))]
+    turn = itertools.count()
+
+    def new_bot():
+        return pool[next(turn) % len(pool)]
+
+    found, rng = formats.load(), random.Random(5)
+    rows = list(formats.table(found["mtt_turbo"], new_bot, rng))
+    assert [row["level"] for row in rows[:5]] == [1, 1, 1, 1, 2] and rows[0]["stacks"] == [10000] * 9
+    assert len(rows[-1]["stacks"]) == 2                     # heads-up at the end: then one player is left
+    for before, after in zip(rows, rows[1:]):
+        assert after["big_blind"] >= before["big_blind"] and 2 <= len(after["stacks"]) <= 9 and min(after["stacks"]) > 0
+        assert sum(after["result"].payouts) == sum(after["result"].invested)
+    # while late registration is open, whoever busts is replaced by a new starting stack
+    early = [row for row in rows if row["level"] <= 14]
+    assert all(len(row["stacks"]) == 9 for row in early)
+    chips = [sum(row["stacks"]) for row in early]
+    assert all(b >= a and (b - a) % 10000 == 0 for a, b in zip(chips, chips[1:])) and chips[-1] > chips[0]
+    assert len(list(formats.table(found["mtt_turbo"], new_bot, rng, max_hands=7))) == 7
+
+    rows = list(formats.table(found["satellite"], new_bot, rng))            # over once nine are left, never before level 17
+    assert rows[-1]["level"] > 16 and all(len(row["stacks"]) == 9 for row in rows[:20])
+    rows = list(formats.table(found["jackpot_sng"], new_bot, rng))
+    assert rows[0]["stacks"] == [300] * 3 and rows[0]["big_blind"] == 40 and len(rows[-1]["stacks"]) == 2
+    seen = formats.depths(found["jackpot_sng"], new_bot, rng, hands=200)
+    assert seen["hands"] == 200 and sum(seen["share"].values()) == pytest.approx(1) and seen["share"]["<10bb"] > 0.5
+
+
+def test_selfplay_and_the_learning_cycle_on_formats(tmp_path):
+    path = str(tmp_path / "formats.sqlite")
+    kwargs = dict(bots=("tag", "lag", "nit", "station"), batch_size=150, processes=2, seed=4, progress=None)
+    assert selfplay.run(path, hands=450, format="mtt_turbo,jackpot_sng", **kwargs)[0] == 450
+    selfplay.run(path, hands=150, **kwargs)                 # hands with the same stacks go into the same database
+    with sqlite3.connect(path) as db:
+        assert db.execute("SELECT SUM(net) FROM players").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*), COUNT(level) FROM hands").fetchone() == (600, 450)
+        assert db.execute("SELECT format, SUM(hands) FROM batches GROUP BY format ORDER BY format").fetchall() == [
+            (None, 150), ("mtt_turbo,jackpot_sng", 450)]
+        sizes = {n for (n,) in db.execute("SELECT DISTINCT n_players FROM hands WHERE level IS NOT NULL")}
+        assert sizes <= set(range(2, 10)) and 9 in sizes
+        assert db.execute("SELECT MAX(big_blind) FROM hands").fetchone()[0] > 100
+        assert db.execute("SELECT MAX(ABS(p.net_bb * h.big_blind - p.net)) FROM players p JOIN hands h USING (hand_id)"
+                          ).fetchone()[0] < 1e-6            # winnings are counted in the big blind of the hand
+    model = inference.fit(path, 300, flop_runouts=30, processes=2)      # the action model learns from these like from any hand
+    assert model.counts["all"].sum() > 0
+
+    old = str(tmp_path / "old.sqlite")                      # a database from before levels were recorded still works
+    with sqlite3.connect(old) as db:
+        db.executescript("""CREATE TABLE batches (batch INTEGER PRIMARY KEY, seed INTEGER, n_players INTEGER, lineup TEXT,
+            hands INTEGER, seconds REAL, created TEXT DEFAULT CURRENT_TIMESTAMP);
+            CREATE TABLE hands (hand_id INTEGER PRIMARY KEY, batch INTEGER, n_players INTEGER, button INTEGER, board TEXT,
+            pot INTEGER, final_street INTEGER, showdown INTEGER);""")
+    selfplay.run(old, hands=100, **kwargs)
+    with sqlite3.connect(old) as db:
+        assert db.execute("SELECT COUNT(big_blind) FROM hands").fetchone()[0] == 100
+
+    entry = daily.run_cycle(state_dir=str(tmp_path / "state"), hands=300, challengers=1, fit_hands=150, score_hands=40,
+                            processes=2, work_dir=str(tmp_path), progress=None, formats="kr_mtt", format_hands=200)
+    assert entry["hands"] == 500 and entry["formats"] == {"names": "kr_mtt", "hands": 200} and entry["model"]["kept"]

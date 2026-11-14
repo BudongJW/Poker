@@ -44,8 +44,12 @@ def position_name(seat, button, n):
     return "UTG" if offset == 3 else f"UTG+{offset - 3}"
 
 
-def play_hand(bots, stacks, button, small_blind, big_blind, rng):
-    """Deal and play one hand. ``stacks`` is not modified; chip movements are in the result."""
+def play_hand(bots, stacks, button, small_blind, big_blind, rng, ante=0):
+    """Deal and play one hand. ``stacks`` is not modified; chip movements are in the result.
+
+    ante: chips every player puts in before the blinds. They are in the pot but count towards
+    nobody's bet, so they do not lower what a player has to call.
+    """
     n = len(bots)
     deck = rng.sample(range(52), 2 * n + 5)
     hole = [(deck[2 * i], deck[2 * i + 1]) for i in range(n)]
@@ -68,6 +72,10 @@ def play_hand(bots, stacks, button, small_blind, big_blind, rng):
         return amount
 
     sb_seat, bb_seat = (button, 1 - button) if n == 2 else ((button + 1) % n, (button + 2) % n)
+    if ante > 0:
+        for seat in range(n):
+            put(seat, ante)
+        bet = [0] * n               # dead money: in the pot, in nobody's bet
     put(sb_seat, small_blind)
     put(bb_seat, big_blind)
 

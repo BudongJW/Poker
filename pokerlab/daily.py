@@ -11,6 +11,10 @@ Two things are learned, and each change must prove itself on fresh hands before 
   champion at the same tables, next to four fixed opponents (two of them play like real online
   players); a challenger takes over only if it wins more with 95% confidence.
 
+With ``formats`` the day also plays tables of tournament formats (:mod:`pokerlab.formats`):
+blinds that rise, stacks that get short, players who sit down late. Those hands go into what the
+action model learns from and is checked on; the champion is still chosen at the usual tables.
+
 State lives in three small files (by default next to the package data, so it can be committed):
 ``action_model.json``, ``champion.json`` and ``history.jsonl`` (one line per cycle).
 """
@@ -78,8 +82,14 @@ def _paired_difference(db_path, first_batch):
 
 
 def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, score_hands=1500, decay=0.9,
-              references=REFERENCES, processes=None, seed=None, work_dir=None, keep_db=False, progress=print):
-    """Play, learn, evaluate and record once -> the history entry that was appended."""
+              references=REFERENCES, processes=None, seed=None, work_dir=None, keep_db=False, progress=print,
+              formats=None, format_hands=None):
+    """Play, learn, evaluate and record once -> the history entry that was appended.
+
+    formats: tournament formats or a mix ('kr_mtt', 'mtt_turbo,satellite'); ``format_hands`` hands
+    of them (default: as many as one match) are played by the champion and the fixed opponents
+    after the matches and join the hands the action model is fitted and checked on.
+    """
     if len(references) != 4:
         raise ValueError("the table is six-handed: champion, challenger and exactly four fixed opponents")
     started = time.time()
@@ -114,6 +124,13 @@ def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, 
             if promoted:
                 champion = {"generation": champion["generation"] + 1, "params": candidate}
         standings = {row.bot: round(row.bb100, 1) for row in report.bot_summary(db_path).itertuples()}
+        format_played = 0
+        if formats:                             # tournament tables: only the action model learns from these
+            lineup = [_spec("champion", champion["params"], model_path), *references]
+            format_played, _ = selfplay.run(db_path, hands=format_hands or hands, bots=lineup, batch_size=500,
+                                            processes=processes, seed=rng.getrandbits(30), progress=None, format=formats)
+            played += format_played
+            say(f"대회 형식 {formats}: {format_played:,}핸드")
 
         # 2. learn what opponents hold, 3. check it on the fifth of the hands that was not fitted on
         today = inference.fit(db_path, fit_hands, flop_runouts=150, seed=cycle, processes=processes, held_out=False)
@@ -145,6 +162,8 @@ def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, 
                       "kept": bool(keep_model)},
             "matches": matches, "champion": champion, "standings": standings, "opponents": list(references),
         }
+        if formats:
+            entry["formats"] = {"names": formats, "hands": format_played}
         with open(os.path.join(state_dir, "history.jsonl"), "a", encoding="utf-8") as fh:
             fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
     finally:

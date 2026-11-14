@@ -1,0 +1,526 @@
+{
+ "title": "국내 홀덤 앱의 대회 형식 (자가대전·학습용)",
+ "from": "리그·대회 구조의 수치 분석 — 종류, 대기 시간, 자리 비움, 참가 조건 (분석 기준일 2026-11-14). 원본 표는 source/ 의 CSV 두 개",
+ "basis": {
+  "observed": "공식 자료나 화면에서 직접 확인한 값 (문서의 [관찰])",
+  "estimated": "관찰한 값에서 계산했거나 같은 종류의 다른 대회에서 빌린 값 (문서의 [추정])",
+  "assumed": "자료가 없어 시뮬레이션을 돌리려고 둔 값. 문서에는 없거나 [미확인]",
+  "unknown": "자료 없음. 값은 쓰지 않거나 0으로 둠"
+ },
+ "formats": {
+  "mtt_turbo": {
+   "label": "상시 토너먼트 · 터보 (9인)",
+   "kind": "mtt",
+   "example": "피망 쇼다운 홀덤 '마이크로 터보 2억 GTD' (2026-11-05 화면)",
+   "seats": {
+    "value": 9,
+    "basis": "observed",
+    "source": "WEB-28",
+    "note": "테이블 인원 일반 9인 / 파이널 9인"
+   },
+   "start_chips": {
+    "value": 10000,
+    "basis": "observed",
+    "source": "WEB-28"
+   },
+   "big_blind": {
+    "value": 100,
+    "basis": "observed",
+    "source": "WEB-28",
+    "note": "SB 50 · BB 100, 시작 스택 100BB"
+   },
+   "ante_bb": {
+    "value": 0.0,
+    "basis": "unknown",
+    "note": "앤티는 공개 자료에 없음"
+   },
+   "level_min": {
+    "value": 4,
+    "basis": "estimated",
+    "source": "WEB-28",
+    "note": "시작 44분 57초에 레벨 12 → 3.75~4.09분"
+   },
+   "blind_growth": {
+    "value": 1.1769,
+    "basis": "estimated",
+    "source": "WEB-28",
+    "note": "레벨 1 BB 100, 레벨 12 BB 600 → 6^(1/11). 사이 레벨은 등비로 가정"
+   },
+   "late_reg_levels": {
+    "value": 14,
+    "basis": "observed",
+    "source": "WEB-28",
+    "note": "추가 등록은 블라인드 레벨 14까지"
+   },
+   "action_sec": {
+    "value": 12,
+    "basis": "observed",
+    "source": "WEB-28",
+    "note": "베팅 시간 최대 12초"
+   },
+   "entries": {
+    "value": 118,
+    "basis": "estimated",
+    "source": "WEB-28, WEB-29, WEB-30",
+    "note": "캡처 6건의 등록 인원 79·114·117·120·188·300의 중앙값 118.5"
+   },
+   "entries_per_player": {
+    "value": 1.75,
+    "basis": "estimated",
+    "source": "WEB-28, WEB-29, WEB-30",
+    "note": "상금 ÷ 바이인 ÷ 등록 인원 1.15~2.07의 평균"
+   },
+   "min_players": {
+    "value": 3,
+    "basis": "observed",
+    "source": "WEB-28"
+   },
+   "max_entries": {
+    "value": 1500,
+    "basis": "observed",
+    "source": "WEB-28"
+   },
+   "hand_sec": {
+    "value": 60,
+    "basis": "assumed",
+    "source": "WEB-35",
+    "note": "WPL 일반 홀덤 '10분 10핸드'를 빌림"
+   },
+   "finish": {
+    "value": 1,
+    "basis": "observed",
+    "note": "칩을 다 잃은 순서로 순위를 가린다"
+   }
+  },
+  "mtt_regular": {
+   "label": "상시 토너먼트 · 일반 속도 (9인)",
+   "kind": "mtt",
+   "example": "문서 §7.1의 '보통 대회'. 일반 속도 대회의 구조는 WPL·쇼다운 모두 공개 자료에 없어 값을 빌렸다",
+   "seats": {
+    "value": 9,
+    "basis": "observed",
+    "source": "WEB-28, WEB-4",
+    "note": "쇼다운 9인 테이블, WPL 파이널 테이블 9명"
+   },
+   "start_chips": {
+    "value": 10000,
+    "basis": "estimated",
+    "source": "WEB-28, WEB-9",
+    "note": "쇼다운 터보와 HPT 새틀라이트의 시작 칩"
+   },
+   "big_blind": {
+    "value": 100,
+    "basis": "estimated",
+    "source": "WEB-28",
+    "note": "쇼다운 터보의 첫 레벨"
+   },
+   "ante_bb": {
+    "value": 0.0,
+    "basis": "unknown"
+   },
+   "level_min": {
+    "value": 7,
+    "basis": "estimated",
+    "source": "WEB-9",
+    "note": "확인된 온라인 일반 속도 값은 HPT 새틀라이트 7분 하나"
+   },
+   "blind_growth": {
+    "value": 1.1769,
+    "basis": "assumed",
+    "source": "WEB-28",
+    "note": "터보에서 역산한 값을 그대로 씀"
+   },
+   "late_reg_levels": {
+    "value": 14,
+    "basis": "estimated",
+    "source": "WEB-34, WEB-28, WEB-9",
+    "note": "13·14·15레벨의 평균"
+   },
+   "action_sec": {
+    "value": 11.5,
+    "basis": "estimated",
+    "source": "WEB-14, WEB-34, WEB-28, WEB-9",
+    "note": "4건(9·10·12·15초)의 평균"
+   },
+   "entries": {
+    "value": 118,
+    "basis": "estimated",
+    "source": "WEB-28, WEB-29, WEB-30",
+    "note": "쇼다운 캡처 6건의 중앙값"
+   },
+   "hand_sec": {
+    "value": 60,
+    "basis": "assumed",
+    "source": "WEB-35"
+   },
+   "finish": {
+    "value": 1,
+    "basis": "observed"
+   }
+  },
+  "satellite": {
+   "label": "오프라인 연계 예선 · 새틀라이트 (9인)",
+   "kind": "satellite",
+   "example": "한게임 로얄홀덤 HPT 6회 온라인 새틀라이트 (2026-09-18 ~ 11-25)",
+   "seats": {
+    "value": 9,
+    "basis": "assumed",
+    "source": "WEB-9",
+    "note": "종료 조건이 '남은 인원 9명 이하'여서 9인 테이블로 둠"
+   },
+   "start_chips": {
+    "value": 10000,
+    "basis": "observed",
+    "source": "WEB-9"
+   },
+   "big_blind": {
+    "value": 100,
+    "basis": "assumed",
+    "note": "첫 레벨 블라인드는 공개 자료에 없음. 문서 §5.4의 가정(100BB)을 따름"
+   },
+   "ante_bb": {
+    "value": 0.0,
+    "basis": "unknown"
+   },
+   "level_min": {
+    "value": 7,
+    "basis": "observed",
+    "source": "WEB-9",
+    "note": "블라인드 시간 7분"
+   },
+   "blind_growth": {
+    "value": 1.1769,
+    "basis": "assumed",
+    "source": "WEB-28",
+    "note": "쇼다운 터보에서 역산한 값을 빌림"
+   },
+   "late_reg_levels": {
+    "value": 15,
+    "basis": "observed",
+    "source": "WEB-9",
+    "note": "입장 마감 블라인드 레벨 15"
+   },
+   "reentry_max": {
+    "value": 10,
+    "basis": "observed",
+    "source": "WEB-9"
+   },
+   "action_sec": {
+    "value": 15,
+    "basis": "observed",
+    "source": "WEB-9"
+   },
+   "break_min_per_hour": {
+    "value": 5,
+    "basis": "observed",
+    "source": "WEB-10",
+    "note": "매시 55분부터 5분. 시뮬레이션에는 쓰지 않음"
+   },
+   "entries": {
+    "value": 200,
+    "basis": "estimated",
+    "source": "WEB-9",
+    "note": "입상 20명 ÷ 예선의 티켓 획득 비율 약 10%(문서 §6.5)"
+   },
+   "paid": {
+    "value": 20,
+    "basis": "observed",
+    "source": "WEB-9",
+    "note": "티켓 2장 9명, 1장 11명. 상금이 순위에 거의 무관한 구조"
+   },
+   "hand_sec": {
+    "value": 60,
+    "basis": "assumed",
+    "source": "WEB-35"
+   },
+   "finish": {
+    "value": 9,
+    "basis": "observed",
+    "source": "WEB-9",
+    "note": "추가 입장 마감 + 1레벨 뒤 남은 인원이 9명 이하가 되면 종료"
+   },
+   "finish_after_level": {
+    "value": 16,
+    "basis": "observed",
+    "source": "WEB-9"
+   }
+  },
+  "jackpot_sng": {
+   "label": "정원제 3인 잭팟 싯앤고",
+   "kind": "sng",
+   "example": "피망 쇼다운 홀덤 잭팟 싯앤고 (WPL 픽앤고도 3인)",
+   "seats": {
+    "value": 3,
+    "basis": "observed",
+    "source": "WEB-29, WEB-4"
+   },
+   "start_chips": {
+    "value": 300,
+    "basis": "estimated",
+    "source": "WEB-29, WEB-31",
+    "note": "캡처 두 장의 칩 합계 900 → 한 사람 300"
+   },
+   "big_blind": {
+    "value": 40,
+    "basis": "observed",
+    "source": "WEB-29",
+    "note": "첫 레벨 Ante 0, SB 20 / BB 40 → 시작 스택 7.5BB"
+   },
+   "ante_bb": {
+    "value": 0.0,
+    "basis": "observed",
+    "source": "WEB-29",
+    "note": "첫 레벨 기준"
+   },
+   "level_min": {
+    "value": 2,
+    "basis": "estimated",
+    "source": "WEB-31",
+    "note": "두 캡처 사이 시각으로 보아 2분 17초보다 짧다"
+   },
+   "blind_growth": {
+    "value": 1.1769,
+    "basis": "assumed",
+    "source": "WEB-28"
+   },
+   "late_reg_levels": {
+    "value": 0,
+    "basis": "observed",
+    "note": "정원이 차면 시작"
+   },
+   "entries": {
+    "value": 3,
+    "basis": "observed",
+    "source": "WEB-29"
+   },
+   "hand_sec": {
+    "value": 60,
+    "basis": "assumed",
+    "source": "WEB-35"
+   },
+   "finish": {
+    "value": 1,
+    "basis": "observed"
+   }
+  }
+ },
+ "observations": {
+  "sng_6max": {
+   "label": "정원제 6인 싯앤고",
+   "example": "한게임 로얄홀덤 싯앤고",
+   "seats": {
+    "value": 6,
+    "basis": "observed",
+    "source": "WEB-11"
+   },
+   "ante_bb": {
+    "value": 0.1,
+    "basis": "observed",
+    "note": "테이블 중앙 표시 'Ante 20 / 100 / 200' (문서 03 §4)"
+   },
+   "start_chips": {
+    "value": null,
+    "basis": "unknown"
+   },
+   "level_min": {
+    "value": null,
+    "basis": "unknown",
+    "note": "화면에 레벨 남은 시간 03:10이 찍힌 것만 확인"
+   },
+   "why_not_played": "시작 칩과 레벨 길이를 몰라 돌릴 수 없음"
+  },
+  "offline_day1": {
+   "label": "오프라인 본선 DAY1",
+   "example": "HPT 6회 메인 이벤트 (2026-11-26 ~ 29)",
+   "start_chips": {
+    "value": 30000,
+    "basis": "observed",
+    "source": "WEB-9"
+   },
+   "level_min": {
+    "value": 35,
+    "basis": "observed",
+    "source": "WEB-9",
+    "note": "터보 플라이트는 20분"
+   },
+   "late_reg_levels": {
+    "value": 10,
+    "basis": "observed",
+    "source": "WEB-9",
+    "note": "레벨 11 시작 전"
+   },
+   "advance_pct": {
+    "value": 12.5,
+    "basis": "observed",
+    "source": "WEB-9"
+   },
+   "big_blind": {
+    "value": null,
+    "basis": "unknown"
+   },
+   "why_not_played": "첫 레벨 블라인드를 몰라 스택 깊이를 정할 수 없음"
+  },
+  "ring": {
+   "label": "링 게임",
+   "example": "WPL 일반 홀덤 · 코인러시",
+   "seats": {
+    "value": [
+     2,
+     9
+    ],
+    "basis": "observed",
+    "source": "WEB-4",
+    "note": "6링·9링"
+   },
+   "hand_sec": {
+    "value": 60,
+    "basis": "observed",
+    "source": "WEB-35",
+    "note": "'10분 10핸드'"
+   },
+   "fast_fold_hand_sec": {
+    "value": [
+     15,
+     20
+    ],
+    "basis": "observed",
+    "source": "WEB-35",
+    "note": "'10분 30~40핸드'"
+   },
+   "why_not_played": "대회가 아님. 기존 자가대전(같은 스택으로 매 핸드 다시 시작)이 이 형식"
+  }
+ },
+ "mixes": {
+  "kr_mtt": {
+   "label": "매일 열리는 대회의 속도 비중",
+   "weights": {
+    "mtt_turbo": 30,
+    "mtt_regular": 87
+   },
+   "basis": "observed",
+   "source": "WEB-1",
+   "note": "WPL 2026-11-13 일정표의 매일 대회 117개 가운데 터보 30개, 나머지 87개. 대회 수의 비중이고 참가 인원의 비중은 아니다"
+  }
+ },
+ "rules": {
+  "timeout": {
+   "value": {
+    "no_bet": "check",
+    "facing_bet": "fold"
+   },
+   "basis": "observed",
+   "source": "WEB-8, WEB-13, WEB-14",
+   "note": "로얄홀덤·한게임 포커·클래식. WPL과 쇼다운은 자료 없음"
+  },
+  "sitting_out_pays_blinds": {
+   "value": true,
+   "basis": "observed",
+   "source": "WEB-8",
+   "note": "대회에서는 자리를 비워도 블라인드와 앤티가 빠진다"
+  },
+  "orbit_cost": {
+   "value": "SB + BB + seats * ante",
+   "basis": "estimated",
+   "note": "자리 비움 한 바퀴의 값 (문서 §5.4, 식 9)"
+  },
+  "auto_sit_out_after_timeout_fold": {
+   "value": true,
+   "basis": "observed",
+   "source": "WEB-34",
+   "note": "로얄홀덤 토너먼트, 2025-05부터"
+  },
+  "forfeit": {
+   "value": {
+    "timeout_folds_in_a_row_after_return": 3,
+    "disconnected_min": 120
+   },
+   "basis": "observed",
+   "source": "WEB-10, WEB-34",
+   "note": "로얄홀덤. 경고 뒤 누적되면 기권"
+  },
+  "action_sec": {
+   "value": {
+    "mean": 11.5,
+    "median": 11,
+    "min": 9,
+    "max": 15,
+    "n": 4
+   },
+   "basis": "estimated",
+   "source": "WEB-14, WEB-34, WEB-28, WEB-9"
+  }
+ },
+ "averages": {
+  "online_level_min": {
+   "value": {
+    "mean": 7.0,
+    "median": 7,
+    "min": 4,
+    "max": 10,
+    "n": 3
+   },
+   "basis": "estimated",
+   "note": "쇼다운 터보 4(역산), HPT 새틀라이트 7, HPC 10"
+  },
+  "late_reg_levels": {
+   "value": {
+    "mean": 14,
+    "median": 14,
+    "min": 13,
+    "max": 15,
+    "n": 3
+   },
+   "basis": "estimated"
+  },
+  "late_reg_min": {
+   "value": {
+    "mean": 80,
+    "median": 83,
+    "min": 40,
+    "max": 115,
+    "n": 4
+   },
+   "basis": "estimated"
+  },
+  "reentry_max": {
+   "value": {
+    "mean": 5.0,
+    "median": 4,
+    "min": 1,
+    "max": 10,
+    "n": 3
+   },
+   "basis": "estimated"
+  },
+  "sng_seats": {
+   "value": {
+    "mean": 4.0,
+    "median": 3,
+    "min": 3,
+    "max": 6,
+    "n": 3
+   },
+   "basis": "estimated"
+  },
+  "satellite_ticket_pct": {
+   "value": {
+    "mean": 8.8,
+    "median": 9.6,
+    "min": 5.6,
+    "max": 10,
+    "n": 6
+   },
+   "basis": "estimated"
+  },
+  "day1_advance_pct": {
+   "value": {
+    "mean": 12.1,
+    "median": 10,
+    "min": 8,
+    "max": 20,
+    "n": 5
+   },
+   "basis": "estimated"
+  }
+ }
+}
