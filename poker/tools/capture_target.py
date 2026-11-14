@@ -19,6 +19,7 @@ Command line usage::
     python -m poker.tools.capture_target --full-screen --save
 """
 import argparse
+import configparser
 import ctypes
 import logging
 import os
@@ -90,6 +91,22 @@ def format_region(region):
     return ','.join(str(int(v)) for v in region)
 
 
+def _read_option(cfg, option):
+    """
+    Read a [main] option. config.ini uses ExtendedInterpolation, where '$' is special ('$$' is a '$').
+
+    Window titles often contain '$' (for example '$0.01/$0.02'); a single '$' typed by hand is read as is.
+    """
+    try:
+        return cfg.get(CONFIG_SECTION, option, fallback='')
+    except configparser.InterpolationError:
+        return cfg.get(CONFIG_SECTION, option, raw=True, fallback='')
+
+
+def _escape_option(value):
+    return value.replace('$', '$$')
+
+
 @dataclass
 class CaptureTarget:
     """Which part of the screen is captured."""
@@ -108,9 +125,9 @@ class CaptureTarget:
         """Read the capture target from config.ini. Missing or broken entries mean full screen."""
         config = config or get_config()
         cfg = config.config
-        mode = cfg.get(CONFIG_SECTION, CONFIG_MODE, fallback=MODE_FULL_SCREEN).strip() or MODE_FULL_SCREEN
-        region_text = cfg.get(CONFIG_SECTION, CONFIG_REGION, fallback='').strip()
-        title = cfg.get(CONFIG_SECTION, CONFIG_WINDOW_TITLE, fallback='').strip()
+        mode = _read_option(cfg, CONFIG_MODE).strip() or MODE_FULL_SCREEN
+        region_text = _read_option(cfg, CONFIG_REGION).strip()
+        title = _read_option(cfg, CONFIG_WINDOW_TITLE).strip()
         region = None
         if region_text:
             try:
@@ -136,7 +153,7 @@ class CaptureTarget:
             cfg.add_section(CONFIG_SECTION)
         cfg.set(CONFIG_SECTION, CONFIG_MODE, self.mode)
         cfg.set(CONFIG_SECTION, CONFIG_REGION, format_region(self.region) if self.region else '')
-        cfg.set(CONFIG_SECTION, CONFIG_WINDOW_TITLE, self.window_title)
+        cfg.set(CONFIG_SECTION, CONFIG_WINDOW_TITLE, _escape_option(self.window_title))
         config.update_file()
 
     def describe(self):

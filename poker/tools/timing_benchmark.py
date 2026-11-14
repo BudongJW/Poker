@@ -316,6 +316,18 @@ class FakeScreen:
         return self
 
 
+def use_direct_capture():
+    """
+    Capture the screen directly, even when config.ini selects a VirtualBox machine (`control`).
+
+    Only the in-memory config used by Table.take_screenshot is changed; config.ini is not written.
+    """
+    import poker.scraper.table as table_module  # pylint: disable=import-outside-toplevel
+    config = get_config()
+    config.config.set('main', 'control', 'Direct mouse control')
+    table_module.get_config = lambda: config
+
+
 def make_capture_target(capture, table_rect):
     """Capture target for a capture mode. A window is captured like a region with the window's rectangle."""
     if capture == MODE_WINDOW:
@@ -555,6 +567,7 @@ def benchmark_stage(base, stage, opponents, context, repeat, warmup):
 
 
 def run_benchmark(repeat, warmup, capture=MODE_FULL_SCREEN, stages=True):
+    use_direct_capture()
     context = {
         'capture': capture,
         'game_logger': StubGameLogger(),

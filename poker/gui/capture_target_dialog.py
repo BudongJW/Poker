@@ -53,6 +53,8 @@ class ScreenPicker(QtWidgets.QWidget):
         self.current = None
         self.hover = None
         self.setGeometry(geometry)
+        # the bot's other windows are hidden while picking: closing this overlay must not quit the application
+        self.setAttribute(Qt.WidgetAttribute.WA_QuitOnClose, False)
         self.setCursor(Qt.CursorShape.CrossCursor)
         self.setMouseTracking(True)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -430,3 +432,17 @@ def open_capture_target_dialog(parent=None, on_saved=None):
         dialog.saved.connect(on_saved)
     dialog.show()
     return dialog
+
+
+def main():
+    """Open only the capture area dialog, without the rest of the bot (which needs its server to start)."""
+    logging.basicConfig(level=logging.INFO, format='%(levelname)s %(message)s')
+    app = QtWidgets.QApplication(sys.argv)
+    dialog = CaptureTargetDialog()
+    dialog.saved.connect(lambda target: print(f"Saved to config.ini: {target.describe()}"))
+    dialog.show()
+    sys.exit(app.exec())
+
+
+if __name__ == '__main__':
+    main()

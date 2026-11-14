@@ -1,5 +1,5 @@
 """Tests for choosing the capture target (full screen, screen region or game window). No server needed."""
-from configparser import ConfigParser
+from configparser import ConfigParser, ExtendedInterpolation
 
 import pandas as pd
 import pytest
@@ -16,7 +16,7 @@ class FakeConfig:
     """Same interface as CustomConfigParser, without touching config.ini"""
 
     def __init__(self, text=''):
-        self.config = ConfigParser()
+        self.config = ConfigParser(interpolation=ExtendedInterpolation())  # like CustomConfigParser
         self.config.optionxform = str
         self.config.read_string('[main]\n' + text)
         self.writes = 0
@@ -79,6 +79,19 @@ def test_save_and_load_round_trip():
     assert config.config.get('main', 'capture_region') == '5,6,700,800'
     loaded = CaptureTarget.from_config(config)
     assert loaded == CaptureTarget(MODE_WINDOW, region=(5, 6, 700, 800), window_title="Hold'em")
+
+
+def test_window_title_with_dollar_signs_round_trip():
+    """Poker window titles often contain stakes like $0.01/$0.02, '$' is special in config.ini"""
+    config = FakeConfig()
+    title = "Halley #4 - $0.01/$0.02 USD - No Limit Hold'em"
+    CaptureTarget(MODE_WINDOW, window_title=title).save(config)
+    assert CaptureTarget.from_config(config).window_title == title
+
+
+def test_single_dollar_typed_into_config_is_read_as_is():
+    config = FakeConfig("capture_mode = window\ncapture_window_title = Table $0.02\n")
+    assert CaptureTarget.from_config(config).window_title == 'Table $0.02'
 
 
 def test_find_window_prefers_exact_title_then_top_most_match():

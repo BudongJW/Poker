@@ -61,7 +61,33 @@ capture_region = 0,0,1280,900
 capture_window_title = Hold'em
 ```
 
+창 제목의 `$`는 config.ini에 `$$`로 저장된다(config.ini 문법상 `$`가 특수 문자이기 때문). 직접 편집할 때 `$`를 하나만 적어도 그대로 읽는다.
+
 설정이 비어 있거나 잘못되면 경고를 남기고 전체 화면을 캡처한다. 지정한 창을 찾지 못할 때(창이 닫혔거나 최소화된 경우)도 전체 화면을 캡처하고 경고를 한 번 남긴다.
+
+### 봇 없이 실행하기
+
+봇 본체는 시작할 때 원격 서버가 필요하다. 서버 없이 기능만 확인할 때는 아래 명령을 쓴다.
+
+```bash
+python -m poker.gui.capture_target_dialog
+```
+
+```bash
+python -m poker.tools.capture_check
+```
+
+- `capture_target_dialog`: 캡처 영역 설정 창만 띄운다.
+- `capture_check`: 가짜 게임창(저장소의 테이블 스크린샷)을 띄우고 아래 항목을 자동으로 확인한다. 마우스는 움직이지 않는다.
+  - 창 찾기
+  - 픽셀 단위로 정확한 창 캡처
+  - 실제 화면 캡처를 거친 인식과 마우스 기준 좌표
+  - 창 이동
+  - 창이 없을 때의 동작
+  - 두 모드의 시간
+- `capture_check --window-only 600`: 수동 점검용으로 가짜 게임창만 600초 동안 띄운다.
+
+실제 PC에서 점검하는 절차는 [pc_test_prompt.md](pc_test_prompt.md)에 정리했다.
 
 ## 효과
 
@@ -85,7 +111,8 @@ capture_window_title = Hold'em
 | 파일 | 내용 |
 |---|---|
 | `poker/tools/capture_target.py` | 캡처 대상 설정 읽기·저장, 창 목록(Windows·macOS·Linux X11), 캡처, 명령줄 도구 |
-| `poker/gui/capture_target_dialog.py` | 설정 창과 화면 위 선택 오버레이 |
+| `poker/gui/capture_target_dialog.py` | 설정 창과 화면 위 선택 오버레이, 단독 실행 |
+| `poker/tools/capture_check.py` | 실제 화면에서 가짜 게임창으로 하는 자동 점검 |
 | `poker/tools/screen_operations.py` | `take_screenshot_with_offset`: 캡처 대상을 캡처하고 화면 위치를 함께 반환 |
 | `poker/scraper/table_scraper.py` | 캡처 위치(`capture_offset`)를 저장하고, 마우스용 화면 좌표(`screen_tlc`)를 제공 |
 | `poker/main.py`, `poker/scraper/table_screen_based.py` | 마우스 클릭에 `screen_tlc` 사용, 새 핸드에서 다시 찍은 화면을 잘라냄 |
@@ -95,7 +122,7 @@ capture_window_title = Hold'em
 
 ## 확인한 내용
 
-- **오프라인 테스트** (`poker/tests/test_capture_target.py`, 20개): 설정 읽기·저장, 창 제목 일치 규칙, 캡처 위치, 창이 없을 때의 동작을 확인했다.
+- **오프라인 테스트** (`poker/tests/test_capture_target.py`, 22개): 설정 읽기·저장(창 제목의 `$` 포함), 창 제목 일치 규칙, 캡처 위치, 창이 없을 때의 동작을 확인했다.
   - 테이블을 화면 (200,100)에 둔 상태에서 전체 화면 캡처와 게임창 캡처 모두 카드, 금액 등 인식값이 기대값과 같았다.
   - 마우스 기준 좌표가 (200,100)으로 나오는 것도 확인했다.
 - **Linux 가상 디스플레이(Xvfb)에서 실제로 확인한 동작**
