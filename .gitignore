@@ -234,3 +234,8 @@ Poker.code-workspace
 *.spec
 *.ipynb
 *.dmg
+# pokerlab self-play databases
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+pokerlab-daily.log
