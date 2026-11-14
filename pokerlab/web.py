@@ -1,6 +1,7 @@
 """Local web page: ``python -m pokerlab serve``.
 
-Standard library only. ``GET /`` returns the page. ``POST /api/capture`` takes the frames of the
+Standard library only. ``GET /`` returns the page and ``GET /api/info`` says which service reads
+the pictures. ``POST /api/capture`` takes the frames of the
 windows the visitor has picked as sources, one source per program, and answers with the table
 each one shows and the analysis of the hand being played there. ``POST /api/analyze`` takes a
 spot typed in by hand and returns :func:`pokerlab.advisor.to_json` of its analysis.
@@ -144,9 +145,16 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(payload)
 
     def do_GET(self):
-        if self.path.split("?")[0] in ("/", "/index.html"):
+        path = self.path.split("?")[0]
+        if path in ("/", "/index.html"):
             with open(PAGE, "rb") as fh:
                 self._send(200, fh.read(), "text/html; charset=utf-8")
+        elif path == "/api/info":
+            try:
+                result, status = {"vision": vision.info()}, 200
+            except ValueError as error:
+                result, status = {"error": str(error)}, 400
+            self._send(status, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")
         else:
             self._send(404, b"not found", "text/plain")
 

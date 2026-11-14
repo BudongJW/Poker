@@ -197,7 +197,7 @@ th { color: var(--muted); }
       </select>
     </label>
     <p class="hint" id="capHint">종류를 고르고 "추가"를 누르면 창·전체 화면·브라우저 탭은 브라우저의 선택 창에서, 동영상은 파일에서 소스를 고릅니다. 화면이 바뀌었다가 멈추면 좌석·스택·앞에 놓인 칩·딜러 버튼·카드를 읽어 핸드를 따라갑니다. 포지션, 상대의 액션과 벳 크기, 올인, 스택 깊이는 읽은 값에서 계산합니다. "영역"을 누르고 미리보기에서 테이블을 끌어 고르면 그 부분만 읽습니다. 소스 설정(이름, 메모, 간격, 영역)은 이 브라우저에 저장되어, 창이 닫히거나 페이지를 다시 열어도 "다시 연결"로 이어 쓸 수 있습니다.</p>
-    <p class="hint">화면은 인식을 위해 Google Gemini로 전송됩니다.</p>
+    <p class="hint" id="capSends">화면은 인식을 위해 외부 인식 서비스로 전송됩니다.</p>
   </section>
 
   <section class="card-box stack" id="input" aria-label="직접 계산" hidden>
@@ -471,9 +471,13 @@ function tableCard(t) {
 const CAP_KINDS = {window: {name: "창", surface: "window"}, monitor: {name: "전체 화면", surface: "monitor"},
   browser: {name: "브라우저 탭", surface: "browser"}, media: {name: "동영상"}};
 const CAP_STORE = "pokerlab.capture.sources", CAP_MAX = 8, CAP_LONG_SIDE = 1600;
-const CAP_EVERY = [["0", "바뀌면 바로"], ["2", "2초마다"], ["3", "3초마다"], ["5", "5초마다"], ["10", "10초마다"]];
+const CAP_EVERY = [["0", "바뀌면 바로"], ["2", "2초마다"], ["3", "3초마다"], ["5", "5초마다"], ["10", "10초마다"], ["15", "15초마다"], ["30", "30초마다"]];
+// the thumbnail a source is watched through: GRID cells, each the average of the pixels under it; a cell counts once it has
+// moved by more than CAP_GREY levels; up to CAP_STILL cells may move while the picture still counts as holding still
+const CAP_GRID = [96, 54], CAP_GREY = 14, CAP_STILL = 4;
+const CAP_SETTLE = 350, CAP_RESTLESS = 5000;    // ms: how long a picture must hold still before it is read; a picture that never does is read anyway after this long
 const cap = {sources: [], active: null, next: 1, timer: null, probe: document.createElement("canvas"), shot: document.createElement("canvas")};
-cap.probe.width = 48; cap.probe.height = 27;
+[cap.probe.width, cap.probe.height] = CAP_GRID;
 const capSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
 const capScreen = kind => kind !== "media";
 const clock = t => {
@@ -491,9 +495,10 @@ function capRegion(source) {          // the crop filter: the part of the frame 
   return [c.x * v.videoWidth, c.y * v.videoHeight, c.w * v.videoWidth, c.h * v.videoHeight];
 }
 function capLook(source) {            // a thumbnail in grey of the cropped part: enough to tell whether it has changed
-  const ctx = cap.probe.getContext("2d", {willReadFrequently: true});
-  ctx.drawImage(source.video, ...capRegion(source), 0, 0, 48, 27);
-  const rgba = ctx.getImageData(0, 0, 48, 27).data, grey = new Uint8Array(48 * 27);
+  const ctx = cap.probe.getContext("2d", {willReadFrequently: true}), [w, h] = CAP_GRID;
+  ctx.imageSmoothingQuality = "medium";       // a cell is the average of the pixels under it (Chrome does so for video frames anyway)
+  ctx.drawImage(source.video, ...capRegion(source), 0, 0, w, h);
+  const rgba = ctx.getImageData(0, 0, w, h).data, grey = new Uint8Array(w * h);
   for (let i = 0; i < grey.length; i++) grey[i] = (rgba[4 * i] * 3 + rgba[4 * i + 1] * 6 + rgba[4 * i + 2]) / 10;
   return grey;
 }
@@ -512,10 +517,11 @@ function capDescribe(source) {
   if (source.error) return source.error;
   if (source.busy) return "읽는 중…";
   const paused = s.paused ? "일시정지 · " : "";
-  if (!st) return paused + "화면을 기다리는 중";
+  const restless = source.restless ? " · 화면이 계속 움직입니다. \"영역\"으로 테이블만 고르면 읽는 횟수가 줄고 더 정확해집니다" : "";
+  if (!st) return paused + "화면을 기다리는 중" + restless;
   const t = st.table;
   return paused + (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]} · ${t.n_players}명 중 ${t.live}명 · ${st.hero_to_act ? "내 차례" : "진행 중"}`
-    : st.error || "핸드를 기다리는 중") + ` · 끝난 핸드 ${st.hands}개 · ${source.readAt || ""}`;
+    : st.error || "핸드를 기다리는 중") + ` · 끝난 핸드 ${st.hands}개 · ${source.readAt || ""}` + restless;
 }
 function capFit(source) {             // the frame at the picture's own shape inside the stage: crop fractions map straight onto it
   const v = source.video, frame = source.frame;
@@ -525,6 +531,7 @@ function capFit(source) {             // the frame at the picture's own shape in
     const W = source.stage.clientWidth, H = source.stage.clientHeight, ratio = v.videoWidth / v.videoHeight, w = Math.min(W, H * ratio);
     frame.style.width = w + "px"; frame.style.height = w / ratio + "px";
   }
+  source.meta.textContent = capMeta(source);
   capDrawCrop(source);
 }
 function capDrawCrop(source, draft) {
@@ -597,16 +604,18 @@ function capTick() {                  // read a source again when its picture ha
     if (source.settings.paused) continue;
     const look = capLook(source), moving = source.look ? capCells(look, source.look) : Infinity;
     source.look = look;
-    if (moving > 2) source.movedAt = now;       // a timer's moving end changes a cell or two: that alone is not movement
-    if (!source.readLook || capCells(look, source.readLook) > 0) source.changed = true;
-    if (source.changed && now - source.movedAt >= 350 && now - source.sentAt >= Number(source.settings.every) * 1000) {
+    if (moving > CAP_STILL) source.movedAt = now;   // a timer's moving end changes a few cells: that alone is not movement
+    if (!source.changed && (!source.readLook || capCells(look, source.readLook) > 0)) { source.changed = true; source.changedAt = now; }
+    const still = now - source.movedAt >= CAP_SETTLE, restless = source.changed && now - source.changedAt >= CAP_RESTLESS;
+    if (source.changed && (still || restless) && now - source.sentAt >= Number(source.settings.every) * 1000) {
+      source.restless = !still;                    // something in the picture keeps moving (an advertisement, an animation)
       capSend(source);
     }
   }
 }
 function capCells(a, b) {             // thumbnail cells that differ visibly: a card or a chip stack is a few cells, not a share of the frame
   let n = 0;
-  for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > 14) n++;
+  for (let i = 0; i < a.length; i++) if (Math.abs(a[i] - b[i]) > CAP_GREY) n++;
   return n;
 }
 
@@ -639,7 +648,7 @@ function capAttach(source, stream) {
   source.video.play().catch(() => { /* the picture still arrives once the page is clicked */ });
 }
 function capLive(source) {
-  Object.assign(source, {live: true, error: null, look: null, readLook: null, changed: true, movedAt: 0, sentAt: -1e9});
+  Object.assign(source, {live: true, error: null, look: null, readLook: null, changed: true, changedAt: performance.now(), restless: false, movedAt: 0, sentAt: -1e9});
   capSave(); capFit(source); capRefresh(source);
   if (cap.active === source && !$("capture").hidden) capShow();
 }
@@ -672,7 +681,7 @@ function capOpen(source, file) {      // OBS's media source, from a local file: 
 }
 async function capReset(source) {
   await post("/api/capture", {do: "reset", source: source.settings.id});
-  source.state = null; source.changed = true; source.error = null; capRefresh(source);
+  source.state = null; source.changed = true; source.changedAt = performance.now(); source.error = null; capRefresh(source);
   if (cap.active === source) capShow();
 }
 function capRemove(source) {
@@ -711,14 +720,15 @@ function capCropEditor(source) {
 function capSetCrop(source, crop) {   // a new region means new picture coordinates: the hand is read again from here
   const round = x => Math.round(x * 10000) / 10000;
   source.settings.crop = crop && {x: round(crop.x), y: round(crop.y), w: round(crop.w), h: round(crop.h)};
-  source.look = source.readLook = null; source.changed = true; capSave(); capDrawCrop(source); capRefresh(source);
+  source.look = source.readLook = null; source.changed = true; source.changedAt = performance.now(); source.restless = false;
+  capSave(); capDrawCrop(source); capRefresh(source);
   if (source.state) capReset(source);
 }
 
 function capBuild(settings) {
   const s = Object.assign({label: settings.id, notes: "", every: settings.kind === "media" ? "0" : "3", crop: null, paused: false,
     speed: "1", hold: true}, settings);
-  const source = {settings: s, live: false, busy: false, editing: false, changed: true, movedAt: 0, sentAt: -1e9, look: null,
+  const source = {settings: s, live: false, busy: false, editing: false, changed: true, changedAt: 0, restless: false, movedAt: 0, sentAt: -1e9, look: null,
     state: null, error: null, stream: null, url: null};
   const stop = control => { control.addEventListener("click", e => e.stopPropagation()); return control; };
   const button = (text, onclick, title) => {
@@ -979,6 +989,12 @@ $("reset").onclick = () => {
   renderInput(); renderMessage("내 카드 두 장을 고르면 계산합니다. 보드는 비워 두거나 3·4·5장을 고르세요.");
 };
 renderInput(); capShow(); capRestore();
+fetch("/api/info").then(r => r.json()).then(data => {       // say where the pictures go: the server knows which service it calls
+  const v = data.vision;
+  if (data.error) $("capSends").textContent = data.error;
+  else if (v) $("capSends").textContent = v.service ? `화면은 인식을 위해 ${v.service}(${v.model})로 전송됩니다.`
+    : "저장된 값을 재생하는 중이라 화면은 어디로도 전송되지 않습니다.";
+}).catch(() => {});
 </script>
 </body>
 </html>

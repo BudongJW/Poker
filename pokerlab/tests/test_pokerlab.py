@@ -797,6 +797,8 @@ def test_web_server_round_trip():
     base = f"http://127.0.0.1:{server.server_address[1]}"
     try:
         assert "실시간 인식" in urllib.request.urlopen(base + "/").read().decode()
+        info = json.loads(urllib.request.urlopen(base + "/api/info").read())["vision"]      # where the pictures go, for the page to say
+        assert info == vision.info() and set(info) == {"provider", "service", "model"}
 
         def post(payload):
             request = urllib.request.Request(base + "/api/analyze", json.dumps(payload).encode(),
@@ -1358,6 +1360,111 @@ def test_a_recording_keeps_where_each_hand_began(tmp_path, monkeypatch):
     web._SOURCES.clear()
 
 
+def test_claude_as_the_reader(monkeypatch):
+    """POKERLAB_VISION_PROVIDER=claude: the same prompt and schema go to the Messages API through the anthropic package
+    (here a stand-in for it that keeps what it was asked)."""
+    import sys
+    import types
+    answer = {"is_poker_table": True, "hero_cards": ["As", "Kd"], "board": [], "pot": 3, "big_blind": 2, "hero_to_act": True, "seats": [
+        {"x": 0.5, "y": 0.9, "stack": 199, "bet": 1, "in_hand": True, "is_hero": True, "has_button": True, "sitting_out": False,
+         "all_in": False, "acting": True},
+        {"x": 0.5, "y": 0.1, "stack": 198, "bet": 2, "in_hand": True, "is_hero": False, "has_button": False, "sitting_out": False,
+         "all_in": False, "acting": False}]}
+    asked, state = {}, {"reply": None, "error": None}
+    fake = types.ModuleType("anthropic")
+
+    class AnthropicError(Exception):
+        pass
+
+    class APIConnectionError(AnthropicError):
+        pass
+
+    class APIStatusError(AnthropicError):
+        status_code, message = 500, "boom"
+
+    for name in ("AuthenticationError", "PermissionDeniedError", "NotFoundError", "RateLimitError"):
+        setattr(fake, name, type(name, (APIStatusError,), {}))
+    fake.AnthropicError, fake.APIConnectionError, fake.APIStatusError = AnthropicError, APIConnectionError, APIStatusError
+
+    def create(route):
+        def call(**request):
+            asked.update(route=route, request=request)
+            if state["error"]:
+                raise state["error"]
+            return state["reply"]
+        return call
+
+    class Anthropic:
+        def __init__(self, **options):
+            asked["client"] = options
+            self.messages = types.SimpleNamespace(create=create("messages"))
+            self.beta = types.SimpleNamespace(messages=types.SimpleNamespace(create=create("beta")))
+
+    fake.Anthropic = Anthropic
+    monkeypatch.setitem(sys.modules, "anthropic", fake)
+    for name in ("POKERLAB_VISION_REPLAY", "POKERLAB_VISION_MODEL", "POKERLAB_VISION_EFFORT"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("POKERLAB_VISION_PROVIDER", "claude")
+    said = lambda reason, text: types.SimpleNamespace(stop_reason=reason, content=[
+        types.SimpleNamespace(type="thinking", thinking=""), types.SimpleNamespace(type="text", text=text)])
+    state["reply"] = said("end_turn", json.dumps(answer))
+
+    assert vision.info() == {"provider": "claude", "service": "Anthropic Claude", "model": "claude-opus-5-5"}
+    snapshot = vision.recognize(b"x", "image/jpeg", notes="stacks are in chips")
+    assert snapshot == vision.to_snapshot(answer) and table.normalize(snapshot)["actor"] is not None
+    request = asked["request"]
+    assert asked["route"] == "beta" and request["betas"] == [vision.CLAUDE_FALLBACK_BETA] and request["fallbacks"] == "default"
+    assert request["model"] == "claude-opus-5-5" and request["max_tokens"] == vision.CLAUDE_MAX_TOKENS
+    assert asked["client"] == {"timeout": 90, "max_retries": 1}                 # no key passed: the package finds ANTHROPIC_API_KEY itself
+    picture, words = request["messages"][0]["content"]
+    assert picture == {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": "eA=="}}
+    assert words["text"].startswith(vision.PROMPT) and words["text"].endswith("About the program in this picture: stacks are in chips")
+    config = request["output_config"]
+    assert config["effort"] == "low" and config["format"]["type"] == "json_schema"
+    schema = config["format"]["schema"]                                         # every object closed, "or null" as anyOf
+    seat = schema["properties"]["seats"]["items"]
+    assert schema["additionalProperties"] is False and seat["additionalProperties"] is False
+    assert schema["properties"]["pot"] == {"anyOf": [{"type": "number"}, {"type": "null"}]} and "type" not in seat["properties"]["name"]
+    assert set(seat["required"]) == set(vision.SCHEMA["properties"]["seats"]["items"]["required"])
+    assert "additionalProperties" not in vision.SCHEMA                          # the schema Gemini gets is left as it was
+
+    # another model and effort; a key handed in; a model without the service's fallback goes the plain way
+    monkeypatch.setenv("POKERLAB_VISION_MODEL", "claude-haiku-5-5")
+    monkeypatch.setenv("POKERLAB_VISION_EFFORT", "medium")
+    vision.recognize(b"x", "image/png", key="k")
+    assert asked["route"] == "messages" and "fallbacks" not in asked["request"] and asked["client"]["api_key"] == "k"
+    assert asked["request"]["model"] == "claude-haiku-5-5" and asked["request"]["output_config"]["effort"] == "medium"
+    assert vision.info()["model"] == "claude-haiku-5-5"
+
+    # what can go wrong is said in words, not raised as something else
+    state["reply"] = said("refusal", "")
+    with pytest.raises(vision.VisionError, match="읽지 않겠다고"):
+        vision.recognize(b"x", "image/png")
+    state["reply"] = said("max_tokens", "{")
+    with pytest.raises(vision.VisionError, match="잘렸습니다"):
+        vision.recognize(b"x", "image/png")
+    state["reply"] = said("end_turn", "not json")
+    with pytest.raises(vision.VisionError, match="JSON이 아닙니다"):
+        vision.recognize(b"x", "image/png")
+    state["reply"] = said("end_turn", json.dumps(answer))
+    for error, words in ((fake.AuthenticationError(), "ANTHROPIC_API_KEY"), (fake.RateLimitError(), "한도"), (fake.NotFoundError(), "모델을 찾지"),
+                         (APIStatusError(), "오류 500"), (APIConnectionError("down"), "연결하지 못했습니다"), (AnthropicError("no key"), "부르지 못했습니다")):
+        state["error"] = error
+        with pytest.raises(vision.VisionError, match=words):
+            vision.recognize(b"x", "image/png")
+    state["error"] = None
+    with pytest.raises(vision.VisionError, match="Claude는 PNG"):
+        vision.recognize(b"x", "image/heic")
+    monkeypatch.setitem(sys.modules, "anthropic", None)                         # the package is not installed
+    with pytest.raises(vision.VisionError, match="anthropic 패키지"):
+        vision.recognize(b"x", "image/png")
+    monkeypatch.setenv("POKERLAB_VISION_PROVIDER", "somebody")
+    with pytest.raises(vision.VisionError, match="POKERLAB_VISION_PROVIDER"):
+        vision.recognize(b"x", "image/png")
+    monkeypatch.setenv("POKERLAB_VISION_REPLAY", "anything.json")
+    assert vision.info() == {"provider": "replay", "service": None, "model": None}
+
+
 def test_recognizer_extras(tmp_path, monkeypatch):
     result, chips, button = next(x for x in _played(("human", "pro", "tag"), 6, (1000,), seed=9, hands=30)
                                  if sum(a[1] == 1 for a in x[0].actions) >= 2)
@@ -1390,8 +1497,15 @@ def test_recognizer_extras(tmp_path, monkeypatch):
             return json.dumps({"output_text": json.dumps(answer)}).encode()
 
     monkeypatch.setattr(vision.urllib.request, "urlopen", lambda request, timeout=None: sent.update(body=json.loads(request.data)) or Reply())
+    monkeypatch.delenv("POKERLAB_VISION_PROVIDER", raising=False)
+    monkeypatch.delenv("POKERLAB_VISION_EFFORT", raising=False)
     vision.recognize(b"x", "image/png", key="k", notes="stacks are in chips")
     assert sent["body"]["input"][0]["text"].endswith("About the program in this picture: stacks are in chips")
+    assert sent["body"]["generation_config"] == {"thinking_level": "low"} and sent["body"]["store"] is False
+    monkeypatch.setenv("POKERLAB_VISION_EFFORT", "medium")
+    vision.recognize(b"x", "image/png", key="k")
+    assert sent["body"]["generation_config"] == {"thinking_level": "medium"}
+    monkeypatch.delenv("POKERLAB_VISION_EFFORT")
     vision.recognize(b"x", "image/png", key="k")
     assert sent["body"]["input"][0]["text"] == vision.PROMPT
     replay = tmp_path / "replay.json"

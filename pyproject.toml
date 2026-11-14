@@ -10,6 +10,9 @@ readme = "pokerlab/README.md"
 requires-python = ">=3.9"
 dependencies = ["numpy", "pandas"]
 
+[project.optional-dependencies]
+claude = ["anthropic>=1.0"]      # only for POKERLAB_VISION_PROVIDER=claude
+
 [project.scripts]
 pokerlab = "pokerlab.__main__:main"
 

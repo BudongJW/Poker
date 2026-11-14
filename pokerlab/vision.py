@@ -6,9 +6,17 @@ cards, the dealer button, the board, the pot and the hero's cards. Only what is 
 Positions, table size, who did what, bet sizes, all-ins and stack depths are worked out afterwards
 from the snapshots, not asked of the model.
 
-The model is Google's Gemini, called over its Interactions API with the standard library only.
-The key is read from ``GEMINI_API_KEY`` (or ``GOOGLE_API_KEY``); ``POKERLAB_VISION_MODEL`` names
-another model. The picture leaves this machine: it is sent to Google, with ``store`` off.
+Two services can do the reading; ``POKERLAB_VISION_PROVIDER`` picks one:
+
+- ``gemini`` (the default): Google's Gemini over its Interactions API, with the standard library
+  only. The key is read from ``GEMINI_API_KEY`` (or ``GOOGLE_API_KEY``).
+- ``claude``: Anthropic's Claude over the Messages API, with the ``anthropic`` package
+  (``pip install "pokerlab[claude]"``). The key is read from ``ANTHROPIC_API_KEY``.
+
+``POKERLAB_VISION_MODEL`` names another model of the chosen service, ``POKERLAB_VISION_EFFORT``
+how hard it should think (``low`` by default: reading a table needs little, and thinking is most of
+the wait). The picture leaves this machine: it is sent to the chosen service (to Google with
+``store`` off). :func:`info` says where, for the page to show.
 """
 
 import base64
@@ -22,6 +30,14 @@ API_REVISION = "2026-05-20"
 DEFAULT_MODEL = "gemini-4-hydrogen"
 MAX_IMAGE_BYTES = 12_000_000
 MIME_TYPES = ("image/png", "image/jpeg", "image/webp", "image/heic", "image/heif")
+DEFAULT_EFFORT = "low"          # Gemini's thinking_level, Claude's effort
+
+CLAUDE_MODEL = "claude-opus-5-5"
+CLAUDE_MIME_TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif")
+CLAUDE_MAX_TOKENS = 16_000      # thinking counts towards it; the answer itself is a few hundred tokens
+CLAUDE_FALLBACK_BETA = "server-side-fallback-2026-07-01"
+CLAUDE_FALLBACK_MODELS = ("claude-opus-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-fable-5-2")    # prefixes
+SERVICES = {"gemini": "Google Gemini", "claude": "Anthropic Claude"}
 
 PROMPT = """You are reading one frame of a program's window that shows a Texas Hold'em table. Report only what is visible in the picture. \
 Never guess a card or a number you cannot read: use null (or leave the list short) instead.
@@ -143,6 +159,31 @@ def _replay(path):
     return found[index]
 
 
+def provider():
+    """Which service reads the pictures: 'gemini' or 'claude', from ``POKERLAB_VISION_PROVIDER``."""
+    name = (os.environ.get("POKERLAB_VISION_PROVIDER") or "gemini").strip().lower()
+    name = {"anthropic": "claude", "google": "gemini"}.get(name, name)
+    if name not in SERVICES:
+        raise VisionError(f"POKERLAB_VISION_PROVIDER는 {', '.join(SERVICES)} 중 하나여야 합니다 ({name!r})")
+    return name
+
+
+def info():
+    """Where a picture goes when it is read, for the page to say so: {'provider', 'service', 'model'}.
+
+    While ``POKERLAB_VISION_REPLAY`` is set nothing is sent: the service is None.
+    """
+    if os.environ.get("POKERLAB_VISION_REPLAY"):
+        return {"provider": "replay", "service": None, "model": None}
+    name = provider()
+    return {"provider": name, "service": SERVICES[name],
+            "model": os.environ.get("POKERLAB_VISION_MODEL") or (CLAUDE_MODEL if name == "claude" else DEFAULT_MODEL)}
+
+
+def _effort():
+    return (os.environ.get("POKERLAB_VISION_EFFORT") or DEFAULT_EFFORT).strip().lower()
+
+
 def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, notes=None):
     """One picture of a table (bytes) -> snapshot dict. Raises :class:`VisionError`.
 
@@ -152,16 +193,28 @@ def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, no
     """
     if os.environ.get("POKERLAB_VISION_REPLAY"):
         return _replay(os.environ["POKERLAB_VISION_REPLAY"])
-    if mime_type not in MIME_TYPES:
-        raise VisionError(f"지원하지 않는 이미지 형식입니다 ({mime_type}). PNG, JPEG, WebP를 쓸 수 있습니다")
     if not image or len(image) > MAX_IMAGE_BYTES:
         raise VisionError("이미지가 비어 있거나 너무 큽니다 (12MB 이하)")
+    prompt = PROMPT + (f"\n\nAbout the program in this picture: {notes}" if notes else "")
+    model = model or os.environ.get("POKERLAB_VISION_MODEL")
+    reader = _claude if provider() == "claude" else _gemini
+    try:
+        return to_snapshot(json.loads(reader(image, mime_type, prompt, model, key, timeout)))
+    except json.JSONDecodeError:
+        raise VisionError("이미지 인식 결과를 읽지 못했습니다 (JSON이 아닙니다)") from None
+
+
+def _gemini(image, mime_type, prompt, model, key, timeout):
+    """The model's answer (JSON text) from Gemini's Interactions API."""
+    if mime_type not in MIME_TYPES:
+        raise VisionError(f"지원하지 않는 이미지 형식입니다 ({mime_type}). PNG, JPEG, WebP를 쓸 수 있습니다")
     key = key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     body = {
-        "model": model or os.environ.get("POKERLAB_VISION_MODEL") or DEFAULT_MODEL,
-        "input": [{"type": "text", "text": PROMPT + (f"\n\nAbout the program in this picture: {notes}" if notes else "")},
+        "model": model or DEFAULT_MODEL,
+        "input": [{"type": "text", "text": prompt},
                   {"type": "image", "data": base64.b64encode(image).decode(), "mime_type": mime_type}],
         "response_format": {"type": "text", "mime_type": "application/json", "schema": SCHEMA},
+        "generation_config": {"thinking_level": _effort()},
         "store": False,
     }
     request = urllib.request.Request(URL, json.dumps(body).encode(), method="POST", headers={
@@ -182,7 +235,66 @@ def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, no
         raise VisionError(f"이미지 인식 서비스 오류 {error.code}: {detail}") from None
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         raise VisionError(f"이미지 인식 서비스에 연결하지 못했습니다: {error}") from None
+    return _output_text(reply)
+
+
+def _strict(schema):
+    """SCHEMA as Claude's structured outputs take it: every object closed, "X or null" spelled out with anyOf."""
+    if not isinstance(schema, dict):
+        return schema
+    out = dict(schema)
+    if "properties" in out:
+        out["properties"] = {name: _strict(sub) for name, sub in out["properties"].items()}
+    if "items" in out:
+        out["items"] = _strict(out["items"])
+    if isinstance(out.get("type"), list):
+        out["anyOf"] = [{"type": kind} for kind in out.pop("type")]
+    elif out.get("type") == "object":
+        out["additionalProperties"] = False
+    return out
+
+
+def _claude(image, mime_type, prompt, model, key, timeout):
+    """The model's answer (JSON text) from Claude's Messages API, through the ``anthropic`` package."""
     try:
-        return to_snapshot(json.loads(_output_text(reply)))
-    except json.JSONDecodeError:
-        raise VisionError("이미지 인식 결과를 읽지 못했습니다 (JSON이 아닙니다)") from None
+        import anthropic
+    except ImportError:
+        raise VisionError('Claude로 읽으려면 anthropic 패키지가 필요합니다: pip install "pokerlab[claude]"') from None
+    if mime_type not in CLAUDE_MIME_TYPES:
+        raise VisionError(f"지원하지 않는 이미지 형식입니다 ({mime_type}). Claude는 PNG, JPEG, WebP, GIF를 받습니다")
+    model = model or CLAUDE_MODEL
+    request = {
+        "model": model, "max_tokens": CLAUDE_MAX_TOKENS,
+        "output_config": {"effort": _effort(), "format": {"type": "json_schema", "schema": _strict(SCHEMA)}},
+        "messages": [{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": base64.standard_b64encode(image).decode()}},
+            {"type": "text", "text": prompt}]}],
+    }
+    try:
+        client = anthropic.Anthropic(api_key=key, timeout=timeout, max_retries=1) if key else anthropic.Anthropic(timeout=timeout, max_retries=1)
+        if model.startswith(CLAUDE_FALLBACK_MODELS):    # if the model declines for policy reasons, the service's own fallback model answers
+            message = client.beta.messages.create(betas=[CLAUDE_FALLBACK_BETA], fallbacks="default", **request)
+        else:
+            message = client.messages.create(**request)
+    except anthropic.AuthenticationError:
+        raise VisionError("Claude API 키가 없거나 거부됐습니다. 환경 변수 ANTHROPIC_API_KEY를 확인해 주세요") from None
+    except anthropic.PermissionDeniedError:
+        raise VisionError("이 Claude API 키로는 이 모델을 쓸 수 없습니다. 키의 사용 권한을 확인해 주세요") from None
+    except anthropic.NotFoundError:
+        raise VisionError(f"Claude 모델을 찾지 못했습니다 ({model}). POKERLAB_VISION_MODEL을 확인해 주세요") from None
+    except anthropic.RateLimitError:
+        raise VisionError("Claude API 사용량 한도에 걸렸습니다. 잠시 뒤 다시 시도해 주세요") from None
+    except anthropic.APIStatusError as error:
+        raise VisionError(f"이미지 인식 서비스 오류 {error.status_code}: {str(error.message)[:300]}") from None
+    except anthropic.APIConnectionError as error:
+        raise VisionError(f"이미지 인식 서비스에 연결하지 못했습니다: {error}") from None
+    except anthropic.AnthropicError as error:             # no key at all, among others
+        raise VisionError(f"Claude API를 부르지 못했습니다: {error}") from None
+    if message.stop_reason == "refusal":
+        raise VisionError("Claude가 이 이미지를 읽지 않겠다고 답했습니다")
+    if message.stop_reason == "max_tokens":
+        raise VisionError("이미지 인식 결과가 중간에 잘렸습니다")
+    text = next((block.text for block in message.content if block.type == "text"), None)
+    if text is None:
+        raise VisionError("이미지 인식 서비스가 답을 주지 않았습니다")
+    return text
