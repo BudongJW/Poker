@@ -19,6 +19,7 @@ WPL, 피망, 한게임 등 국내 주요 포커 게임을 공개 자료로 분�
 | [`02_neowiz_pmang.md`](02_neowiz_pmang.md) | 네오위즈 — **피망 포커**(가로형 웹보드), **피망 쇼다운 홀덤**(세로형 홀덤) |
 | [`03_nhn_hangame.md`](03_nhn_hangame.md) | NHN — **한게임 포커**, 한게임포커 클래식(+PC), **한게임 로얄홀덤**, 한게임 홀덤 |
 | [`04_cross_comparison.md`](04_cross_comparison.md) | 8개 앱 화면 비교표, 공통 화면 골격, 구성요소별 패턴, 고정 요소와 가변 요소 |
+| [`09_layout_geometry.md`](09_layout_geometry.md) | 배치의 수치 분석: 계열별 평균 화면, 버튼 좌표·크기·금액 함수, 카드 위치 식, 좌석 타원, 조작 흐름. 측정값은 [`data/`](data/)에 있다 |
 
 ### 2부. 게임별 특징
 

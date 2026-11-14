@@ -1,0 +1,179 @@
+screen,app,mode,platform,orientation,aspect_w_over_h,source,confidence,element,kind,x0,y0,x1,y1,note
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,action_bar,box,0,87.5,100,100,6칸 등분
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,action_btn_1,box,0.0,87.5,16.67,100,다이
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,action_btn_2,box,16.67,87.5,33.33,100,삥
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,action_btn_3,box,33.33,87.5,50.0,100,따당
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,action_btn_4,box,50.0,87.5,66.67,100,체크
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,action_btn_5,box,66.67,87.5,83.33,100,쿼터
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,action_btn_6,box,83.33,87.5,100.0,100,하프
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,menu_tr,box,71.0,1.4,99.3,7.3,미션·정보·방이동·나가기
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,tray_tl,box,13.5,12.2,29.8,30.5,
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,tray_ml,box,13.5,37.0,29.8,55.2,
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,tray_tr,box,66.0,12.2,82.3,30.5,
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,tray_mr,box,66.0,37.0,82.3,55.2,
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,seat_tl,point,8.5,18.0,,,
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,seat_ml,point,8.5,42.7,,,
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,seat_tr,point,91.5,18.0,,,
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,seat_mr,point,91.5,42.7,,,
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,total_box,box,39.5,39.8,60.5,49.8,POT/CALL
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,hero_avatar,point,30.2,67.5,,,지름 8.9%W
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,hero_cards,box,36.3,59.0,58.1,83.2,7장 겹침
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,rank_panel,box,65.7,58.1,79.7,84.4,족보·내승률
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,opp_card,box,21.9,12.2,29.8,30.4,겹침 간격 2.1%W
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,hero_card,box,47.6,59.0,58.1,83.2,겹침 간격 2.8%W
+PP7,피망 포커,7포커,mobile,landscape,1.776,WEB-1(02) BlueStacks 실캡처,H,emoji,point,4.2,70.9,,,
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,action_bar,box,0,88.0,100,100,6칸 등분
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,action_btn_1,box,0.0,88.0,16.67,100,체크
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,action_btn_2,box,16.67,88.0,33.33,100,삥
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,action_btn_3,box,33.33,88.0,50.0,100,하프
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,action_btn_4,box,50.0,88.0,66.67,100,풀
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,action_btn_5,box,66.67,88.0,83.33,100,콜
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,action_btn_6,box,83.33,88.0,100.0,100,다이
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,menu_tr,box,80.0,0.0,99.3,4.2,방이동·나가기
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,tray_tl,box,10.0,10.1,29.7,27.9,
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,tray_ml,box,10.0,38.2,29.7,55.8,
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,tray_tr,box,65.7,10.1,88.5,27.9,
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,tray_mr,box,65.7,38.6,88.5,56.3,
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,seat_tl,point,4.3,15.4,,,
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,seat_ml,point,4.3,42.1,,,
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,seat_tr,point,95.7,14.8,,,
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,seat_mr,point,95.7,42.7,,,
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,hero_avatar,point,25.8,64.7,,,
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,hero_cards,box,31.7,57.8,61.7,85.6,트레이 전체
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,rank_panel,box,64.3,59.0,99.3,87.8,게임 결과
+WJ7,윈조이 포커,7포커,mobile,landscape,1.778,AS-winjoy-iphone-06 (기울기 보정),M,emoji,point,2.5,75.9,,,
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,action_bar,box,55.4,69.5,67.6,89.3,2열×4행 그리드
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,action_btn_1,box,55.5,69.5,61.4,74.1,콜 [7]
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,action_btn_2,box,61.6,69.5,67.4,74.1,다이 [8]
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,action_btn_3,box,55.5,74.5,61.4,79.1,삥 [4]
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,action_btn_4,box,61.6,74.5,67.4,79.1,체크 [5]
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,action_btn_5,box,55.5,79.6,61.4,84.2,따당 [1]
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,action_btn_6,box,61.6,79.6,67.4,84.2,쿼터 [2]
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,action_btn_7,box,55.5,84.7,61.4,89.3,하프 [0]
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,action_btn_8,box,61.6,84.7,67.4,89.3,풀 [3]
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,menu_tr,box,84.5,4.6,99.3,8.1,알리미·캡쳐·옵션
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,tray_tl,box,20.5,16.5,37.0,32.0,
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,tray_ml,box,20.5,43.2,37.0,58.5,
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,tray_tr,box,63.0,16.5,79.6,32.0,
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,tray_mr,box,63.0,43.2,79.6,58.5,
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,seat_tl,point,16.1,22.6,,,
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,seat_ml,point,16.1,49.1,,,
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,seat_tr,point,83.9,22.6,,,
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,seat_mr,point,83.9,49.1,,,
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,total_box,box,38.2,50.7,61.8,59.7,Total/Call
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,hero_avatar,point,29.9,77.6,,,
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,hero_cards,box,35.9,69.4,54.6,86.2,7장 겹침
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,rank_panel,box,68.8,65.1,88.4,93.1,채팅·족보·내기록
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,opp_card,box,30.3,16.5,37.0,32.0,겹침 간격 1.6%W
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,hero_card,box,47.3,69.4,54.6,86.2,겹침 간격 1.9%W
+HGPC7,PC 한게임포커,7포커,pc,landscape,1.705,WEB-9(03) 공식 가이드 이미지,H,exit_br,box,87.8,94.8,99.3,98.8,방이동·나가기
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,table,box,12.0,14.0,88.5,77.0,
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,pot,box,40.8,25.3,59.2,30.6,
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,board,box,29.2,31.8,70.7,50.4,"5장, 간격 8.3%W"
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,board_card,box,29.2,31.8,37.2,50.4,
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,hero_cards,box,47.5,60.7,63.8,79.2,2장
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,hero_card,box,47.5,60.7,55.6,79.2,
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,hero_avatar,point,43.0,69.4,,,
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,seat_1,point,22.7,15.8,,,
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,seat_2,point,77.3,15.8,,,
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,seat_3,point,10.1,37.7,,,
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,seat_4,point,89.9,37.7,,,
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,seat_5,point,16.0,65.8,,,
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,seat_6,point,84.0,66.4,,,
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,menu_tr,box,71.3,1.4,99.3,7.4,미션·정보·방이동·나가기
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,action_bar,box,0,87.8,100,100,6칸 등분
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,action_btn_1,box,0.0,87.8,16.67,100,다이
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,action_btn_2,box,16.67,87.8,33.33,100,삥
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,action_btn_3,box,33.33,87.8,50.0,100,체크
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,action_btn_4,box,50.0,87.8,66.67,100,쿼터
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,action_btn_5,box,66.67,87.8,83.33,100,하프
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,action_btn_6,box,83.33,87.8,100.0,100,(가려짐)
+PPH,피망 포커,홀덤,mobile,landscape,1.778,AS-pmang_poker-iphone-02,H,emoji,point,3.3,79.2,,,
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,tray_tl,box,18.5,16.1,29.8,28.9,홀카드 2장
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,tray_ml,box,18.5,40.7,29.8,53.4,홀카드 2장
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,tray_tr,box,70.3,16.1,81.5,28.9,홀카드 2장
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,tray_mr,box,70.3,40.7,81.5,53.4,홀카드 2장
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,seat_tl,point,13.0,21.1,,,
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,seat_ml,point,13.0,45.8,,,
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,seat_tr,point,87.2,21.1,,,
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,seat_mr,point,87.2,45.8,,,
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,total_box,box,36.2,47.3,63.8,53.6,Total
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,hero_avatar,point,35.2,72.5,,,
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,hero_cards,box,42.1,65.7,57.9,83.8,2장
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,hero_card,box,42.1,65.7,50.0,83.8,
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,action_bar,box,61.9,65.4,79.7,90.6,2열×4행 그리드(심플 베팅셋)
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,action_btn_1,box,61.9,65.4,70.2,71.0,콜 [7]
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,action_btn_2,box,70.7,65.4,79.5,71.0,다이 [8]
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,action_btn_3,box,61.9,71.8,70.2,77.5,금액1 [4]
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,action_btn_4,box,70.7,71.8,79.5,77.5,체크 [5]
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,action_btn_5,box,61.9,78.3,70.2,83.9,금액2 [1]
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,action_btn_6,box,61.9,84.7,70.2,90.4,하프 [0]
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,action_btn_7,box,70.7,84.7,79.5,90.4,올인 [3]
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,menu_tr,box,85.7,5.3,98.1,9.4,캡쳐·메뉴
+HGPCH,PC 한게임포커,홀덤 5인,pc,landscape,1.759,WEB-12(03) 공식 가이드 이미지,H,exit_br,box,84.5,94.5,98.0,99.2,방이동·나가기
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,tabs,box,2.8,3.7,43.4,8.7,
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,menu_tr,box,90.3,3.7,97.6,7.5,
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,seat_1,point,50.1,11.8,,,
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,seat_2,point,20.2,22.7,,,
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,seat_3,point,80.1,22.7,,,
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,seat_4,point,89.3,46.8,,,
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,table,box,8.3,13.9,92.5,75.0,
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,pot,box,32.9,41.8,67.2,45.7,
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,board,box,21.4,50.0,78.6,57.9,"5칸, 간격 11.5%W"
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,board_card,box,21.4,50.0,32.4,57.7,
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,hero_cards,box,39.3,66.8,61.2,76.1,2장 부채꼴
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,hero_avatar,point,50.1,78.4,,,지름 16.6%W
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,action_bar,box,2.8,88.0,97.2,96.3,3칸
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,action_btn_1,box,2.8,88.0,32.73,96.3,폴드
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,action_btn_2,box,35.03,88.0,64.97,96.3,체크/콜
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,action_btn_3,box,67.27,88.0,97.2,96.3,베팅/레이즈
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,emoji,point,7.7,70.1,,,
+PS16,피망 쇼다운 홀덤,홀덤 6인,mobile,portrait,0.56,WEB-2(02) 실캡처 16:9 기기,H,shop,point,7.7,76.3,,,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,tabs,box,2.9,1.5,26.8,5.7,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,menu_tr,box,90.0,1.5,97.3,4.7,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,seat_1,point,37.3,10.7,,,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,seat_2,point,62.2,10.7,,,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,seat_3,point,23.2,17.7,,,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,seat_4,point,76.7,18.0,,,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,seat_5,point,15.9,27.7,,,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,seat_6,point,83.2,27.3,,,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,seat_7,point,11.3,38.0,,,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,table,box,6.5,12.3,94.0,66.7,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,pot,box,33.0,34.3,67.6,37.5,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,board,box,18.1,41.5,82.0,48.7,"5칸, 간격 13.0%W"
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,board_card,box,18.1,41.5,30.7,48.7,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,hero_cards,box,38.4,55.5,61.5,63.3,2장 부채꼴
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,hero_avatar,point,49.9,64.0,,,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,emoji,point,6.5,57.9,,,
+PS195,피망 쇼다운 홀덤,홀덤 9인,mobile,portrait,0.461,AS-pmang_showdown-iphone-04,M,shop,point,6.5,63.2,,,
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,seat_1,point,50.0,13.9,,,
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,seat_2,point,16.8,29.3,,,
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,seat_3,point,83.1,29.3,,,
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,seat_4,point,12.0,49.3,,,
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,seat_5,point,88.3,49.3,,,
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,table,box,9.9,16.0,90.3,72.9,
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,pot,box,35.5,28.9,65.2,31.3,
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,board,box,18.0,36.6,82.3,43.6,"5장, 간격 12.9%W"
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,board_card,box,18.0,36.6,30.0,43.5,
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,hero_cards,box,53.7,71.3,81.2,81.1,2장 나란히
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,hero_card,box,53.7,71.3,67.0,81.1,
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,hero_avatar,point,36.4,74.3,,,지름 23%W
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,action_bar,box,1.0,90.0,99.0,97.0,3칸(원근 목업에서 읽은 값)
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,action_btn_1,box,1.0,90.0,33.0,97.0,폴드
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,action_btn_2,box,34.0,90.0,66.0,97.0,콜
+WPL,WPL,홀덤 6인,mobile,portrait,0.447,AS-wpl-iphone-01 (폰 목업 화면 영역),M,action_btn_3,box,67.0,90.0,99.0,97.0,레이즈/확인
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,tabs,box,3.1,5.7,29.1,10.2,
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,menu_tr,box,82.0,5.1,97.8,8.7,상점·메뉴
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,seat_1,point,30.2,17.5,,,
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,seat_2,point,73.5,17.1,,,
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,seat_3,point,19.3,29.6,,,
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,seat_4,point,84.4,28.2,,,
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,seat_5,point,14.7,43.9,,,
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,seat_6,point,88.5,41.8,,,
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,seat_7,point,13.2,62.9,,,
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,seat_8,point,88.5,57.9,,,
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,table,box,15.0,16.0,91.0,78.0,
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,board,box,20.4,46.8,86.7,55.4,"5장, 간격 13.6%W"
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,board_card,box,20.4,46.8,33.6,55.0,
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,hero_cards,box,38.4,63.7,68.9,75.0,쇼다운 확대 상태
+HR,한게임 로얄홀덤,홀덤 9인,mobile,portrait,0.462,AS-hangame_royal-iphone-05 (기울기 보정),M,emoji,point,7.3,90.4,,,
