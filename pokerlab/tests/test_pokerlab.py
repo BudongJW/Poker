@@ -8,7 +8,7 @@ import urllib.request
 import numpy as np
 import pytest
 
-from pokerlab import advisor, daily, inference, phh, preflop, report, selfplay, web
+from pokerlab import advisor, daily, inference, phh, preflop, report, selfplay, table, vision, web
 from pokerlab.bots import BOT_TYPES, Bot, make_bot
 from pokerlab.cards import ALL_CLASSES, card, class_combos, hand_class, parse_cards
 from pokerlab.engine import CALL, FOLD, RAISE, play_hand, position_name
@@ -973,3 +973,258 @@ def test_em_recovers_the_model_when_cards_are_hidden(tmp_path):
     fits = {name: inference.action_fit(full, model)["log_likelihood"] for name, model in
             (("truth", truth), ("learned", learned), ("naive", naive))}
     assert fits["truth"] >= fits["learned"] > fits["naive"]
+
+
+# ---- reading a hand off pictures of the table ------------------------------------------
+
+def _played(kinds, n, stacks, seed, hands):
+    """Hands the engine played -> (result, stacks, button) for each."""
+    rng = random.Random(seed)
+    bots = [make_bot(kinds[i % len(kinds)], seed=seed * 100 + i) for i in range(n)]
+    for index in range(hands):
+        chips = [rng.choice(stacks) for _ in range(n)]
+        yield play_hand(bots, chips, index % n, 5, 10, rng), chips, index % n
+
+
+@pytest.mark.parametrize("kinds, n, stacks", [
+    (("random", "maniac", "station"), 6, (1000,)),              # raises and re-raises, everybody deep
+    (("maniac", "random"), 2, (1000,)),                         # heads-up: the button posts the small blind
+    (("maniac", "random", "lag"), 6, (60, 150, 300, 1000, 2500)),   # short stacks: all-ins, calls for less, side pots
+    (("tag", "lag", "nit", "random"), 9, (400, 1000)),
+])
+def test_a_picture_per_decision_gives_the_hand_back_exactly(kinds, n, stacks):
+    checked = 0
+    for result, chips, button in _played(kinds, n, stacks, seed=n, hands=40):
+        for hero in range(n):
+            shots = table.frames(result, chips, hero, 5)
+            decisions = [i for i, a in enumerate(result.actions) if a[1] == hero]
+            assert len(shots) == len(decisions)
+            for k, upto in enumerate(decisions):
+                hand = table.reconstruct(shots[:k + 1])
+                seat_of = lambda seat: int(hand["names"][seat][1:])        # frames() names the players p0, p1, ...
+                got = [(seat_of(seat), street, ctx, code) for seat, street, ctx, code in
+                       inference.observed(hand["actions"], n, hand["button"], hand["absent"])]
+                # positions, players left, prices, bet sizes, all-ins and stack depths: all as the engine logged them
+                assert got == inference.observed(result.actions[:upto], n, button)
+                assert seat_of(hand["button"]) == button and seat_of(hand["hero_seat"]) == hero
+                assert hand["pot"] == pytest.approx(result.actions[upto][4])
+                assert hand["to_call"] == pytest.approx(result.actions[upto][5])
+                checked += 1
+    assert checked > 200
+
+
+def test_a_single_picture_reads_the_street_being_played():
+    exact = total = 0
+    for result, chips, button in _played(("tag", "lag", "nit"), 6, (1000,), seed=3, hands=60):
+        for hero in range(6):
+            shots = table.frames(result, chips, hero, 5)
+            for k, upto in enumerate(i for i, a in enumerate(result.actions) if a[1] == hero):
+                street = result.actions[upto][0]
+                truth = [x for x in inference.observed(result.actions[:upto], 6, button) if x[1] == street]
+                if any(seat == hero for seat, _, _, _ in truth):
+                    continue                            # the hero has acted on this street before: one picture cannot show how
+                hand = table.reconstruct(shots[k:k + 1])
+                got = [(int(hand["names"][seat][1:]), code) for seat, st, _, code in
+                       inference.observed(hand["actions"], 6, hand["button"], hand["absent"]) if st == street]
+                total += 1
+                exact += got == [(seat, code) for seat, _, _, code in truth]
+                assert bool(hand["notes"]) == (street > 0)      # it says so when earlier streets are missing
+                assert all(a[0] == street for a in hand["actions"])
+    assert total > 150 and exact / total > 0.97
+
+
+def _shot(**changes):
+    """Six-handed, blinds 1/2, seats clockwise from the button: the cutoff has opened to 6, everybody else has
+    folded, and the hero in the big blind is to act."""
+    seats = [{"name": name, "stack": stack, "bet": bet, "in_hand": live} for name, stack, bet, live in (
+        ("btn", 200, 0, False), ("sb", 199, 1, False), ("me", 198, 2, True), ("utg", 200, 0, False), ("hj", 200, 0, False),
+        ("co", 194, 6, True))]
+    seats[0]["button"], seats[2]["hero"] = True, True
+    return dict({"hero": "AsKd", "board": "", "pot": 9, "big_blind": 2, "seats": seats}, **changes)
+
+
+def test_positions_and_actions_come_from_what_the_table_shows():
+    hand = table.reconstruct([_shot()])
+    assert (hand["n_players"], hand["button"], hand["hero_seat"], hand["big_blind"]) == (6, 0, 2, 2)
+    assert [(a[1], a[2]) for a in hand["actions"]] == [(3, "fold"), (4, "fold"), (5, "raise"), (0, "fold"), (1, "fold")]
+    assert hand["live"] == [2, 5] and hand["pot"] == 9 and hand["to_call"] == 4
+    seats = table.describe(hand)
+    assert [seat["position"] for seat in seats] == ["BTN", "SB", "BB", "UTG", "HJ", "CO"]
+    assert seats[5]["actions"] == "프리플랍 레이즈 3.0bb (팟의 80%)" and seats[2]["hero"] and not seats[0]["in_hand"]
+    opened = inference.observed(hand["actions"], 6, 0)[2]
+    assert opened[2][5] == inference.POSITIONS.index("co") and opened[3] == inference.BET_MEDIUM
+    assert opened[2][6] == inference.VERY_DEEP                               # 194 behind a pot of 5
+
+    # the next picture: I called, and on the flop the cutoff has bet 10 into 13
+    flop = _shot(board="Qs7h2d", pot=23)
+    for seat, (stack, bet, live) in zip(flop["seats"], ((200, 0, False), (199, 0, False), (194, 0, True),
+                                                         (200, 0, False), (200, 0, False), (184, 10, True))):
+        seat.update(stack=stack, bet=bet, in_hand=live)
+    hand = table.reconstruct([_shot(), flop])
+    assert [(a[0], a[1], a[2]) for a in hand["actions"]][5:] == [
+        (0, 2, "call"), (1, 2, "check"), (1, 5, "raise")]                     # I act first on the flop, so I checked
+    assert hand["pot"] == 23 and hand["to_call"] == 10 and not hand["notes"]
+    analysis, hand = table.analyze([_shot(), flop], trials=5000, seed=1)
+    assert analysis["n_players"] == 2 and analysis["pot_odds"]["required_equity"] == pytest.approx(10 / 33)
+    assert analysis["ranges"][0]["seat"] == 5 and analysis["ranges"][0]["label"].startswith("컷오프: 프리플랍 레이즈")
+    assert "플랍 벳 5.0bb (팟의 77%)" in analysis["ranges"][0]["label"]
+    assert any("컷오프" in line for line in table.summary(hand)) and "승률" in advisor.report(analysis)
+
+    # the flop picture alone: what happened before the flop is not there to be read
+    alone = table.reconstruct([flop])
+    assert [(a[1], a[2]) for a in alone["actions"]] == [(2, "check"), (5, "raise")]
+    assert alone["absent"] == [0, 1, 3, 4] and "플랍 이전" in alone["notes"][0]
+    assert inference.observed(alone["actions"], 6, 0, alone["absent"])[1][2][3] == 0     # two players left
+
+
+def test_snapshots_are_checked_and_put_in_order():
+    # seats given in any order with their places on the picture are sorted clockwise
+    places = {"btn": (0.5, 0.9), "sb": (0.15, 0.7), "me": (0.15, 0.3), "utg": (0.5, 0.1), "hj": (0.85, 0.3), "co": (0.85, 0.7)}
+    shuffled = _shot()
+    for seat in shuffled["seats"]:
+        seat["x"], seat["y"] = places[seat["name"]]
+    shuffled["seats"] = shuffled["seats"][::-1][2:] + shuffled["seats"][::-1][:2]
+    hand = table.reconstruct([shuffled])
+    order = hand["names"][hand["button"]:] + hand["names"][:hand["button"]]
+    assert order == ["btn", "sb", "me", "utg", "hj", "co"]
+    assert [(hand["names"][a[1]], a[2]) for a in hand["actions"]] == [
+        ("utg", "fold"), ("hj", "fold"), ("co", "raise"), ("btn", "fold"), ("sb", "fold")]
+    # a player who sits out is not dealt in; a button left at such a seat counts for the player before it
+    away = _shot()
+    away["seats"][0].update(sitting_out=True)
+    away["seats"].insert(0, dict(name="gone", stack=50, bet=0, in_hand=False, sitting_out=True))
+    assert table.normalize(away)["button"] == 4 and len(table.normalize(away)["seats"]) == 5
+    assert table.normalize(_shot(big_blind=2, pot=None))["pot"] is None
+    for bad, message in ((_shot(hero="As"), "내 카드"), (_shot(board="QsJs"), "보드"), (_shot(hero="AsAs"), "duplicate"),
+                         (_shot(board="AsQd2c"), "같은 카드"), (_shot(seats=_shot()["seats"][:1]), "플레이어")):
+        with pytest.raises(ValueError, match=message):
+            table.normalize(bad)
+    two_buttons = _shot()
+    two_buttons["seats"][3]["button"] = True
+    with pytest.raises(ValueError, match="딜러 버튼"):
+        table.normalize(two_buttons)
+    with pytest.raises(ValueError, match="순서"):
+        table.reconstruct([_shot(board="Qs7h2d"), _shot()])                 # a later picture shows an earlier street
+    with pytest.raises(ValueError, match="내 액션"):
+        table.reconstruct([_shot(), _shot()])                               # the same picture twice
+    # stacks that could not be read: actions are still found, depth and all-ins are left out, and it says so
+    blind = _shot()
+    for seat in blind["seats"]:
+        seat["stack"] = None
+    hand = table.reconstruct([blind])
+    assert [a[2] for a in hand["actions"]] == ["fold", "fold", "raise", "fold", "fold"] and "스택" in hand["notes"][0]
+    assert {ctx[6] for _, _, ctx, _ in inference.observed(hand["actions"], 6, 0)} == {inference.ANY_DEPTH}
+    # the stakes are not on the picture: the big blind is taken from the chips in front, and it says so
+    guessed = table.reconstruct([_shot(big_blind=None)])
+    assert guessed["big_blind"] == 2 and "빅 블라인드" in guessed["notes"][0]
+    # a picture taken while somebody before me still has to act: the replay stops there and makes nothing up
+    early = _shot()
+    early["seats"][1]["in_hand"] = True
+    hand = table.reconstruct([early])
+    assert [a[1] for a in hand["actions"]] == [3, 4, 5, 0] and hand["live"] == [1, 2, 5]
+
+
+def test_vision_answers_become_snapshots(monkeypatch):
+    answer = {"is_poker_table": True, "hero_cards": ["as", "10d"], "board": ["Q♠", "7h", "2D"], "pot": 23, "pot_includes_bets": None,
+              "big_blind": 2, "seats": [
+                  {"name": "me", "x": 0.5, "y": 0.9, "stack": 194, "bet": 0, "in_hand": True, "is_hero": True, "has_button": False,
+                   "sitting_out": False, "all_in": False},
+                  {"name": "co", "x": 0.5, "y": 0.1, "stack": None, "bet": 10, "in_hand": True, "is_hero": False, "has_button": True,
+                   "sitting_out": False, "all_in": True}]}
+    snapshot = vision.to_snapshot(answer)
+    assert (snapshot["hero"], snapshot["board"], snapshot["pot_includes_bets"]) == ("AsTd", "Qs7h2d", True)
+    assert snapshot["seats"][1]["stack"] == 0 and snapshot["seats"][1]["button"] and snapshot["seats"][0]["hero"]
+    assert table.normalize(snapshot)["street"] == 1
+    with pytest.raises(vision.VisionError, match="홀덤 테이블"):
+        vision.to_snapshot({"is_poker_table": False, "seats": []})
+    with pytest.raises(vision.VisionError):
+        vision.to_snapshot(["not", "an", "object"])
+
+    sent = {}
+
+    class Reply:
+        def __init__(self, payload):
+            self.payload = payload
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self, *_):
+            return json.dumps(self.payload).encode()
+
+    def answer_with(payload):
+        def fake(request, timeout=None):
+            sent.update(url=request.full_url, headers=dict(request.header_items()), body=json.loads(request.data))
+            return Reply(payload)
+        monkeypatch.setattr(vision.urllib.request, "urlopen", fake)
+
+    answer_with({"status": "completed", "steps": [{"type": "thought"}, {"type": "model_output", "content": [
+        {"type": "text", "text": json.dumps(answer)}]}]})
+    monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    assert vision.recognize(b"\x89PNG...", "image/png") == snapshot
+    assert sent["url"] == vision.URL and sent["headers"]["X-goog-api-key"] == "test-key"
+    assert sent["body"]["model"] == vision.DEFAULT_MODEL and sent["body"]["store"] is False
+    assert [part["type"] for part in sent["body"]["input"]] == ["text", "image"]
+    assert sent["body"]["input"][1]["mime_type"] == "image/png" and sent["body"]["response_format"]["schema"] == vision.SCHEMA
+    answer_with({"status": "failed", "steps": []})
+    with pytest.raises(vision.VisionError, match="답을 주지"):
+        vision.recognize(b"x", "image/png")
+    answer_with({"output_text": "not json"})
+    with pytest.raises(vision.VisionError, match="JSON"):
+        vision.recognize(b"x", "image/png")
+
+    def refuse(code):
+        def fake(request, timeout=None):
+            raise urllib.error.HTTPError(request.full_url, code, "no", {}, __import__("io").BytesIO(b"{}"))
+        monkeypatch.setattr(vision.urllib.request, "urlopen", fake)
+
+    refuse(403)
+    with pytest.raises(vision.VisionError, match="거부"):
+        vision.recognize(b"x", "image/png")
+    refuse(429)
+    with pytest.raises(vision.VisionError, match="한도"):
+        vision.recognize(b"x", "image/png")
+    monkeypatch.delenv("GEMINI_API_KEY")
+    monkeypatch.delenv("GOOGLE_API_KEY", raising=False)
+    refuse(400)
+    with pytest.raises(vision.VisionError, match="GEMINI_API_KEY"):
+        vision.recognize(b"x", "image/png")
+    with pytest.raises(vision.VisionError, match="형식"):
+        vision.recognize(b"x", "image/gif")
+    with pytest.raises(vision.VisionError, match="비어"):
+        vision.recognize(b"", "image/png")
+
+
+def test_pictures_through_the_web_api_and_the_command_line(tmp_path, monkeypatch, capsys):
+    from pokerlab.__main__ import main
+
+    flop = _shot(board="Qs7h2d", pot=23)
+    for seat, (stack, bet, live) in zip(flop["seats"], ((200, 0, False), (199, 0, False), (194, 0, True),
+                                                         (200, 0, False), (200, 0, False), (184, 10, True))):
+        seat.update(stack=stack, bet=bet, in_hand=live)
+    out = web.table_request({"snapshots": [_shot(), flop], "trials": 5000, "model": "online"})
+    json.dumps(out)
+    assert out["table"]["hero"] == ["As", "Kd"] and out["table"]["board"] == ["Qs", "7h", "2d"]
+    assert [seat["position"] for seat in out["table"]["seats"]] == ["BTN", "SB", "BB", "UTG", "HJ", "CO"]
+    assert out["ranges"][0]["seat"] == 5 and out["pot_odds"]["to_call"] == 10 and out["table"]["live"] == 2
+    for bad in ({"snapshots": []}, {"snapshots": "x"}, {"snapshots": [_shot()], "model": "/etc/passwd"}, {"snapshots": [{}]}):
+        with pytest.raises(ValueError):
+            web.table_request(bad)
+    monkeypatch.setattr(vision, "recognize", lambda image, mime_type: {"read": len(image), "as": mime_type})
+    assert web.recognize_request({"image": "data:image/jpeg;base64,QUJD"}) == {"snapshot": {"read": 3, "as": "image/jpeg"}}
+    assert web.recognize_request({"image": "QUJD"})["snapshot"]["as"] == "image/png"
+    with pytest.raises(ValueError, match="이미지 데이터"):
+        web.recognize_request({"image": "not base64!"})
+
+    path = tmp_path / "hand.json"
+    path.write_text(json.dumps([_shot(), flop]))
+    saved = tmp_path / "read.json"
+    main(["read", str(path), "--trials", "5000", "--seed", "1", "--save", str(saved)])
+    printed = capsys.readouterr().out
+    assert "[인식된 테이블] 6명 중 2명 남음" in printed and "컷오프" in printed and "팟 오즈" in printed
+    assert json.loads(saved.read_text()) == [_shot(), flop]
+    main(["read", str(path), "--trials", "5000", "--json"])
+    assert json.loads(capsys.readouterr().out)["table"][5]["position"] == "CO"

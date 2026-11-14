@@ -56,7 +56,7 @@ def _next_cards(hero, board, n_opp, ranges, current, seed):
 
 def analyze(hero, board=(), n_players=2, pot=None, to_call=None, ranges=(), trials=200_000, seed=None,
             precision=None, bet=None, lines=(), profile="all", model=DEFAULT_MODEL, position=None, table=None,
-            stack=None):
+            stack=None, labels=None):
     """All the numbers behind :func:`explain`, as a dict.
 
     ranges: known ranges of opponents; lines: action lines of opponents (see
@@ -67,11 +67,11 @@ def analyze(hero, board=(), n_players=2, pot=None, to_call=None, ranges=(), tria
     ``stack`` is the effective stack in big blinds at the start of the hand, for lines that do not
     carry their own ('btn 40bb: open/bet').
     Opponents with neither hold random hands. ``precision`` (e.g. 0.001) makes Monte Carlo run
-    until that 95% interval.
+    until that 95% interval. ``labels`` name the given ``ranges`` in the report.
     """
     hero, board = parse_cards(hero), parse_cards(board)
     n_opp = n_players - 1
-    labels = ["지정 레인지"] * len(ranges) + list(lines)
+    labels = list(labels or ["지정 레인지"] * len(ranges)) + list(lines)
     ranges = [as_range(r) for r in ranges] + [
         range_from_line(line, hero, board, n_players, load_model(model), profile, position, table, stack)
         for line in lines]
@@ -129,7 +129,8 @@ def to_json(analysis):
     if "made_hand" in analysis:
         out["made_hand"] = CATEGORIES[analysis["made_hand"]]
     out["ranges"] = [{"label": s["label"], "width": s["width"], "top": [list(item) for item in s["top"]],
-                      "classes": s["classes"]} for s in analysis["ranges"]]
+                      "classes": s["classes"], **({"seat": s["seat"]} if "seat" in s else {})}
+                     for s in analysis["ranges"]]
     if "next_cards" in analysis:
         nc = analysis["next_cards"]
         out["next_cards"] = {
@@ -143,9 +144,13 @@ def explain(hero, board=(), n_players=2, pot=None, to_call=None, ranges=(), tria
             precision=None, bet=None, lines=(), profile="all", model=DEFAULT_MODEL, position=None, table=None,
             stack=None):
     """Korean-language report for one spot."""
-    a = analyze(hero, board, n_players, pot, to_call, ranges, trials, seed, precision, bet, lines, profile, model,
-                position, table, stack)
-    r = a["result"]
+    return report(analyze(hero, board, n_players, pot, to_call, ranges, trials, seed, precision, bet, lines, profile,
+                          model, position, table, stack))
+
+
+def report(a):
+    """The dict from :func:`analyze` as a Korean-language report."""
+    r, n_players = a["result"], a["n_players"]
     n_opp = n_players - 1
     assumed = "레인지 지정" if a["ranged"] else "랜덤 핸드 가정"
     lines_out = [f"[{STREET_KO[len(a['board'])]}] 내 핸드 {cards_str(a['hero'])} ({a['hand_class']})"

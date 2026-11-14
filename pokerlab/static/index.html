@@ -72,6 +72,28 @@ input[type=number] { width: 84px; }
 @media (max-width: 480px) { .streets { grid-template-columns: repeat(2, minmax(0, 1fr)); } .pick { font-size: 11.5px; } }
 .opponent input[type=text] { flex: 1; }
 label.field { display: grid; gap: 2px; font-size: 12px; color: var(--ink-2); }
+/* table pictures: what was read replaces what would be picked by hand */
+.shots { display: grid; gap: 6px; }
+.shot { display: grid; grid-template-columns: 64px minmax(0, 1fr) auto; gap: 8px; align-items: center;
+  border: 1px solid var(--grid); border-radius: 8px; padding: 6px; }
+.shot img, .shot .ph { width: 64px; height: 40px; border-radius: 4px; }
+.shot img { object-fit: cover; }
+.shot .ph { background: var(--wash); display: grid; place-items: center; font-size: 11px; color: var(--ink-2); }
+.shot .what { min-width: 0; font-size: 12.5px; overflow-wrap: anywhere; }
+.shot .what b { font-weight: 650; }
+.shot textarea { grid-column: 1 / -1; width: 100%; min-height: 180px; background: var(--surface); color: var(--ink);
+  border: 1px solid var(--baseline); border-radius: 6px; font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace; }
+.shot .apply { grid-column: 1 / -1; justify-self: start; }
+.drop { border: 1px dashed var(--baseline); border-radius: 8px; padding: 10px; }
+.drop.over { border-color: var(--pos); background: var(--wash); }
+.from-table .manual { display: none; }
+.seats { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.seats th, .seats td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+.seats th { font-weight: 400; color: var(--ink-2); }
+.seats td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.seats tr.me td { font-weight: 650; }
+.seats tr.out td { color: var(--muted); }
+.scroll-x { overflow-x: auto; }
 
 /* results */
 #result.loading { opacity: 0.55; }
@@ -140,21 +162,30 @@ th { color: var(--muted); }
 <main>
   <h1>승률 계산기 <small>텍사스 홀덤 · 학습/복기용</small></h1>
 
-  <section class="card-box stack" aria-label="입력">
+  <section class="card-box stack" id="input" aria-label="입력">
+    <div class="stack drop" id="drop" style="gap:8px">
+      <div class="row">
+        <h2 style="margin:0">테이블 이미지로 입력 <small>같은 핸드, 찍은 순서대로</small></h2>
+        <label class="btn" style="margin-left:auto">이미지 추가<input type="file" id="shotFile"
+          accept="image/png,image/jpeg,image/webp,application/json,.json" multiple hidden></label>
+      </div>
+      <div id="shots" class="shots"></div>
+      <p class="hint" id="shotHint">스크린샷을 올리거나 끌어다 놓거나 붙여 넣으면 좌석·스택·앞에 놓인 칩·딜러 버튼·카드를 읽고, 포지션과 상대의 액션·벳 크기·올인을 자동으로 계산합니다. 내 결정 시점마다 한 장씩 넣으면 핸드 전체를, 한 장만 넣으면 지금 스트리트를 읽습니다. 이미지는 인식을 위해 Google Gemini로 전송됩니다.</p>
+    </div>
     <div class="slots" id="slots"></div>
-    <div class="picker" id="picker" aria-label="카드 선택"></div>
+    <div class="picker manual" id="picker" aria-label="카드 선택"></div>
     <div class="row">
-      <label class="field">판에 남은 인원(나 포함)
+      <label class="field manual">판에 남은 인원(나 포함)
         <select id="players"></select>
       </label>
-      <label class="field">테이블
+      <label class="field manual">테이블
         <select id="table">
           <option value="2">1:1</option>
           <option value="6" selected>6인</option>
           <option value="9">9인</option>
         </select>
       </label>
-      <label class="field">내 포지션
+      <label class="field manual">내 포지션
         <select id="position"></select>
       </label>
       <label class="field">정밀도
@@ -167,13 +198,13 @@ th { color: var(--muted); }
       </label>
       <button class="btn" id="reset" type="button" style="margin-left:auto;align-self:flex-end">초기화</button>
     </div>
-    <div class="row">
+    <div class="row manual">
       <label class="field">팟 <input type="number" id="pot" min="0" step="any" placeholder="예: 100"></label>
       <label class="field">콜 금액 <input type="number" id="toCall" min="0" step="any" placeholder="예: 50"></label>
       <label class="field">내 베팅 <input type="number" id="bet" min="0" step="any" placeholder="예: 75"></label>
     </div>
     <div class="stack" style="gap:8px">
-      <div class="row">
+      <div class="row manual">
         <h2 style="margin:0">상대 설정 <small>지정하지 않은 상대는 랜덤 핸드</small></h2>
         <button class="btn" id="addOpponent" type="button" style="margin-left:auto">상대 추가</button>
       </div>
@@ -188,7 +219,7 @@ th { color: var(--muted); }
           <option value="selfplay:all">이 프로그램의 봇</option>
         </select>
       </label>
-      <div id="opponents" class="stack" style="gap:8px"></div>
+      <div id="opponents" class="stack manual" style="gap:8px"></div>
     </div>
   </section>
 
@@ -234,7 +265,7 @@ function seatSelect(value, onchange) {
   return sel;
 }
 
-const state = {slots: Array(7).fill(null), active: 0, players: 2, opponents: [], seq: 0, timer: null};
+const state = {slots: Array(7).fill(null), active: 0, players: 2, opponents: [], seq: 0, timer: null, shots: []};
 const $ = id => document.getElementById(id);
 const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text != null) e.textContent = text; return e; };
 const pct = (x, digits = 1) => (x * 100).toFixed(digits) + "%";
@@ -268,7 +299,7 @@ function renderSlots() {
       const b = el("button", "slot" + (card ? " filled suit-" + card[1] : "") + (i === state.active ? " active" : ""), card ? cardLabel(card) : "");
       b.type = "button";
       b.setAttribute("aria-label", SLOT_NAMES[g] + (card ? " " + cardLabel(card) + " (누르면 지움)" : " 빈 칸"));
-      b.onclick = () => { if (card) state.slots[i] = null; state.active = i; renderInput(); schedule(); };
+      b.onclick = () => { if (fromTable()) return; if (card) state.slots[i] = null; state.active = i; renderInput(); schedule(); };
       box.append(b);
     }
     group.append(box); root.append(group);
@@ -355,9 +386,10 @@ function renderInput() { renderSlots(); renderPicker(); renderOpponents(); }
 function schedule(delay = 200) { clearTimeout(state.timer); state.timer = setTimeout(request, delay); }
 async function request() {
   const [h1, h2] = state.slots, street = boardStreet(), result = $("result");
+  const quality = {fast: {trials: 50000}, normal: {trials: 200000}, precise: {precision: 0.001}, ultra: {precision: 0.0005}}[$("quality").value];
+  if (fromTable()) { requestTable(quality); return; }
   if (!h1 || !h2) return;
   if (street < 0) { renderMessage("보드는 비워 두거나 플랍 3장, 턴, 리버 순서로 채워 주세요."); return; }
-  const quality = {fast: {trials: 50000}, normal: {trials: 200000}, precise: {precision: 0.001}, ultra: {precision: 0.0005}}[$("quality").value];
   const opponents = state.opponents.map(o => o.type === "line"
     ? {type: "line", position: o.position || "", stack: o.stack || "",
        value: o.streets.slice(0, street + 1).map((a, i) => withSize(a, o.sizes[i])).join("/").replace(/\/+$/, "")}
@@ -379,6 +411,111 @@ async function request() {
     if (seq === state.seq) result.classList.remove("loading");
   }
 }
+
+/* ---- table pictures ---- */
+const fromTable = () => state.shots.some(shot => shot.snapshot);
+async function post(url, body) {
+  const response = await fetch(url, {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(body)});
+  return response.json();
+}
+async function requestTable(quality) {
+  const result = $("result"), [model, profile] = $("model").value.split(":"), seq = ++state.seq;
+  const waiting = state.shots.filter(shot => shot.status === "reading").length;
+  if (waiting) { renderMessage(`이미지 ${waiting}장을 읽는 중입니다.`); return; }
+  result.classList.add("loading");
+  try {
+    const data = await post("/api/table", {snapshots: state.shots.filter(s => s.snapshot).map(s => s.snapshot), model, profile, ...quality});
+    if (seq !== state.seq) return;
+    if (data.error) { renderMessage(data.error, true); return; }
+    state.slots = [...data.table.hero, ...data.table.board, ...Array(5).fill(null)].slice(0, 7);
+    state.active = -1; renderSlots(); renderResult(data);
+  } catch (e) {
+    if (seq === state.seq) renderMessage("서버에 연결할 수 없습니다: " + e.message, true);
+  } finally {
+    if (seq === state.seq) result.classList.remove("loading");
+  }
+}
+function describeSnapshot(snapshot) {
+  const cards = (snapshot.board || "").length / 2, seats = (snapshot.seats || []).filter(seat => !seat.sitting_out);
+  return `${["프리플랍", "", "", "플랍", "턴", "리버"][cards] || "보드 " + cards + "장"} · ${seats.length}명 · 남은 ${seats.filter(seat => seat.in_hand).length}명` +
+    (snapshot.pot != null ? ` · 팟 ${snapshot.pot}` : "");
+}
+function renderShots() {
+  $("input").classList.toggle("from-table", fromTable());
+  $("shotHint").hidden = state.shots.length > 0;
+  $("shots").replaceChildren(...state.shots.map((shot, i) => {
+    const row = el("div", "shot");
+    if (shot.url) { const img = el("img"); img.src = shot.url; img.alt = `${i + 1}번째 이미지`; row.append(img); }
+    else row.append(el("div", "ph", "JSON"));
+    const what = el("div", "what");
+    what.append(el("b", null, `${i + 1}. `), document.createTextNode(shot.status === "reading" ? "읽는 중…"
+      : shot.status === "error" ? shot.error : describeSnapshot(shot.snapshot)));
+    if (shot.status === "error") what.classList.add("error");
+    const buttons = el("div", "row"); buttons.style.gap = "4px";
+    if (shot.snapshot) {
+      const edit = el("button", "btn", shot.editing ? "닫기" : "수정"); edit.type = "button";
+      edit.onclick = () => { shot.editing = !shot.editing; renderShots(); };
+      buttons.append(edit);
+    }
+    const remove = el("button", "btn", "삭제"); remove.type = "button"; remove.setAttribute("aria-label", `${i + 1}번째 이미지 삭제`);
+    remove.onclick = () => { state.shots.splice(i, 1); state.seq++; renderShots(); afterShots(); };
+    buttons.append(remove); row.append(what, buttons);
+    if (shot.editing) {
+      const area = el("textarea"); area.value = JSON.stringify(shot.snapshot, null, 1); area.spellcheck = false;
+      area.setAttribute("aria-label", `${i + 1}번째 이미지에서 읽은 값`);
+      const apply = el("button", "btn apply", "고친 값으로 다시 계산"); apply.type = "button";
+      apply.onclick = () => {
+        try { shot.snapshot = JSON.parse(area.value); shot.editing = false; renderShots(); schedule(0); }
+        catch (e) { renderMessage("고친 값이 JSON 형식이 아닙니다: " + e.message, true); }
+      };
+      row.append(area, apply);
+    }
+    return row;
+  }));
+}
+function afterShots() {
+  if (fromTable() || state.shots.length) schedule(0);
+  else { renderInput(); if (state.slots[0] && state.slots[1]) schedule(0); else renderMessage("내 카드 두 장을 고르면 계산합니다. 보드는 비워 두거나 3·4·5장을 고르세요."); }
+}
+const readAs = (file, how) => new Promise((resolve, reject) => {
+  const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(reader.error); reader[how](file);
+});
+async function addShot(file) {
+  if (state.shots.length >= 12) { renderMessage("이미지는 한 핸드에 12장까지 넣을 수 있습니다.", true); return; }
+  if (file.type === "application/json" || /\.json$/i.test(file.name || "")) {          // snapshots that were read before
+    try {
+      const found = JSON.parse(await readAs(file, "readAsText"));
+      for (const snapshot of Array.isArray(found) ? found : [found]) state.shots.push({url: "", status: "ok", snapshot});
+    } catch (e) { state.shots.push({url: "", status: "error", error: "JSON 파일을 읽지 못했습니다: " + e.message}); }
+    renderShots(); afterShots(); return;
+  }
+  const shot = {url: await readAs(file, "readAsDataURL"), status: "reading"};
+  state.shots.push(shot); renderShots(); afterShots();
+  try {
+    const data = await post("/api/recognize", {image: shot.url});
+    if (data.error) { shot.status = "error"; shot.error = data.error; } else { shot.status = "ok"; shot.snapshot = data.snapshot; }
+  } catch (e) { shot.status = "error"; shot.error = "서버에 연결할 수 없습니다: " + e.message; }
+  if (state.shots.includes(shot)) { renderShots(); afterShots(); }
+}
+async function addShots(files) { for (const file of files) await addShot(file); }
+function tableCard(t) {
+  const amount = x => x == null ? "모름" : t.big_blind ? (x / t.big_blind).toFixed(1) + "bb" : String(+x.toFixed(2));
+  const box = section("이미지에서 읽은 테이블", `${t.n_players}명 중 ${t.live}명 남음 · 팟 ${amount(t.pot)} · 콜 금액 ${amount(t.to_call)}`);
+  const table = el("table", "seats"), head = el("tr");
+  for (const title of ["포지션", "플레이어", "스택", "앞에 놓인 칩", "액션"]) head.append(el("th", null, title));
+  table.append(head);
+  for (const seat of t.seats) {
+    const row = el("tr", (seat.hero ? "me " : "") + (seat.in_hand ? "" : "out"));
+    row.append(el("td", null, seat.position_ko), el("td", null, seat.hero ? "나" : seat.name || `자리 ${seat.seat + 1}`),
+      el("td", "num", amount(seat.stack)), el("td", "num", seat.bet ? amount(seat.bet) : "—"),
+      el("td", null, seat.actions || (seat.in_hand ? "아직 액션 없음" : "폴드")));
+    table.append(row);
+  }
+  const wrap = el("div", "scroll-x"); wrap.append(table); box.append(wrap);
+  for (const note of t.notes) box.append(el("p", "hint", "참고: " + note));
+  return box;
+}
+
 function renderMessage(text, isError) {
   const box = el("div", "card-box"); box.append(el("p", isError ? "error" : "hint", text));
   $("result").replaceChildren(box);
@@ -426,7 +563,8 @@ function renderResult(d) {
     facts.append(fact("베팅", `팟 ${d.bet.pot}에 ${d.bet.bet} → 블러프 손익분기 폴드율 ${pct(d.bet.bluff_breakeven_folds)} · 콜 받을 때 필요 승률 ${pct(d.bet.called_breakeven_equity)}`));
     facts.append(fact("베팅 기대값", `현재 승률 그대로 콜 받으면 ${d.bet.ev_if_called >= 0 ? "+" : ""}${d.bet.ev_if_called.toFixed(1)} · 체크로 쇼다운이면 +${d.bet.ev_check.toFixed(1)}`));
   }
-  if (!d.ranged) facts.append(fact("주의", "상대가 랜덤 핸드라는 가정입니다. 베팅·레이즈한 상대는 '상대 추가'로 액션을 넣으면 레인지를 추정해 다시 계산합니다."));
+  if (!d.ranged && d.table) facts.append(fact("주의", "남은 상대가 아직 액션하지 않아 랜덤 핸드로 계산했습니다."));
+  else if (!d.ranged) facts.append(fact("주의", "상대가 랜덤 핸드라는 가정입니다. 베팅·레이즈한 상대는 '상대 추가'로 액션을 넣으면 레인지를 추정해 다시 계산합니다."));
   head.append(facts); out.push(head);
 
   /* opponent ranges: sequential, one hue */
@@ -497,6 +635,7 @@ function renderResult(d) {
     }
     box.append(cols, axis, el("p", "hint", "가로축: 상대 수(명)")); out.push(box);
   }
+  if (d.table) out.splice(1, 0, tableCard(d.table));
   $("result").replaceChildren(...out);
 }
 
@@ -510,12 +649,20 @@ $("addOpponent").onclick = () => { state.opponents.push({type: "line", streets: 
 for (const [v, t] of SEATS) { const o = el("option", null, t); o.value = v; $("position").append(o); }
 $("position").onchange = () => schedule();
 $("table").onchange = () => schedule();
+$("shotFile").onchange = () => { addShots([...$("shotFile").files]); $("shotFile").value = ""; };
+document.addEventListener("paste", e => {
+  const files = [...(e.clipboardData ? e.clipboardData.files : [])].filter(f => f.type.startsWith("image/"));
+  if (files.length) { e.preventDefault(); addShots(files); }
+});
+for (const type of ["dragenter", "dragover"]) $("drop").addEventListener(type, e => { e.preventDefault(); $("drop").classList.add("over"); });
+for (const type of ["dragleave", "drop"]) $("drop").addEventListener(type, e => { e.preventDefault(); $("drop").classList.remove("over"); });
+$("drop").addEventListener("drop", e => addShots([...e.dataTransfer.files]));
 $("reset").onclick = () => {
-  state.slots.fill(null); state.active = 0; state.opponents = []; state.seq++;
+  state.slots.fill(null); state.active = 0; state.opponents = []; state.shots = []; state.seq++; renderShots();
   for (const id of ["pot", "toCall", "bet", "position"]) $(id).value = "";
   renderInput(); renderMessage("내 카드 두 장을 고르면 계산합니다. 보드는 비워 두거나 3·4·5장을 고르세요.");
 };
-renderInput();
+renderInput(); renderShots();
 </script>
 </body>
 </html>

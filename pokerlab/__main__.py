@@ -68,6 +68,19 @@ def main(argv=None):
     p.add_argument("--trials", type=int, default=200_000)
     p.add_argument("--seed", type=int)
 
+    p = sub.add_parser("read", help="read a hand off pictures of the table and analyse it: nothing is typed in")
+    p.add_argument("images", nargs="+", metavar="IMAGE",
+                   help="screenshots of one hand in the order they were taken, best one per decision of yours "
+                        "(PNG, JPEG or WebP). A .json file holds snapshots that were read before")
+    p.add_argument("--model", default=advisor.DEFAULT_MODEL,
+                   help=f"action model that reads the opponents: {', '.join(inference.MODELS)} or a model file")
+    p.add_argument("--profile", default="all")
+    p.add_argument("--precision", type=float, metavar="PCT")
+    p.add_argument("--trials", type=int, default=200_000)
+    p.add_argument("--seed", type=int)
+    p.add_argument("--save", metavar="FILE", help="write the snapshots that were read to this JSON file")
+    p.add_argument("--json", action="store_true", help="print the numbers as JSON instead of a report")
+
     p = sub.add_parser("simulate", help="bots play each other; every hand is stored in SQLite")
     p.add_argument("--db", default="selfplay.sqlite")
     p.add_argument("--hands", type=int, help="stop after this many hands")
@@ -147,6 +160,23 @@ def main(argv=None):
             print(json.dumps(advisor.to_json(advisor.analyze(**spot)), ensure_ascii=False, indent=1))
         else:
             print(advisor.explain(**spot))
+    elif args.command == "read":
+        from . import table, vision
+        snapshots = []
+        for path in args.images:
+            found = vision.read_file(path)
+            snapshots += found if isinstance(found, list) else [found]
+        if args.save:
+            with open(args.save, "w", encoding="utf-8") as fh:
+                json.dump(snapshots, fh, ensure_ascii=False, indent=1)
+        analysis, hand = table.analyze(snapshots, args.model, args.profile, args.trials, args.seed,
+                                       args.precision and args.precision / 100)
+        if args.json:
+            print(json.dumps(dict(advisor.to_json(analysis), table=table.describe(hand), notes=hand["notes"]),
+                             ensure_ascii=False, indent=1))
+        else:
+            print("\n".join(table.summary(hand)))
+            print(advisor.report(analysis))
     elif args.command == "matchup":
         results = matchup([_player(text) for text in args.players], args.board, args.dead, args.trials,
                           seed=args.seed, precision=args.precision and args.precision / 100)

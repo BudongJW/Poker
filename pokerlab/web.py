@@ -1,15 +1,18 @@
 """Local web page for the equity calculator: ``python -m pokerlab serve``.
 
 Standard library only. ``GET /`` returns the page, ``POST /api/analyze`` takes a spot as JSON
-and returns :func:`pokerlab.advisor.to_json` of its analysis.
+and returns :func:`pokerlab.advisor.to_json` of its analysis. ``POST /api/recognize`` reads one
+picture of a table into a snapshot, and ``POST /api/table`` analyses the hand that a list of
+snapshots shows.
 """
 
+import base64
 import json
 import os
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import advisor
-from .cards import parse_cards
+from . import advisor, table, vision
+from .cards import card_str, parse_cards
 from .inference import MODELS
 from .preflop import parse_range
 
@@ -61,6 +64,47 @@ def analyze_request(body):
     return advisor.to_json(analysis)
 
 
+def recognize_request(body):
+    """{'image': base64 or a data URL, 'mime_type'} -> {'snapshot': ...}."""
+    image, mime_type = str(body.get("image") or ""), str(body.get("mime_type") or "")
+    if image.startswith("data:"):                       # data:image/png;base64,....
+        header, _, image = image.partition(",")
+        mime_type = header[5:].split(";")[0] or mime_type
+    try:
+        raw = base64.b64decode(image, validate=True)
+    except ValueError:
+        raise ValueError("이미지 데이터를 읽지 못했습니다") from None
+    return {"snapshot": vision.recognize(raw, mime_type or "image/png")}
+
+
+def table_request(body):
+    """{'snapshots': [...], 'model', 'profile', 'precision', 'trials'} -> analysis plus the reconstructed table."""
+    snapshots = body.get("snapshots")
+    if not isinstance(snapshots, list) or not snapshots or len(snapshots) > 12:
+        raise ValueError("스냅샷은 1~12개여야 합니다")
+    model = str(body.get("model") or advisor.DEFAULT_MODEL)
+    if model not in MODELS:
+        raise ValueError(f"모델은 {', '.join(MODELS)} 중 하나여야 합니다")
+    precision = _number(body.get("precision"))
+    analysis, hand = table.analyze(
+        snapshots, model, str(body.get("profile", "all")), trials=min(int(body.get("trials", 200_000)), MAX_TRIALS),
+        precision=max(precision, MIN_PRECISION) if precision else None)
+    out = advisor.to_json(analysis)
+    out["table"] = {
+        "seats": table.describe(hand), "notes": hand["notes"], "pot": hand["pot"], "to_call": hand["to_call"],
+        "big_blind": hand["big_blind"], "n_players": hand["n_players"], "live": len(hand["live"]),
+        "hero": [card_str(c) for c in hand["hero"]], "board": [card_str(c) for c in hand["board"]],
+        "lines": table.summary(hand)}
+    return out
+
+
+ROUTES = {      # path -> (handler, largest request body in bytes)
+    "/api/analyze": (analyze_request, 100_000),
+    "/api/table": (table_request, 1_000_000),
+    "/api/recognize": (recognize_request, 17_000_000),
+}
+
+
 class Handler(BaseHTTPRequestHandler):
     def _send(self, status, payload, content_type):
         self.send_response(status)
@@ -78,15 +122,16 @@ class Handler(BaseHTTPRequestHandler):
             self._send(404, b"not found", "text/plain")
 
     def do_POST(self):
-        if self.path != "/api/analyze":
+        if self.path not in ROUTES:
             self._send(404, b"not found", "text/plain")
             return
+        handle, limit = ROUTES[self.path]
         length = int(self.headers.get("Content-Length") or 0)
-        if length > 100_000:
-            self._send(413, b"request too large", "text/plain")
+        if length > limit:
+            self._send(413, json.dumps({"error": "요청이 너무 큽니다"}).encode(), "application/json; charset=utf-8")
             return
         try:
-            result, status = analyze_request(json.loads(self.rfile.read(length))), 200
+            result, status = handle(json.loads(self.rfile.read(length))), 200
         except (ValueError, KeyError, TypeError) as error:
             result, status = {"error": str(error) or type(error).__name__}, 400
         self._send(status, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")

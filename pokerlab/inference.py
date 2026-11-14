@@ -224,9 +224,11 @@ def context(street, raises, price, n_live, n_players=None, position=-1, depth=AN
     return street, min(raises, 2), price, min(max(n_live, 2), 5) - 2, table_class(n_players), position, depth
 
 
-def observed(actions, n_players, button):
-    """Engine action log -> [(seat, street, context, action code)] in order."""
-    out, folded = [], set()
+def observed(actions, n_players, button, absent=()):
+    """Engine action log -> [(seat, street, context, action code)] in order.
+
+    absent: seats that had already folded before the log starts (a log that begins after the flop)."""
+    out, folded = [], set(absent)
     street, raises = -1, 0
     for a in actions:
         if a[0] != street:
@@ -597,14 +599,14 @@ def range_from_line(line, hero=(), board=(), n_players=2, model=None, profile="a
 
 
 def infer_ranges(model, actions, hero_seat, hero, board, n_players, button, profile="all", flop_runouts=None,
-                 rng=None, cache=None):
+                 rng=None, cache=None, absent=()):
     """Ranges of the opponents still in the hand, from an engine action log -> {seat: Range}.
 
     profile: one profile name for everybody, or {seat: name}. Opponents who have not acted yet
-    are left out (treat them as random hands).
+    are left out (treat them as random hands). absent: see :func:`observed`.
     """
-    by_seat, folded = {}, set()
-    for seat, street, ctx, code in observed(actions, n_players, button):
+    by_seat, folded = {}, set(absent)
+    for seat, street, ctx, code in observed(actions, n_players, button, absent):
         if code == GAVE_UP:
             folded.add(seat)
         by_seat.setdefault(seat, []).append((street, ctx, code))
