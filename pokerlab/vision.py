@@ -9,7 +9,8 @@ from the snapshots, not asked of the model.
 Two services can do the reading; ``POKERLAB_VISION_PROVIDER`` picks one:
 
 - ``claude`` (the default): Anthropic's Claude over the Messages API, with the ``anthropic``
-  package. The key is read from ``ANTHROPIC_API_KEY``.
+  package. The key is read from ``POKER_ANTHROPIC_API_KEY`` if that is set (a key kept for this
+  project alone), else from ``ANTHROPIC_API_KEY``, where the package looks itself.
 - ``gemini``: Google's Gemini over its Interactions API, with the standard library only. The key
   is read from ``GEMINI_API_KEY`` (or ``GOOGLE_API_KEY``).
 
@@ -40,6 +41,7 @@ CLAUDE_MIME_TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif")
 CLAUDE_MAX_TOKENS = 16_000      # thinking counts towards it; the answer itself is a few hundred tokens
 CLAUDE_FALLBACK_BETA = "server-side-fallback-2026-07-01"
 CLAUDE_FALLBACK_MODELS = ("claude-opus-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-fable-5-2")    # prefixes
+CLAUDE_KEY_VARIABLE = "POKER_ANTHROPIC_API_KEY"     # a key kept for this project; without it the package finds ANTHROPIC_API_KEY
 SERVICES = {"claude": "Anthropic Claude", "gemini": "Google Gemini"}
 DEFAULT_PROVIDER = "claude"
 
@@ -276,13 +278,14 @@ def _claude(image, mime_type, prompt, model, key, timeout):
             {"type": "text", "text": prompt}]}],
     }
     try:
+        key = key or os.environ.get(CLAUDE_KEY_VARIABLE)
         client = anthropic.Anthropic(api_key=key, timeout=timeout, max_retries=1) if key else anthropic.Anthropic(timeout=timeout, max_retries=1)
         if model.startswith(CLAUDE_FALLBACK_MODELS):    # if the model declines for policy reasons, the service's own fallback model answers
             message = client.beta.messages.create(betas=[CLAUDE_FALLBACK_BETA], fallbacks="default", **request)
         else:
             message = client.messages.create(**request)
     except anthropic.AuthenticationError:
-        raise VisionError("Claude API 키가 없거나 거부됐습니다. 환경 변수 ANTHROPIC_API_KEY를 확인해 주세요") from None
+        raise VisionError("Claude API 키가 없거나 거부됐습니다. 환경 변수 POKER_ANTHROPIC_API_KEY 또는 ANTHROPIC_API_KEY를 확인해 주세요") from None
     except anthropic.PermissionDeniedError:
         raise VisionError("이 Claude API 키로는 이 모델을 쓸 수 없습니다. 키의 사용 권한을 확인해 주세요") from None
     except anthropic.NotFoundError:
@@ -298,7 +301,7 @@ def _claude(image, mime_type, prompt, model, key, timeout):
     except TypeError as error:                            # the package's way of saying that it found no key anywhere
         if "authentication" not in str(error):
             raise
-        raise VisionError("Claude API 키가 없습니다. 환경 변수 ANTHROPIC_API_KEY에 키를 넣어 주세요 "
+        raise VisionError("Claude API 키가 없습니다. 환경 변수 POKER_ANTHROPIC_API_KEY 또는 ANTHROPIC_API_KEY에 키를 넣어 주세요 "
                           "(Gemini로 읽으려면 POKERLAB_VISION_PROVIDER=gemini)") from None
     if message.stop_reason == "refusal":
         raise VisionError("Claude가 이 이미지를 읽지 않겠다고 답했습니다")

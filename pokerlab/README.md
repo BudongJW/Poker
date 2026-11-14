@@ -87,6 +87,8 @@ python -m pokerlab serve
 export ANTHROPIC_API_KEY=...                 # 기본: Anthropic Claude (claude-opus-5-5)
 ```
 
+이 프로젝트에만 쓰는 키를 따로 두려면 `POKER_ANTHROPIC_API_KEY`에 넣습니다. 둘 다 있으면 이쪽을 씁니다.
+
 ```bash
 export POKERLAB_VISION_PROVIDER=gemini       # Gemini로 읽을 때
 export GEMINI_API_KEY=...                    # 기본 모델 gemini-4-hydrogen

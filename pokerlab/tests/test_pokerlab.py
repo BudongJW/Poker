@@ -21,6 +21,13 @@ def value(text):
     return evaluate(parse_cards(text))
 
 
+@pytest.fixture(autouse=True)
+def _no_real_keys(monkeypatch):
+    """No test may reach a paid service: the keys of the machine the tests run on are hidden from them."""
+    for name in ("POKER_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+
+
 # ---- cards ---------------------------------------------------------------------------------
 
 def test_card_parsing():
@@ -1418,6 +1425,12 @@ def test_claude_as_the_reader(monkeypatch):
     assert asked["route"] == "beta" and request["betas"] == [vision.CLAUDE_FALLBACK_BETA] and request["fallbacks"] == "default"
     assert request["model"] == "claude-opus-5-5" and request["max_tokens"] == vision.CLAUDE_MAX_TOKENS
     assert asked["client"] == {"timeout": 90, "max_retries": 1}                 # no key passed: the package finds ANTHROPIC_API_KEY itself
+    monkeypatch.setenv("POKER_ANTHROPIC_API_KEY", "project-key")                # a key kept for this project comes first
+    vision.recognize(b"x", "image/png")
+    assert asked["client"]["api_key"] == "project-key"
+    vision.recognize(b"x", "image/png", key="handed-in")
+    assert asked["client"]["api_key"] == "handed-in"
+    monkeypatch.delenv("POKER_ANTHROPIC_API_KEY")
     picture, words = request["messages"][0]["content"]
     assert picture == {"type": "image", "source": {"type": "base64", "media_type": "image/jpeg", "data": "eA=="}}
     assert words["text"].startswith(vision.PROMPT) and words["text"].endswith("About the program in this picture: stacks are in chips")
@@ -1449,7 +1462,7 @@ def test_claude_as_the_reader(monkeypatch):
     with pytest.raises(vision.VisionError, match="JSON이 아닙니다"):
         vision.recognize(b"x", "image/png")
     state["reply"] = said("end_turn", json.dumps(answer))
-    for error, words in ((fake.AuthenticationError(), "ANTHROPIC_API_KEY"), (fake.RateLimitError(), "한도"), (fake.NotFoundError(), "모델을 찾지"),
+    for error, words in ((fake.AuthenticationError(), "POKER_ANTHROPIC_API_KEY 또는 ANTHROPIC_API_KEY"), (fake.RateLimitError(), "한도"), (fake.NotFoundError(), "모델을 찾지"),
                          (APIStatusError(), "오류 500"), (APIConnectionError("down"), "연결하지 못했습니다"), (AnthropicError("no key"), "부르지 못했습니다")):
         state["error"] = error
         with pytest.raises(vision.VisionError, match=words):
