@@ -3,15 +3,16 @@
 Standard library only. ``GET /`` returns the page, ``POST /api/analyze`` takes a spot as JSON
 and returns :func:`pokerlab.advisor.to_json` of its analysis. ``POST /api/recognize`` reads one
 picture of a table into a snapshot, and ``POST /api/table`` analyses the hand that a list of
-snapshots shows.
+snapshots shows. ``POST /api/live`` runs the table at which the visitor plays the bots.
 """
 
 import base64
 import json
 import os
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import advisor, table, vision
+from . import advisor, live, table, vision
 from .cards import card_str, parse_cards
 from .inference import MODELS
 from .preflop import parse_range
@@ -98,8 +99,49 @@ def table_request(body):
     return out
 
 
+_LIVE = {"session": None}       # one table: this is a page for one person on their own machine
+_LIVE_LOCK = threading.Lock()
+
+
+def live_request(body):
+    """{'do': 'new' | 'deal' | 'act' | 'state' | 'analysis', ...} -> the state of the table the visitor plays at.
+
+    'new' takes 'opponents' (a list of bot names) or 'kind' and 'players', and 'stack_bb'; 'act' takes
+    'action' ('fold', 'call', 'raise') and 'amount' (chips in front after a raise); 'analysis' takes
+    what /api/table takes and answers {'analysis': ...} for the decision at hand.
+    """
+    do = body.get("do")
+    with _LIVE_LOCK:
+        session = _LIVE["session"]
+        if do == "new":
+            opponents = body.get("opponents") or [str(body.get("kind") or "human")] * (int(body.get("players", 6)) - 1)
+            fresh = live.Session([str(kind) for kind in opponents], int(body.get("stack_bb", 100)))
+            if session:
+                session.close()
+            _LIVE["session"] = fresh
+            return fresh.deal()
+        if session is None:
+            return {"phase": "none"}
+        if do == "deal":
+            return session.deal()
+        if do == "act":
+            return session.act(str(body.get("action")), body.get("amount"))
+        if do == "analysis":
+            model = str(body.get("model") or advisor.DEFAULT_MODEL)
+            if model not in MODELS:
+                raise ValueError(f"모델은 {', '.join(MODELS)} 중 하나여야 합니다")
+            precision = _number(body.get("precision"))
+            return {"analysis": session.analysis(
+                model, str(body.get("profile", "all")), trials=min(int(body.get("trials", 200_000)), MAX_TRIALS),
+                precision=max(precision, MIN_PRECISION) if precision else None)}
+        if do == "state":
+            return session.state()
+    raise ValueError(f"unknown request {do!r}")
+
+
 ROUTES = {      # path -> (handler, largest request body in bytes)
     "/api/analyze": (analyze_request, 100_000),
+    "/api/live": (live_request, 10_000),
     "/api/table": (table_request, 1_000_000),
     "/api/recognize": (recognize_request, 17_000_000),
 }
@@ -132,7 +174,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         try:
             result, status = handle(json.loads(self.rfile.read(length))), 200
-        except (ValueError, KeyError, TypeError) as error:
+        except (ValueError, KeyError, TypeError, RuntimeError) as error:
             result, status = {"error": str(error) or type(error).__name__}, 400
         self._send(status, json.dumps(result, ensure_ascii=False).encode(), "application/json; charset=utf-8")
 

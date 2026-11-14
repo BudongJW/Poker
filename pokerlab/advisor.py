@@ -182,8 +182,9 @@ def report(a):
         lines_out.append("상대 수별 승률: " + "  ".join(f"{n}명 {e:.0%}" for n, e in a["by_opponents"].items()))
     if "pot_odds" in a:
         o = a["pot_odds"]
-        lines_out.append(f"팟 오즈: 팟 {o['pot']:g}에 {o['to_call']:g} 콜 -> 필요 승률 {o['required_equity']:.1%}, "
-                         f"내 승률 {r.equity:.1%} -> 콜 기대값 {o['ev_call']:+.1f} ({'수익' if o['profitable'] else '손실'} 콜)")
+        unit = a.get("unit", "")
+        lines_out.append(f"팟 오즈: 팟 {o['pot']:g}{unit}에 {o['to_call']:g}{unit} 콜 -> 필요 승률 {o['required_equity']:.1%}, "
+                         f"내 승률 {r.equity:.1%} -> 콜 기대값 {o['ev_call']:+.1f}{unit} ({'수익' if o['profitable'] else '손실'} 콜)")
     if "bet" in a:
         b = a["bet"]
         lines_out.append(f"베팅: 팟 {b['pot']:g}에 {b['bet']:g} 베팅 -> 블러프 손익분기 폴드율 {b['bluff_breakeven_folds']:.1%}, "

@@ -340,35 +340,58 @@ def reconstruct(snapshots):
 
 # ---- pictures of a hand the engine played (for tests and demonstrations) ---------------
 
-def frames(result, stacks, hero_seat, small_blind):
-    """A hand the engine played -> the snapshots a camera would have taken at each of the hero's
-    decisions (seat places on a circle, so that sorting by place is exercised too)."""
-    n, button, big = result.n_players, result.button, result.big_blind
+def chips(actions, stacks, button, small_blind, big_blind):
+    """Where the chips are after ``actions`` of a hand that started with ``stacks``:
+    {'stack', 'bet' (in front on the street being played), 'live', 'pot', 'street', 'posted'}."""
+    n = len(stacks)
     stack, bet, live = list(stacks), [0] * n, set(range(n))
-    sb_seat, bb_seat = _blind_seats(button, n)
-    for seat, blind in ((sb_seat, small_blind), (bb_seat, big)):
-        bet[seat] = min(blind, stack[seat])
+    posted = {}
+    for seat, blind in zip(_blind_seats(button, n), (small_blind, big_blind)):
+        posted[seat] = bet[seat] = min(blind, stack[seat])
         stack[seat] -= bet[seat]
-    pot, street, out = bet[sb_seat] + bet[bb_seat], 0, []
-    for action in result.actions:
+    pot, street = sum(bet), 0
+    for action in actions:
         if action[0] != street:
             street, bet = action[0], [0] * n
         seat = action[1]
-        if seat == hero_seat:
-            cards = result.board[:(0, 3, 4, 5)[street]]
-            out.append({
-                "hero": "".join(card_str(c) for c in result.hole[hero_seat]), "board": "".join(card_str(c) for c in cards),
-                "pot": pot, "big_blind": big,
-                "seats": [{"name": f"p{i}", "stack": stack[i], "bet": bet[i], "in_hand": i in live, "hero": i == hero_seat,
-                           "button": i == button, "x": 0.5 + 0.4 * math.cos(2 * math.pi * i / n),
-                           "y": 0.5 + 0.3 * math.sin(2 * math.pi * i / n)} for i in range(n)]})
         if action[2] == FOLD:
             live.discard(seat)
         else:
             stack[seat] -= action[3]
             bet[seat] += action[3]
             pot += action[3]
+    return {"stack": stack, "bet": bet, "live": live, "pot": pot, "street": street, "posted": posted}
+
+
+def frames(result, stacks, hero_seat, small_blind):
+    """A hand the engine played -> the snapshots a camera would have taken at each of the hero's
+    decisions (seat places on a circle, so that sorting by place is exercised too)."""
+    n, button, big = result.n_players, result.button, result.big_blind
+    out = []
+    for index, action in enumerate(result.actions):
+        if action[1] != hero_seat:
+            continue
+        now = chips(result.actions[:index], stacks, button, small_blind, big)
+        cards = result.board[:(0, 3, 4, 5)[action[0]]]
+        bet = now["bet"] if now["street"] == action[0] else [0] * n         # the hero is first to act on a new street
+        out.append({
+            "hero": "".join(card_str(c) for c in result.hole[hero_seat]), "board": "".join(card_str(c) for c in cards),
+            "pot": now["pot"], "big_blind": big,
+            "seats": [{"name": f"p{i}", "stack": now["stack"][i], "bet": bet[i], "in_hand": i in now["live"],
+                       "hero": i == hero_seat, "button": i == button, "x": 0.5 + 0.4 * math.cos(2 * math.pi * i / n),
+                       "y": 0.5 + 0.3 * math.sin(2 * math.pi * i / n)} for i in range(n)]})
     return out
+
+
+def from_engine(actions, stacks, button, small_blind, big_blind, hero_seat, hole, board, to_call, names=None):
+    """A hand the engine is playing, at one of the hero's decisions, in the form :func:`reconstruct`
+    returns: nothing has to be worked out, the log is the engine's own."""
+    n, now = len(stacks), chips(actions, stacks, button, small_blind, big_blind)
+    street = {0: 0, 3: 1, 4: 2, 5: 3}[len(board)]
+    return {"n_players": n, "button": button, "hero_seat": hero_seat, "hero": list(hole), "board": list(board),
+            "big_blind": big_blind, "actions": list(actions), "notes": [], "absent": [], "posted": now["posted"],
+            "names": list(names or [f"p{i}" for i in range(n)]), "pot": now["pot"], "live": sorted(now["live"]),
+            "bets": now["bet"] if now["street"] == street else [0] * n, "stacks": now["stack"], "to_call": to_call}
 
 
 # ---- what the hand says ----------------------------------------------------------------
@@ -423,21 +446,30 @@ def summary(hand):
     return lines
 
 
-def analyze(snapshots, model=advisor.DEFAULT_MODEL, profile="all", trials=200_000, seed=None, precision=None):
-    """Snapshots of a hand -> (analysis as :func:`pokerlab.advisor.analyze` returns it, the hand).
+def analyze_hand(hand, model=advisor.DEFAULT_MODEL, profile="all", trials=200_000, seed=None, precision=None):
+    """The hand so far (from :func:`reconstruct` or :func:`from_engine`) -> analysis as
+    :func:`pokerlab.advisor.analyze` returns it.
 
-    Every opponent still in the hand gets the range that their reconstructed actions imply;
-    opponents who have not acted yet hold random hands.
+    Every opponent still in the hand gets the range that their actions imply; opponents who have
+    not acted yet hold random hands.
     """
-    hand = reconstruct(snapshots)
     seats = describe(hand)
     found = infer_ranges(load_model(model), hand["actions"], hand["hero_seat"], hand["hero"], hand["board"],
                          hand["n_players"], hand["button"], profile, absent=hand["absent"])
     rivals = [seat for seat in hand["live"] if seat != hand["hero_seat"]]
     ranged = [seat for seat in rivals if seat in found]
     labels = [f"{seats[seat]['position_ko']}: {seats[seat]['actions']}" for seat in ranged]
-    analysis = advisor.analyze(hand["hero"], hand["board"], len(rivals) + 1, hand["pot"], hand["to_call"] or None,
-                               [found[seat] for seat in ranged], trials, seed, precision, labels=labels)
+    unit = hand["big_blind"] or 1.0             # pot odds in big blinds when the big blind is known
+    analysis = advisor.analyze(hand["hero"], hand["board"], len(rivals) + 1, hand["pot"] / unit,
+                               hand["to_call"] / unit or None, [found[seat] for seat in ranged], trials, seed, precision,
+                               labels=labels)
+    analysis["unit"] = "bb" if hand["big_blind"] else ""
     for seat, summary in zip(ranged, analysis["ranges"]):
         summary["seat"] = seat
-    return analysis, hand
+    return analysis
+
+
+def analyze(snapshots, model=advisor.DEFAULT_MODEL, profile="all", trials=200_000, seed=None, precision=None):
+    """Snapshots of a hand -> (analysis, the hand as :func:`reconstruct` returns it)."""
+    hand = reconstruct(snapshots)
+    return analyze_hand(hand, model, profile, trials, seed, precision), hand

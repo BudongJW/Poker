@@ -8,7 +8,7 @@ import urllib.request
 import numpy as np
 import pytest
 
-from pokerlab import advisor, daily, inference, phh, preflop, report, selfplay, table, vision, web
+from pokerlab import advisor, daily, inference, live, phh, preflop, report, selfplay, table, vision, web
 from pokerlab.bots import BOT_TYPES, Bot, make_bot
 from pokerlab.cards import ALL_CLASSES, card, class_combos, hand_class, parse_cards
 from pokerlab.engine import CALL, FOLD, RAISE, play_hand, position_name
@@ -1209,7 +1209,8 @@ def test_pictures_through_the_web_api_and_the_command_line(tmp_path, monkeypatch
     json.dumps(out)
     assert out["table"]["hero"] == ["As", "Kd"] and out["table"]["board"] == ["Qs", "7h", "2d"]
     assert [seat["position"] for seat in out["table"]["seats"]] == ["BTN", "SB", "BB", "UTG", "HJ", "CO"]
-    assert out["ranges"][0]["seat"] == 5 and out["pot_odds"]["to_call"] == 10 and out["table"]["live"] == 2
+    assert out["ranges"][0]["seat"] == 5 and out["table"]["live"] == 2
+    assert (out["pot_odds"]["to_call"], out["pot_odds"]["pot"], out["unit"]) == (5, 11.5, "bb")      # in big blinds of 2
     for bad in ({"snapshots": []}, {"snapshots": "x"}, {"snapshots": [_shot()], "model": "/etc/passwd"}, {"snapshots": [{}]}):
         with pytest.raises(ValueError):
             web.table_request(bad)
@@ -1228,3 +1229,87 @@ def test_pictures_through_the_web_api_and_the_command_line(tmp_path, monkeypatch
     assert json.loads(saved.read_text()) == [_shot(), flop]
     main(["read", str(path), "--trials", "5000", "--json"])
     assert json.loads(capsys.readouterr().out)["table"][5]["position"] == "CO"
+
+
+# ---- playing the bots oneself ----------------------------------------------------------
+
+def test_playing_hands_against_the_bots():
+    session = live.Session(("human", "pro", "tag"), stack_bb=100, seed=3)
+    assert session.state()["phase"] == "idle"
+    state, analysed, step = session.deal(), 0, 0
+    while session.hands < 12:
+        step += 1
+        assert step < 400
+        if state["phase"] == "over":
+            assert sum(seat["net"] for seat in state["seats"]) == 0 and state["result_bb"] == state["seats"][0]["net"] / 10
+            assert [seat["stack"] for seat in state["seats"]] == [1000 + seat["net"] for seat in state["seats"]]
+            shown = [seat for seat in state["seats"] if seat["cards"]]
+            assert (len(shown) >= 2) == state["showdown"] or not state["seats"][0]["in_hand"]
+            with pytest.raises(ValueError, match="차례"):
+                session.act("call")
+            state = session.deal()
+            continue
+        assert state["phase"] == "decision" and len(state["hero"]) == 2 and len(state["board"]) in (0, 3, 4, 5)
+        seats = state["seats"]
+        assert seats[0]["hero"] and seats[0]["in_hand"] and seats[0]["name"] == "나"
+        assert [seat["position"] for seat in seats] == [position_name(i, state["button"], 4) for i in range(4)]
+        assert state["pot"] == sum(4 * [1000]) - sum(seat["stack"] for seat in seats)      # every chip is on the table or in a stack
+        with pytest.raises(ValueError, match="진행 중"):
+            session.deal()
+        if analysed < 3:                                 # the calculator is fed by the game: nothing was typed in
+            analysis = session.analysis(trials=3000, seed=1)
+            assert 0 < analysis["equity"] < 1 and analysis["table"]["source"] == "game" and analysis["unit"] == "bb"
+            assert analysis["n_players"] == sum(seat["in_hand"] for seat in seats)
+            assert all(seats[r["seat"]]["actions"] and r["label"].endswith(seats[r["seat"]]["actions"]) for r in analysis["ranges"])
+            if state["to_call"]:
+                assert analysis["pot_odds"]["to_call"] == state["to_call"] / 10
+            analysed += 1
+        if step % 5 == 0 and state["to_call"] > 0:
+            state = session.act("fold")
+        elif step % 3 == 0 and state["can_raise"]:
+            with pytest.raises(ValueError, match="금액"):
+                session.act("raise")
+            state = session.act("raise", state["min_raise_to"] + 30)
+        else:
+            state = session.act("call")
+    assert analysed == 3 and state["hands"] >= 12 and state["bb100"] == pytest.approx(100 * state["net_bb"] / state["hands"])
+    assert session.analysis() is None or state["phase"] == "decision"
+    # leaving in the middle of a hand, and tables that cannot be set up
+    if session.state()["phase"] != "decision":
+        session.deal()
+    if session.state()["phase"] == "decision":
+        with pytest.raises(ValueError, match="알 수 없는 액션"):
+            session.act("dance")
+        session.close()
+        assert session.state()["phase"] == "idle" and session.deal()["phase"] in ("decision", "over")
+        session.close()
+    for bad in (dict(opponents=("nobody",)), dict(opponents=("human",) * 9), dict(opponents=()), dict(stack_bb=2),
+                dict(opponents=("equity:model=/etc/passwd",))):
+        with pytest.raises(ValueError):
+            live.Session(**bad)
+
+
+def test_live_table_through_the_web_api():
+    web._LIVE["session"] = None
+    assert web.live_request({"do": "state"}) == {"phase": "none"}
+    assert web.live_request({"do": "deal"}) == {"phase": "none"}
+    state = web.live_request({"do": "new", "players": 2, "kind": "pro", "stack_bb": 20})
+    assert state["phase"] in ("decision", "over") and len(state["seats"]) == 2 and state["stack_bb"] == 20
+    json.dumps(state)
+    for _ in range(60):
+        if state["phase"] == "decision":
+            got = web.live_request({"do": "analysis", "trials": 2000, "model": "pro"})["analysis"]
+            assert got["table"]["n_players"] == 2 and "equity" in got
+            json.dumps(got)
+            break
+        state = web.live_request({"do": "deal"})
+    state = web.live_request({"do": "act", "action": "call"})
+    assert web.live_request({"do": "state"})["hands"] == state["hands"]
+    first = web._LIVE["session"]
+    state = web.live_request({"do": "new", "opponents": ["human", "tag"], "stack_bb": 50})      # a new table replaces the old one
+    assert len(state["seats"]) == 3 and web._LIVE["session"] is not first and first.state()["phase"] != "decision"
+    for bad in ({"do": "new", "kind": "nobody"}, {"do": "jump"}, {"do": "analysis", "model": "/etc/passwd"}):
+        with pytest.raises(ValueError):
+            web.live_request(bad)
+    web._LIVE["session"].close()
+    web._LIVE["session"] = None

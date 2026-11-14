@@ -26,6 +26,7 @@
   }
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body { margin: 0; background: var(--page); color: var(--ink);
   font: 14px/1.5 system-ui, -apple-system, "Segoe UI", "Apple SD Gothic Neo", "Malgun Gothic", sans-serif; }
 main { max-width: 1180px; margin: 0 auto; padding: 20px 16px 48px; display: grid; gap: 16px;
@@ -94,6 +95,32 @@ label.field { display: grid; gap: 2px; font-size: 12px; color: var(--ink-2); }
 .seats tr.me td { font-weight: 650; }
 .seats tr.out td { color: var(--muted); }
 .scroll-x { overflow-x: auto; }
+/* playing the bots */
+.modes { grid-column: 1 / -1; display: flex; gap: 4px; }
+.modes .btn[aria-selected=true] { background: var(--ink); color: var(--page); border-color: var(--ink); }
+.felt { position: relative; width: 100%; aspect-ratio: 16 / 11; border-radius: 26% / 38%; background: var(--wash);
+  border: 1px solid var(--baseline); margin: 26px 0 30px; }
+.felt .seat { position: absolute; transform: translate(-50%, -50%); width: 92px; text-align: center; font-size: 11.5px;
+  line-height: 1.35; background: var(--surface); border: 1px solid var(--baseline); border-radius: 8px; padding: 3px 4px; }
+.felt .seat.me { border: 2px solid var(--pos); }
+.felt .seat.out { color: var(--muted); border-style: dashed; }
+.felt .seat.won { border-color: var(--pos); background: color-mix(in oklab, var(--pos) 14%, var(--surface)); }
+.felt .seat .who { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.felt .seat .who b { font-weight: 650; margin-right: 3px; }
+.felt .seat .hole { font-weight: 650; font-size: 13px; min-height: 18px; }
+.felt .chips { position: absolute; transform: translate(-50%, -50%); font-size: 11.5px; white-space: nowrap;
+  background: var(--surface); border: 1px solid var(--baseline); border-radius: 999px; padding: 0 7px; }
+.felt .dealer { position: absolute; transform: translate(-50%, -50%); width: 18px; height: 18px; border-radius: 50%;
+  background: var(--ink); color: var(--page); font-size: 10.5px; font-weight: 650; display: grid; place-items: center; }
+.felt .middle { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); text-align: center; display: grid; gap: 4px; }
+.felt .middle .cards { font-size: 17px; font-weight: 650; display: flex; gap: 5px; justify-content: center; min-height: 26px; }
+.felt .middle .cards span { background: var(--surface); border: 1px solid var(--baseline); border-radius: 5px; padding: 1px 5px; }
+.acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.acts .btn.main { font-weight: 650; padding: 7px 14px; }
+.acts .btn.go { background: var(--pos); border-color: var(--pos); color: var(--on-strong); }
+.outcome { font-weight: 650; }
+.outcome.up { color: var(--pos); } .outcome.down { color: var(--neg); }
+@media (max-width: 480px) { .felt .seat { width: 76px; font-size: 10.5px; } .felt { aspect-ratio: 16 / 13; } }
 
 /* results */
 #result.loading { opacity: 0.55; }
@@ -161,6 +188,46 @@ th { color: var(--muted); }
 <body>
 <main>
   <h1>승률 계산기 <small>텍사스 홀덤 · 학습/복기용</small></h1>
+
+  <div class="modes" role="tablist" aria-label="화면">
+    <button class="btn" id="modeAnalyze" type="button" role="tab" aria-selected="true">분석</button>
+    <button class="btn" id="modePlay" type="button" role="tab" aria-selected="false">직접 플레이</button>
+  </div>
+
+  <section class="card-box stack" id="play" aria-label="직접 플레이" hidden>
+    <div class="row">
+      <label class="field">인원(나 포함)
+        <select id="livePlayers"><option value="2">1:1</option><option value="3">3명</option><option value="6" selected>6명</option><option value="9">9명</option></select>
+      </label>
+      <label class="field">상대
+        <select id="liveKind">
+          <option value="human">실전 온라인 플레이어처럼 치는 봇</option>
+          <option value="pro">프로처럼 치는 봇</option>
+          <option value="champion">매일 학습하는 챔피언 봇</option>
+          <option value="tag_model">레인지를 읽는 타이트 봇</option>
+          <option value="lag">느슨하고 공격적인 봇</option>
+        </select>
+      </label>
+      <label class="field">스택
+        <select id="liveStack"><option value="20">20bb</option><option value="50">50bb</option><option value="100" selected>100bb</option><option value="200">200bb</option></select>
+      </label>
+      <button class="btn" id="liveNew" type="button" style="margin-left:auto;align-self:flex-end">새 게임</button>
+    </div>
+    <div class="felt" id="felt" role="img" aria-label="테이블"></div>
+    <div class="acts" id="acts"></div>
+    <div class="row">
+      <label class="row" style="gap:6px"><input type="checkbox" id="liveHelp" checked> 내 차례마다 승률과 상대 레인지 보기</label>
+      <span class="hint" id="liveScore" style="margin-left:auto"></span>
+    </div>
+    <label class="field">상대의 액션을 해석할 모델
+      <select id="liveModel">
+        <option value="online:all">실전 온라인 2009 (human 봇이 배운 플레이)</option>
+        <option value="pro:all">프로와 Pluribus (pro 봇이 배운 플레이)</option>
+        <option value="selfplay:all">이 프로그램의 봇</option>
+      </select>
+    </label>
+    <p class="hint">이 프로그램 안의 게임입니다. 포지션, 상대의 액션과 벳 크기, 스택은 게임에서 바로 들어오므로 고르거나 이미지를 올릴 필요가 없습니다. 매 핸드 같은 스택으로 다시 시작합니다.</p>
+  </section>
 
   <section class="card-box stack" id="input" aria-label="입력">
     <div class="stack drop" id="drop" style="gap:8px">
@@ -500,7 +567,7 @@ async function addShot(file) {
 async function addShots(files) { for (const file of files) await addShot(file); }
 function tableCard(t) {
   const amount = x => x == null ? "모름" : t.big_blind ? (x / t.big_blind).toFixed(1) + "bb" : String(+x.toFixed(2));
-  const box = section("이미지에서 읽은 테이블", `${t.n_players}명 중 ${t.live}명 남음 · 팟 ${amount(t.pot)} · 콜 금액 ${amount(t.to_call)}`);
+  const box = section(t.source === "game" ? "지금 핸드" : "이미지에서 읽은 테이블", `${t.n_players}명 중 ${t.live}명 남음 · 팟 ${amount(t.pot)} · 콜 금액 ${amount(t.to_call)}`);
   const table = el("table", "seats"), head = el("tr");
   for (const title of ["포지션", "플레이어", "스택", "앞에 놓인 칩", "액션"]) head.append(el("th", null, title));
   table.append(head);
@@ -514,6 +581,117 @@ function tableCard(t) {
   const wrap = el("div", "scroll-x"); wrap.append(table); box.append(wrap);
   for (const note of t.notes) box.append(el("p", "hint", "참고: " + note));
   return box;
+}
+
+/* ---- playing the bots: the game supplies everything the analysis needs ---- */
+const live = {state: null, seq: 0, started: false};
+const bb = chips => (chips / 10).toFixed(chips % 10 ? 1 : 0) + "bb";
+function cardNode(card) { return el("span", "suit-" + card[1], cardLabel(card)); }
+function renderFelt() {
+  const felt = $("felt"), st = live.state;
+  felt.replaceChildren();
+  if (!st || !st.seats) return;
+  const n = st.seats.length;
+  const middle = el("div", "middle"), cards = el("div", "cards");
+  for (const card of st.board) cards.append(cardNode(card));
+  middle.append(cards, el("div", null, "팟 " + bb(st.pot)));
+  felt.append(middle);
+  st.seats.forEach((seat, i) => {
+    const angle = Math.PI / 2 + 2 * Math.PI * i / n, x = 50 + 43 * Math.cos(angle), y = 50 + 47 * Math.sin(angle);
+    const box = el("div", "seat" + (seat.hero ? " me" : "") + (seat.in_hand ? "" : " out") + (seat.won ? " won" : ""));
+    box.style.left = x + "%"; box.style.top = y + "%";
+    const who = el("div", "who"); who.append(el("b", null, seat.position), document.createTextNode(seat.name));
+    const hole = el("div", "hole"), shown = seat.hero ? st.hero : seat.cards;
+    if (shown) { for (const card of shown) hole.append(cardNode(card), document.createTextNode(" ")); }
+    else hole.textContent = seat.in_hand ? "▮▮" : "폴드";
+    box.append(who, hole, el("div", null, st.phase === "over" && seat.net ? `${bb(seat.stack)} (${seat.net > 0 ? "+" : "−"}${bb(Math.abs(seat.net))})` : bb(seat.stack)));
+    felt.append(box);
+    if (seat.bet > 0) {
+      const chip = el("div", "chips", bb(seat.bet));
+      chip.style.left = 50 + 24 * Math.cos(angle) + "%"; chip.style.top = 50 + 25 * Math.sin(angle) + "%"; felt.append(chip);
+    }
+    if (seat.seat === st.button) {
+      const d = el("div", "dealer", "D"); d.setAttribute("aria-label", "딜러 버튼");
+      d.style.left = 50 + 33 * Math.cos(angle + 0.32) + "%"; d.style.top = 50 + 35 * Math.sin(angle + 0.32) + "%"; felt.append(d);
+    }
+  });
+}
+function renderActs() {
+  const acts = $("acts"), st = live.state;
+  acts.replaceChildren();
+  if (!st || st.phase === "none" || st.phase === "idle") return;
+  const button = (text, cls, onclick) => { const b = el("button", "btn main " + (cls || ""), text); b.type = "button"; b.onclick = onclick; acts.append(b); return b; };
+  if (st.phase === "over") {
+    const r = st.result_bb, text = r > 0 ? `+${r}bb 땄습니다` : r < 0 ? `${-r}bb 잃었습니다` : "본전입니다";
+    acts.append(el("span", "outcome " + (r > 0 ? "up" : r < 0 ? "down" : ""), text));
+    button("다음 핸드", "go", () => liveDo({do: "deal"})).id = "liveNext";
+    return;
+  }
+  if (st.to_call > 0) button("폴드", "", () => liveDo({do: "act", action: "fold"}));
+  button(st.to_call > 0 ? `콜 ${bb(st.to_call)}` : "체크", "", () => liveDo({do: "act", action: "call"}));
+  if (!st.can_raise) return;
+  const word = st.current_bet > 0 ? "레이즈" : "벳", amount = el("input");
+  amount.type = "number"; amount.min = st.min_raise_to / 10; amount.max = st.max_raise_to / 10; amount.step = "0.5";
+  amount.value = st.min_raise_to / 10; amount.setAttribute("aria-label", word + " 금액(bb, 내 앞에 놓일 총액)");
+  const clamp = to => Math.max(st.min_raise_to, Math.min(st.max_raise_to, Math.round(to)));
+  for (const [label, share] of [["팟의 1/3", 1 / 3], ["2/3", 2 / 3], ["팟", 1]]) {
+    const b = el("button", "btn", label); b.type = "button";
+    b.onclick = () => { amount.value = clamp(st.current_bet + share * (st.pot + st.to_call)) / 10; };
+    acts.append(b);
+  }
+  const shove = el("button", "btn", "올인"); shove.type = "button"; shove.onclick = () => { amount.value = st.max_raise_to / 10; }; acts.append(shove);
+  acts.append(amount);
+  button(word, "go", () => liveDo({do: "act", action: "raise", amount: Number(amount.value) * 10}));
+}
+function renderLive() {
+  const st = live.state;
+  renderFelt(); renderActs();
+  $("liveScore").textContent = st && st.hands ? `${st.hands}핸드 · ${st.net_bb >= 0 ? "+" : ""}${st.net_bb.toFixed(1)}bb · 100핸드당 ${st.bb100 >= 0 ? "+" : ""}${st.bb100.toFixed(0)}bb` : "";
+  const next = $("liveNext"); if (next) next.focus();
+}
+function liveSummary() {             // the hand so far without the calculator: who did what
+  const st = live.state;
+  if (!st || !st.seats) { renderMessage("새 게임을 누르면 첫 핸드를 돌립니다."); return; }
+  $("result").replaceChildren(tableCard({source: "game", seats: st.seats, notes: [], pot: st.pot, to_call: st.to_call || 0, big_blind: st.big_blind,
+    n_players: st.seats.length, live: st.seats.filter(seat => seat.in_hand).length}));
+}
+async function liveAnalysis() {
+  const seq = ++live.seq, result = $("result"), [model, profile] = $("model").value.split(":");
+  const quality = {fast: {trials: 50000}, normal: {trials: 200000}, precise: {precision: 0.001}, ultra: {precision: 0.0005}}[$("quality").value];
+  result.classList.add("loading");
+  try {
+    const data = await post("/api/live", {do: "analysis", model, profile, ...quality});
+    if (seq !== live.seq) return;
+    if (data.error) renderMessage(data.error, true); else if (data.analysis) renderResult(data.analysis); else liveSummary();
+  } catch (e) {
+    if (seq === live.seq) renderMessage("서버에 연결할 수 없습니다: " + e.message, true);
+  } finally {
+    if (seq === live.seq) result.classList.remove("loading");
+  }
+}
+function liveShow() {
+  const st = live.state;
+  renderLive();
+  if (st && st.phase === "decision" && $("liveHelp").checked) liveAnalysis(); else { live.seq++; $("result").classList.remove("loading"); liveSummary(); }
+}
+async function liveDo(body) {
+  for (const b of $("acts").querySelectorAll("button")) b.disabled = true;
+  try {
+    const data = await post("/api/live", body);
+    if (data.error) { renderMessage(data.error, true); renderActs(); return; }
+    live.state = data; live.started = data.phase !== "none"; liveShow();
+  } catch (e) { renderMessage("서버에 연결할 수 없습니다: " + e.message, true); renderActs(); }
+}
+function liveNew() {            // read the opponents with the model that knows how they play
+  $("liveModel").value = {human: "online:all", pro: "pro:all"}[$("liveKind").value] || "selfplay:all";
+  $("model").value = $("liveModel").value;
+  return liveDo({do: "new", players: Number($("livePlayers").value), kind: $("liveKind").value, stack_bb: Number($("liveStack").value)});
+}
+async function setMode(play) {
+  $("modePlay").setAttribute("aria-selected", play); $("modeAnalyze").setAttribute("aria-selected", !play);
+  $("play").hidden = !play; $("input").hidden = play; state.seq++; live.seq++;
+  if (!play) { $("result").classList.remove("loading"); if (fromTable() || (state.slots[0] && state.slots[1])) schedule(0); else renderMessage("내 카드 두 장을 고르면 계산합니다. 보드는 비워 두거나 3·4·5장을 고르세요."); return; }
+  if (!live.started) { await liveDo({do: "state"}); if (!live.started) await liveNew(); } else liveShow();
 }
 
 function renderMessage(text, isError) {
@@ -558,7 +736,7 @@ function renderResult(d) {
   const facts = el("ul", "facts");
   if (d.made_hand) facts.append(fact("현재 족보", `${HAND_KO[d.made_hand]} · 지금 쇼다운이면 랜덤 핸드 1개 상대로 앞섬 ${pct(d.ahead_now[0])} / 동률 ${pct(d.ahead_now[1])} / 뒤짐 ${pct(d.ahead_now[2])}`));
   if (d.preflop_rank) facts.append(fact("프리플랍 순위", `169개 스타팅 핸드 중 ${d.preflop_rank}위 (${d.hand_class})`));
-  if (d.pot_odds) facts.append(fact("팟 오즈", `팟 ${d.pot_odds.pot}에 ${d.pot_odds.to_call} 콜 → 필요 승률 ${pct(d.pot_odds.required_equity)} · 콜 기대값 ${d.pot_odds.ev_call >= 0 ? "+" : ""}${d.pot_odds.ev_call.toFixed(1)} (${d.pot_odds.profitable ? "수익" : "손실"} 콜)`));
+  if (d.pot_odds) facts.append(fact("팟 오즈", `팟 ${+d.pot_odds.pot.toFixed(2)}${d.unit || ""}에 ${+d.pot_odds.to_call.toFixed(2)}${d.unit || ""} 콜 → 필요 승률 ${pct(d.pot_odds.required_equity)} · 콜 기대값 ${d.pot_odds.ev_call >= 0 ? "+" : ""}${d.pot_odds.ev_call.toFixed(1)} (${d.pot_odds.profitable ? "수익" : "손실"} 콜)`));
   if (d.bet) {
     facts.append(fact("베팅", `팟 ${d.bet.pot}에 ${d.bet.bet} → 블러프 손익분기 폴드율 ${pct(d.bet.bluff_breakeven_folds)} · 콜 받을 때 필요 승률 ${pct(d.bet.called_breakeven_equity)}`));
     facts.append(fact("베팅 기대값", `현재 승률 그대로 콜 받으면 ${d.bet.ev_if_called >= 0 ? "+" : ""}${d.bet.ev_if_called.toFixed(1)} · 체크로 쇼다운이면 +${d.bet.ev_check.toFixed(1)}`));
@@ -644,11 +822,23 @@ for (let n = 2; n <= 10; n++) { const o = el("option", null, n + "명"); o.value
 $("players").onchange = () => { state.players = Number($("players").value); renderOpponents(); schedule(); };
 $("quality").onchange = () => schedule();
 $("model").onchange = () => schedule();
+$("liveModel").onchange = () => { $("model").value = $("liveModel").value; liveShow(); };
 for (const id of ["pot", "toCall", "bet"]) $(id).oninput = () => schedule(500);
 $("addOpponent").onclick = () => { state.opponents.push({type: "line", streets: ["", "", "", ""], sizes: ["", "", "", ""], text: "", position: "", stack: ""}); renderOpponents(); };
 for (const [v, t] of SEATS) { const o = el("option", null, t); o.value = v; $("position").append(o); }
 $("position").onchange = () => schedule();
 $("table").onchange = () => schedule();
+$("modeAnalyze").onclick = () => setMode(false);
+$("modePlay").onclick = () => setMode(true);
+$("liveNew").onclick = liveNew;
+$("liveHelp").onchange = liveShow;
+document.addEventListener("keydown", e => {         // f fold, c check or call, while playing and not typing a number
+  if ($("play").hidden || e.target.matches("input, select, textarea") || e.ctrlKey || e.metaKey || e.altKey) return;
+  const st = live.state;
+  if (!st || st.phase !== "decision") return;
+  if (e.key === "f" && st.to_call > 0) liveDo({do: "act", action: "fold"});
+  if (e.key === "c") liveDo({do: "act", action: "call"});
+});
 $("shotFile").onchange = () => { addShots([...$("shotFile").files]); $("shotFile").value = ""; };
 document.addEventListener("paste", e => {
   const files = [...(e.clipboardData ? e.clipboardData.files : [])].filter(f => f.type.startsWith("image/"));
