@@ -198,7 +198,10 @@ def print_history(state_dir=STATE_DIR):
         before = "   -  " if m["mae_before"] is None else f"{m['mae_before']:.4f}"
         duels = ", ".join(f"{x['diff_bb100']:+.0f}±{x['ci95']:.0f}{'*' if x['promoted'] else ''}" for x in e["matches"])
         print(f"{e['cycle']:>4}   {e['date']}  {e['hands']:>7,}   {m['mae_random']:.4f} -> {before} -> {m['mae_after']:.4f}"
-              f"      {'반영' if m['kept'] else '기각'}   {e['champion']['generation']:>6}        {duels}")
+              f"      {'반영' if m['kept'] else '기각'}   {e['champion']['generation']:>6}        {duels}"
+              + (f"   [대회 형식 {e['formats']['names']} {e['formats']['hands']:,}핸드 포함]" if e.get("formats") else ""))
     last = history[-1]
     print(f"\n현재 챔피언({last['champion']['generation']}세대): {last['champion']['params']}   (* = 챔피언 교체)")
     print("최근 사이클 순위(bb/100): " + ", ".join(f"{bot} {bb:+.0f}" for bot, bb in last["standings"].items()))
+    if any(e.get("formats") for e in history):
+        print("대회 형식이 포함된 사이클의 오차는 그 핸드까지 넣고 잰 값이라, 포함되지 않은 사이클과 바로 견줄 수 없습니다.")

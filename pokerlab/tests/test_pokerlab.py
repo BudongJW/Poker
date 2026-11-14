@@ -1450,7 +1450,7 @@ def test_a_table_of_a_format_plays_to_its_end():
     assert seen["hands"] == 200 and sum(seen["share"].values()) == pytest.approx(1) and seen["share"]["<10bb"] > 0.5
 
 
-def test_selfplay_and_the_learning_cycle_on_formats(tmp_path):
+def test_selfplay_and_the_learning_cycle_on_formats(tmp_path, capsys):
     path = str(tmp_path / "formats.sqlite")
     kwargs = dict(bots=("tag", "lag", "nit", "station"), batch_size=150, processes=2, seed=4, progress=None)
     assert selfplay.run(path, hands=450, format="mtt_turbo,jackpot_sng", **kwargs)[0] == 450
@@ -1481,3 +1481,5 @@ def test_selfplay_and_the_learning_cycle_on_formats(tmp_path):
     entry = daily.run_cycle(state_dir=str(tmp_path / "state"), hands=300, challengers=1, fit_hands=150, score_hands=40,
                             processes=2, work_dir=str(tmp_path), progress=None, formats="kr_mtt", format_hands=200)
     assert entry["hands"] == 500 and entry["formats"] == {"names": "kr_mtt", "hands": 200} and entry["model"]["kept"]
+    daily.print_history(str(tmp_path / "state"))
+    assert "[대회 형식 kr_mtt 200핸드 포함]" in capsys.readouterr().out
