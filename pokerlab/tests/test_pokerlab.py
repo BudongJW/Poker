@@ -8,7 +8,7 @@ import urllib.request
 import numpy as np
 import pytest
 
-from pokerlab import advisor, daily, inference, live, phh, preflop, report, selfplay, table, vision, web
+from pokerlab import advisor, daily, follow, inference, live, phh, preflop, report, selfplay, table, vision, web
 from pokerlab.bots import BOT_TYPES, Bot, make_bot
 from pokerlab.cards import ALL_CLASSES, card, class_combos, hand_class, parse_cards
 from pokerlab.engine import CALL, FOLD, RAISE, play_hand, position_name
@@ -1105,8 +1105,7 @@ def test_snapshots_are_checked_and_put_in_order():
         table.normalize(two_buttons)
     with pytest.raises(ValueError, match="순서"):
         table.reconstruct([_shot(board="Qs7h2d"), _shot()])                 # a later picture shows an earlier street
-    with pytest.raises(ValueError, match="내 액션"):
-        table.reconstruct([_shot(), _shot()])                               # the same picture twice
+    assert table.reconstruct([_shot(), _shot()])["actions"] == table.reconstruct([_shot()])["actions"]    # the same picture twice
     # stacks that could not be read: actions are still found, depth and all-ins are left out, and it says so
     blind = _shot()
     for seat in blind["seats"]:
@@ -1313,3 +1312,178 @@ def test_live_table_through_the_web_api():
             web.live_request(bad)
     web._LIVE["session"].close()
     web._LIVE["session"] = None
+
+
+# ---- following a window that is being captured -----------------------------------------
+
+@pytest.mark.parametrize("kinds, n, stacks", [
+    (("random", "maniac", "station"), 6, (1000,)),
+    (("maniac", "random"), 2, (1000,)),
+    (("maniac", "random", "lag"), 6, (60, 150, 300, 1000, 2500)),
+])
+def test_a_running_capture_gives_the_hand_back(kinds, n, stacks):
+    """Frames at every moment of a hand, as a capture of the window sees them."""
+    checked = 0
+    for result, chips, button in _played(kinds, n, stacks, seed=n + 1, hands=30):
+        for hero in range(n):
+            mine = [i for i, a in enumerate(result.actions) if a[1] == hero]
+            if not mine:
+                continue
+            upto, street = mine[-1], result.actions[mine[-1]][0]
+            truth = inference.observed(result.actions[:upto], n, button)
+
+            def read(shots):
+                hand = table.reconstruct(shots)
+                seat_of = lambda seat: int(hand["names"][seat][1:])
+                return hand, [(seat_of(seat), st, ctx, code) for seat, st, ctx, code in
+                              inference.observed(hand["actions"], n, hand["button"], hand["absent"])]
+
+            # the program shows whose turn it is: exact, also when every other frame is missed
+            marked = table.frames(result, chips, hero, 5, every=True)
+            hand, got = read(marked)
+            assert got == truth and hand["actor"] == hand["hero_seat"] and hand["pot"] == pytest.approx(result.actions[upto][4])
+            assert read(marked[::2] + marked[-1:])[1] == truth
+            # it does not: everything that shows is still found, only checks nobody has acted after are left open
+            last = upto
+            while last and result.actions[last - 1][2] == "check" and result.actions[last - 1][0] == street:
+                last -= 1
+            hand, got = read(table.frames(result, chips, hero, 5, every=True, turns=False))
+            assert got == inference.observed(result.actions[:last], n, button) and hand["actor"] is None
+            checked += 1
+    assert checked > 40
+
+
+def test_follower_keeps_up_with_a_table(tmp_path):
+    record = tmp_path / "hands.jsonl"
+    follower = follow.Follower("lab A", str(record))
+    assert follower.state()["phase"] == "waiting" and follower.analysis() is None
+    played = list(_played(("human", "pro", "tag"), 6, (300, 1000, 1500), seed=5, hands=12))
+    hero, followed = 2, 0
+    for result, chips, button in played:
+        shots = table.frames(result, chips, hero, 5, every=True)
+        for shot in shots:
+            assert follower.push(shot) and not follower.push(shot)       # a capture sends the same picture again and again
+            assert follower.error is None and follower.note is None
+        if not shots:
+            continue
+        followed += 1
+        assert follower.hands == followed - 1                             # a new deal ended the hand before
+        mine = [i for i, a in enumerate(result.actions) if a[1] == hero]
+        hand = follower.hand
+        got = [(int(hand["names"][seat][1:]), st, ctx, code) for seat, st, ctx, code in
+               inference.observed(hand["actions"], 6, hand["button"], hand["absent"])]
+        assert got == inference.observed(result.actions[:mine[-1]], 6, button)
+    state = follower.state()
+    assert state["phase"] == "hand" and state["hero_to_act"] and state["table"]["source"] == "capture"
+    analysis = follower.analysis(trials=3000, seed=1)
+    assert 0 < analysis["equity"] < 1 and analysis is follower.analysis(trials=3000, seed=1)     # kept until the table changes
+    json.dumps(state), json.dumps(analysis)
+    # between hands the window shows no cards: that is said, and the hand that was followed stays
+    version = follower.version
+    assert follower.push({"hero": "", "board": "", "seats": []}) and follower.error and follower.hand is not None
+    assert follower.version == version + 1
+    # a frame that cannot follow from the ones before (here: stacks that went up) restarts the hand from that frame
+    broken = json.loads(json.dumps(follower.shots[-1]))
+    for seat in broken["seats"]:
+        seat["stack"] += 500
+        seat["bet"] = 0
+    broken["board"], broken["pot"] = "2c3c4c5d9h" if not broken["board"] else broken["board"], 9999
+    follower.push(broken)
+    assert follower.hand is not None and follower.error is None
+    follower.close()
+    rows = [json.loads(line) for line in record.read_text().splitlines()]
+    assert len(rows) == follower.hands >= followed and rows[0]["source"] == "lab A"
+    assert all(row["snapshots"] and len(row["hero"]) == 4 for row in rows) and any(row["actions"] for row in rows)
+
+
+def test_capture_sources_through_the_web_api(tmp_path, monkeypatch):
+    web._SOURCES.clear()
+    monkeypatch.setattr(web, "RECORD", str(tmp_path / "followed.jsonl"))
+    result, chips, button = next(x for x in _played(("human", "pro", "tag"), 6, (1000,), seed=8, hands=30)
+                                 if sum(a[1] == 0 for a in x[0].actions) >= 2)
+    shots = table.frames(result, chips, 0, 5, every=True)
+    assert web.capture_request({"do": "state", "source": "A"})["phase"] == "waiting"
+    for shot in shots:
+        state = web.capture_request({"source": "A", "label": "lab A", "snapshot": shot, "trials": 2000})
+    assert state["phase"] == "hand" and state["name"] == "lab A" and state["hero_to_act"] and "equity" in state["analysis"]
+    assert state["analysis"]["table"]["source"] == "capture"
+    json.dumps(state)
+    # a second window is a second source, followed on its own
+    other = web.capture_request({"source": "B", "snapshot": shots[0], "trials": 2000})
+    assert other["frames"] == 1 and web.capture_request({"do": "state", "source": "A"})["frames"] == state["frames"]
+    assert set(web._SOURCES) == {"A", "B"}
+    # a picture is read first: here by a stand-in that says what it was given
+    seen = {}
+    monkeypatch.setattr(vision, "recognize", lambda image, mime_type, notes=None: seen.update(n=len(image), m=mime_type, notes=notes) or shots[0])
+    web.capture_request({"source": "C", "image": "data:image/png;base64,QUJD", "notes": "stacks are in chips"})
+    assert seen == {"n": 3, "m": "image/png", "notes": "stacks are in chips"}
+    assert web.capture_request({"do": "reset", "source": "A"})["phase"] == "waiting"
+    assert web.capture_request({"do": "remove", "source": "B"}) == {"removed": "B"} and "B" not in web._SOURCES
+    assert (tmp_path / "followed.jsonl").read_text().count("\n") == 2            # the hands of A and B went into the record
+    for _ in range(web.MAX_SOURCES):
+        try:
+            web.capture_request({"do": "state", "source": f"extra {len(web._SOURCES)}"})
+        except ValueError as error:
+            assert "소스는" in str(error)
+            break
+    else:
+        raise AssertionError("no limit on the number of sources")
+    with pytest.raises(ValueError):
+        web.capture_request({"do": "jump", "source": "A"})
+    web._SOURCES.clear()
+
+
+def test_following_a_folder_and_the_recognizer_extras(tmp_path, monkeypatch, capsys):
+    from pokerlab.__main__ import main
+
+    result, chips, button = next(x for x in _played(("human", "pro", "tag"), 6, (1000,), seed=9, hands=30)
+                                 if sum(a[1] == 1 for a in x[0].actions) >= 2)
+    shots = table.frames(result, chips, 1, 5, every=True)
+    folder = tmp_path / "frames"
+    folder.mkdir()
+    for index, shot in enumerate(shots):
+        (folder / f"frame{index:03d}.json").write_text(json.dumps(shot))
+    (folder / "notes.txt").write_text("not a picture")
+    record = tmp_path / "record.jsonl"
+    main(["follow", str(folder), "--once", "--record", str(record), "--trials", "2000"])
+    printed = capsys.readouterr().out
+    assert printed.count("[인식된 테이블]") == sum(a[1] == 1 for a in result.actions) and "따라간 핸드 1개" in printed
+    assert json.loads(record.read_text())["snapshots"][-1] == shots[-1]
+
+    # the recognizer: whose turn it is, notes about the program, and replaying snapshots instead of asking the model
+    answer = {"is_poker_table": True, "hero_cards": ["As", "Kd"], "board": [], "pot": 3, "hero_to_act": None, "seats": [
+        {"x": 0.5, "y": 0.9, "stack": 199, "bet": 1, "in_hand": True, "is_hero": True, "has_button": True, "sitting_out": False,
+         "all_in": False, "acting": False},
+        {"x": 0.5, "y": 0.1, "stack": 198, "bet": 2, "in_hand": True, "is_hero": False, "has_button": False, "sitting_out": False,
+         "all_in": False, "acting": True}]}
+    snapshot = vision.to_snapshot(answer)
+    assert snapshot["hero_to_act"] is False and [seat["acting"] for seat in snapshot["seats"]] == [False, True]
+    read = table.normalize(snapshot)
+    assert not read["seats"][read["actor"]]["hero"]                         # the seat that is marked, not the hero
+    read = table.normalize(dict(snapshot, hero_to_act=True))
+    assert read["actor"] == read["hero_seat"]
+    snapshot["seats"][1]["acting"] = False
+    assert table.normalize(snapshot)["actor"] is None                       # nothing on the screen says whose turn it is
+    sent = {}
+
+    class Reply:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+        def read(self, *_):
+            return json.dumps({"output_text": json.dumps(answer)}).encode()
+
+    monkeypatch.setattr(vision.urllib.request, "urlopen", lambda request, timeout=None: sent.update(body=json.loads(request.data)) or Reply())
+    vision.recognize(b"x", "image/png", key="k", notes="stacks are in chips")
+    assert sent["body"]["input"][0]["text"].endswith("About the program in this picture: stacks are in chips")
+    vision.recognize(b"x", "image/png", key="k")
+    assert sent["body"]["input"][0]["text"] == vision.PROMPT
+    replay = tmp_path / "replay.json"
+    replay.write_text(json.dumps(shots[:2]))
+    monkeypatch.setenv("POKERLAB_VISION_REPLAY", str(replay))
+    assert [vision.recognize(b"x"), vision.recognize(b"y")] == shots[:2]
+    with pytest.raises(vision.VisionError, match="더 없습니다"):
+        vision.recognize(b"z")

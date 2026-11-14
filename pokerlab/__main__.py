@@ -81,6 +81,17 @@ def main(argv=None):
     p.add_argument("--save", metavar="FILE", help="write the snapshots that were read to this JSON file")
     p.add_argument("--json", action="store_true", help="print the numbers as JSON instead of a report")
 
+    p = sub.add_parser("follow", help="follow a table from the pictures a capture tool saves into a folder")
+    p.add_argument("directory", help="folder that fills with screenshots of one window (names in time order); "
+                                     ".json files hold snapshots that were read before")
+    p.add_argument("--notes", help="what is particular about the program in the pictures, for the recognizer")
+    p.add_argument("--record", metavar="FILE", help="append every hand that was followed to this file (JSON lines)")
+    p.add_argument("--once", action="store_true", help="read the pictures that are there and stop")
+    p.add_argument("--always", action="store_true", help="report after every change, not only when it is my turn")
+    p.add_argument("--model", default=advisor.DEFAULT_MODEL)
+    p.add_argument("--profile", default="all")
+    p.add_argument("--trials", type=int, default=50_000)
+
     p = sub.add_parser("simulate", help="bots play each other; every hand is stored in SQLite")
     p.add_argument("--db", default="selfplay.sqlite")
     p.add_argument("--hands", type=int, help="stop after this many hands")
@@ -144,6 +155,8 @@ def main(argv=None):
     p = sub.add_parser("serve", help="local web page for the equity calculator")
     p.add_argument("--port", type=int, default=8765)
     p.add_argument("--host", default="127.0.0.1")
+    p.add_argument("--record", metavar="FILE",
+                   help="append every hand followed through a window capture to this file (JSON lines)")
 
     p = sub.add_parser("preflop-table", help="recompute the 169-hand pre-flop equity table (about 25 minutes)")
     p.add_argument("--trials", type=int, default=4_000_000)
@@ -177,6 +190,25 @@ def main(argv=None):
         else:
             print("\n".join(table.summary(hand)))
             print(advisor.report(analysis))
+    elif args.command == "follow":
+        from . import follow, table
+
+        def show(follower):
+            if follower.hand is None:
+                print(f"[{follower.name}] {follower.error or '핸드를 기다리는 중'}")
+            elif args.always or follower.hand["actor"] == follower.hand["hero_seat"]:
+                print("\n".join(table.summary(follower.hand)))
+                if follower.note:
+                    print(f"참고: {follower.note}")
+                print(advisor.report(table.analyze_hand(follower.hand, args.model, args.profile, args.trials)), flush=True)
+
+        follower = follow.Follower(args.directory, args.record)
+        try:
+            follow.watch(args.directory, follower, show, args.notes, once=args.once)
+        except KeyboardInterrupt:
+            pass
+        follower.close()
+        print(f"따라간 핸드 {follower.hands}개")
     elif args.command == "matchup":
         results = matchup([_player(text) for text in args.players], args.board, args.dead, args.trials,
                           seed=args.seed, precision=args.precision and args.precision / 100)
@@ -228,7 +260,7 @@ def main(argv=None):
         daily.print_history(args.state)
     elif args.command == "serve":
         from . import web
-        web.serve(args.host, args.port)
+        web.serve(args.host, args.port, args.record)
     elif args.command == "preflop-table":
         preflop.build_table(args.trials, args.processes, progress=print)
         print("written", preflop.TABLE_PATH)

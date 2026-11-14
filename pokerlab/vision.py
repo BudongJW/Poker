@@ -40,6 +40,8 @@ player has folded or was not dealt in.
 - is_hero: true for the one player whose two hole cards are face up (normally at the bottom of the table).
 - has_button: true for the one player who has the dealer button (a disc marked D) next to them.
 - sitting_out: true if the plate says the player is sitting out or away.
+- acting: true for the one player whose turn it is, if the table shows it (a highlighted plate, a timer bar, a \
+countdown); false otherwise.
 
 hero_cards: the two face-up hole cards of the hero. board: the community cards in the middle, left to right \
 (0, 3, 4 or 5 cards). Write each card as rank then suit: ranks 2 3 4 5 6 7 8 9 T J Q K A, suits s h d c \
@@ -53,6 +55,8 @@ answer 1.0), else null.
 
 Numbers: plain numbers in the unit the table uses, without currency signs or thousands separators ("1.2K" is 1200). \
 If the table shows amounts in big blinds ("98.5 BB"), report those numbers and answer 1 for big_blind.
+hero_to_act: true if the hero's own action buttons (fold, check, call, bet, raise) are on screen and usable, false \
+if they are not, null if you cannot tell.
 is_poker_table: false if the picture does not show a hold'em table; then leave everything else empty."""
 
 _NUMBER = {"type": ["number", "null"]}
@@ -65,15 +69,17 @@ SCHEMA = {
         "pot": _NUMBER,
         "pot_includes_bets": {"type": ["boolean", "null"]},
         "big_blind": _NUMBER,
+        "hero_to_act": {"type": ["boolean", "null"]},
         "seats": {"type": "array", "items": {
             "type": "object",
             "properties": {
                 "name": {"type": ["string", "null"]}, "x": {"type": "number"}, "y": {"type": "number"},
                 "stack": _NUMBER, "bet": _NUMBER, "in_hand": {"type": "boolean"}, "is_hero": {"type": "boolean"},
-                "has_button": {"type": "boolean"}, "sitting_out": {"type": "boolean"}, "all_in": {"type": "boolean"}},
-            "required": ["x", "y", "stack", "bet", "in_hand", "is_hero", "has_button", "sitting_out", "all_in"]}},
+                "has_button": {"type": "boolean"}, "sitting_out": {"type": "boolean"}, "all_in": {"type": "boolean"},
+                "acting": {"type": "boolean"}},
+            "required": ["x", "y", "stack", "bet", "in_hand", "is_hero", "has_button", "sitting_out", "all_in", "acting"]}},
     },
-    "required": ["is_poker_table", "hero_cards", "board", "pot", "seats"],
+    "required": ["is_poker_table", "hero_cards", "board", "pot", "hero_to_act", "seats"],
 }
 
 
@@ -103,12 +109,13 @@ def to_snapshot(answer):
         seats.append({"name": seat.get("name"), "x": seat.get("x"), "y": seat.get("y"),
                       "stack": 0.0 if stack is None and seat.get("all_in") else stack, "bet": seat.get("bet") or 0.0,
                       "in_hand": bool(seat.get("in_hand")), "hero": bool(seat.get("is_hero")),
-                      "button": bool(seat.get("has_button")), "sitting_out": bool(seat.get("sitting_out"))})
+                      "button": bool(seat.get("has_button")), "sitting_out": bool(seat.get("sitting_out")),
+                      "acting": bool(seat.get("acting"))})
     includes = answer.get("pot_includes_bets")
     return {"hero": "".join(_card(c) for c in answer.get("hero_cards") or []),
             "board": "".join(_card(c) for c in answer.get("board") or []), "pot": answer.get("pot"),
             "pot_includes_bets": True if includes is None else bool(includes), "big_blind": answer.get("big_blind"),
-            "seats": seats}
+            "hero_to_act": bool(answer.get("hero_to_act")), "seats": seats}
 
 
 def _output_text(reply):
@@ -122,8 +129,30 @@ def _output_text(reply):
     return "".join(texts)
 
 
-def recognize(image, mime_type="image/png", model=None, key=None, timeout=90):
-    """One picture of a table (bytes) -> snapshot dict. Raises :class:`VisionError`."""
+_replays = {}       # file of snapshots that were read before -> how many of them have been handed out
+
+
+def _replay(path):
+    """The next snapshot from a file of snapshots: stands in for the model when trying a capture out without a key."""
+    with open(path, encoding="utf-8") as fh:
+        found = json.load(fh)
+    found = found if isinstance(found, list) else [found]
+    index = _replays.get(path, 0)
+    if index >= len(found):
+        raise VisionError("다시 보여 줄 스냅샷이 더 없습니다")
+    _replays[path] = index + 1
+    return found[index]
+
+
+def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, notes=None):
+    """One picture of a table (bytes) -> snapshot dict. Raises :class:`VisionError`.
+
+    notes: what is particular about the program the picture comes from ("stacks are in chips,
+    the hero sits bottom left"), added to the instructions. With ``POKERLAB_VISION_REPLAY`` set to
+    a file of snapshots nothing is sent anywhere: the snapshots are handed out one per call.
+    """
+    if os.environ.get("POKERLAB_VISION_REPLAY"):
+        return _replay(os.environ["POKERLAB_VISION_REPLAY"])
     if mime_type not in MIME_TYPES:
         raise VisionError(f"지원하지 않는 이미지 형식입니다 ({mime_type}). PNG, JPEG, WebP를 쓸 수 있습니다")
     if not image or len(image) > MAX_IMAGE_BYTES:
@@ -131,7 +160,7 @@ def recognize(image, mime_type="image/png", model=None, key=None, timeout=90):
     key = key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
     body = {
         "model": model or os.environ.get("POKERLAB_VISION_MODEL") or DEFAULT_MODEL,
-        "input": [{"type": "text", "text": PROMPT},
+        "input": [{"type": "text", "text": PROMPT + (f"\n\nAbout the program in this picture: {notes}" if notes else "")},
                   {"type": "image", "data": base64.b64encode(image).decode(), "mime_type": mime_type}],
         "response_format": {"type": "text", "mime_type": "application/json", "schema": SCHEMA},
         "store": False,

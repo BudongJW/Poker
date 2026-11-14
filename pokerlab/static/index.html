@@ -118,6 +118,12 @@ label.field { display: grid; gap: 2px; font-size: 12px; color: var(--ink-2); }
 .acts { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
 .acts .btn.main { font-weight: 650; padding: 7px 14px; }
 .acts .btn.go { background: var(--pos); border-color: var(--pos); color: var(--on-strong); }
+.source { border: 1px solid var(--grid); border-radius: 8px; padding: 8px; display: grid; gap: 6px; cursor: pointer; }
+.source.active { border: 2px solid var(--pos); }
+.source video { width: 100%; max-height: 150px; background: var(--wash); border-radius: 6px; object-fit: contain; }
+.source input[type=text] { flex: 1; min-width: 0; }
+.source .state { font-size: 12.5px; color: var(--ink-2); overflow-wrap: anywhere; }
+.source .state.error { color: var(--neg); }
 .outcome { font-weight: 650; }
 .outcome.up { color: var(--pos); } .outcome.down { color: var(--neg); }
 @media (max-width: 480px) { .felt .seat { width: 76px; font-size: 10.5px; } .felt { aspect-ratio: 16 / 13; } }
@@ -192,7 +198,25 @@ th { color: var(--muted); }
   <div class="modes" role="tablist" aria-label="화면">
     <button class="btn" id="modeAnalyze" type="button" role="tab" aria-selected="true">분석</button>
     <button class="btn" id="modePlay" type="button" role="tab" aria-selected="false">직접 플레이</button>
+    <button class="btn" id="modeCapture" type="button" role="tab" aria-selected="false">화면 캡처</button>
   </div>
+
+  <section class="card-box stack" id="capture" aria-label="화면 캡처" hidden>
+    <div class="row">
+      <h2 style="margin:0">캡처 소스 <small>창마다 하나씩, 따로 읽습니다</small></h2>
+      <button class="btn" id="capAdd" type="button" style="margin-left:auto">창 추가</button>
+    </div>
+    <div id="capSources" class="stack" style="gap:8px"></div>
+    <label class="field">상대의 액션을 해석할 모델
+      <select id="capModel">
+        <option value="online:all">실전 온라인 2009</option>
+        <option value="pro:all">프로와 Pluribus (6인)</option>
+        <option value="selfplay:all">이 프로그램의 봇</option>
+      </select>
+    </label>
+    <p class="hint" id="capHint">"창 추가"를 누르면 브라우저가 창 목록을 보여 줍니다. 고른 창이 소스가 되고, 화면이 바뀔 때마다 좌석·스택·앞에 놓인 칩·딜러 버튼·카드를 읽어 핸드를 따라갑니다. 프로그램마다 소스를 따로 추가하고, 화면이 특이한 점은 소스의 메모에 적어 주세요.</p>
+    <p class="hint">화면은 인식을 위해 Google Gemini로 전송됩니다.</p>
+  </section>
 
   <section class="card-box stack" id="play" aria-label="직접 플레이" hidden>
     <div class="row">
@@ -567,7 +591,7 @@ async function addShot(file) {
 async function addShots(files) { for (const file of files) await addShot(file); }
 function tableCard(t) {
   const amount = x => x == null ? "모름" : t.big_blind ? (x / t.big_blind).toFixed(1) + "bb" : String(+x.toFixed(2));
-  const box = section(t.source === "game" ? "지금 핸드" : "이미지에서 읽은 테이블", `${t.n_players}명 중 ${t.live}명 남음 · 팟 ${amount(t.pot)} · 콜 금액 ${amount(t.to_call)}`);
+  const box = section({game: "지금 핸드", capture: "캡처한 창에서 읽은 테이블"}[t.source] || "이미지에서 읽은 테이블", `${t.n_players}명 중 ${t.live}명 남음 · 팟 ${amount(t.pot)} · 콜 금액 ${amount(t.to_call)}`);
   const table = el("table", "seats"), head = el("tr");
   for (const title of ["포지션", "플레이어", "스택", "앞에 놓인 칩", "액션"]) head.append(el("th", null, title));
   table.append(head);
@@ -687,10 +711,116 @@ function liveNew() {            // read the opponents with the model that knows 
   $("model").value = $("liveModel").value;
   return liveDo({do: "new", players: Number($("livePlayers").value), kind: $("liveKind").value, stack_bb: Number($("liveStack").value)});
 }
-async function setMode(play) {
-  $("modePlay").setAttribute("aria-selected", play); $("modeAnalyze").setAttribute("aria-selected", !play);
-  $("play").hidden = !play; $("input").hidden = play; state.seq++; live.seq++;
-  if (!play) { $("result").classList.remove("loading"); if (fromTable() || (state.slots[0] && state.slots[1])) schedule(0); else renderMessage("내 카드 두 장을 고르면 계산합니다. 보드는 비워 두거나 3·4·5장을 고르세요."); return; }
+/* ---- captured windows: one source per program, each read and followed on its own ---- */
+const cap = {sources: [], active: null, next: 1, timer: null, probe: document.createElement("canvas"), shot: document.createElement("canvas")};
+cap.probe.width = 48; cap.probe.height = 27;
+const capSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
+function capLook(source) {            // a thumbnail in grey: enough to tell whether the window has changed
+  const ctx = cap.probe.getContext("2d", {willReadFrequently: true});
+  ctx.drawImage(source.video, 0, 0, 48, 27);
+  const rgba = ctx.getImageData(0, 0, 48, 27).data, grey = new Uint8Array(48 * 27);
+  for (let i = 0; i < grey.length; i++) grey[i] = (rgba[4 * i] * 3 + rgba[4 * i + 1] * 6 + rgba[4 * i + 2]) / 10;
+  return grey;
+}
+function capDescribe(source) {
+  const st = source.state;
+  if (source.error) return source.error;
+  if (!source.live) return "캡처가 끝났습니다";
+  if (source.busy) return "읽는 중…";
+  if (!st) return "화면을 기다리는 중";
+  const t = st.table;
+  return (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]} · ${t.n_players}명 중 ${t.live}명 · ${st.hero_to_act ? "내 차례" : "진행 중"}`
+    : st.error || "핸드를 기다리는 중") + ` · 끝난 핸드 ${st.hands}개 · ${source.readAt || ""}`;
+}
+function capRefresh(source) {
+  source.line.textContent = capDescribe(source);
+  source.line.className = "state" + (source.error ? " error" : "");
+  for (const other of cap.sources) other.node.classList.toggle("active", other === cap.active);
+}
+function capShow() {
+  const source = cap.active;
+  if (!source) { renderMessage(capSupported() ? "창을 추가하면 그 창에 보이는 테이블을 읽기 시작합니다." : "이 브라우저는 창 캡처를 지원하지 않습니다. 데스크톱의 Chrome, Edge, Firefox를 쓰거나 폴더를 따라가는 명령(python -m pokerlab follow)을 쓰세요.", !capSupported()); return; }
+  const st = source.state;
+  if (source.error && !(st && st.analysis)) renderMessage(source.error, true);
+  else if (st && st.analysis) renderResult(st.analysis);
+  else renderMessage(st && st.error ? st.error : "이 창에서 아직 핸드를 읽지 못했습니다.");
+}
+async function capSend(source) {
+  const video = source.video, scale = Math.min(1, 1600 / video.videoWidth);
+  cap.shot.width = Math.round(video.videoWidth * scale); cap.shot.height = Math.round(video.videoHeight * scale);
+  cap.shot.getContext("2d").drawImage(video, 0, 0, cap.shot.width, cap.shot.height);
+  const [model, profile] = $("capModel").value.split(":");
+  source.busy = true; source.changed = false; source.sentAt = performance.now(); capRefresh(source);
+  try {
+    const data = await post("/api/capture", {source: source.id, label: source.label.value, image: cap.shot.toDataURL("image/png"),
+      notes: source.notes.value, model, profile, trials: 100000});
+    if (data.error) source.error = data.error; else { source.error = null; source.state = data; source.readAt = new Date().toLocaleTimeString(); }
+  } catch (e) { source.error = "서버에 연결할 수 없습니다: " + e.message; }
+  source.busy = false;
+  if (!cap.sources.includes(source)) return;
+  capRefresh(source);
+  if (cap.active === source && !$("capture").hidden) capShow();
+}
+function capTick() {                  // read a window again when its picture has changed and then held still
+  const now = performance.now();
+  for (const source of cap.sources) {
+    if (source.live && source.stream.getVideoTracks().every(track => track.readyState === "ended")) { source.live = false; capRefresh(source); }
+    if (!source.live || source.busy || source.video.readyState < 2 || !source.video.videoWidth) continue;
+    const look = capLook(source);
+    let moved = !source.look;
+    if (source.look) { let sum = 0; for (let i = 0; i < look.length; i++) sum += Math.abs(look[i] - source.look[i]); moved = sum / look.length > 1.2; }
+    source.look = look;
+    if (moved) { source.changed = true; source.movedAt = now; }
+    if (source.changed && now - source.movedAt >= 350 && now - source.sentAt >= Number(source.every.value) * 1000) capSend(source);
+  }
+}
+async function capAdd() {
+  if (!capSupported()) { capShow(); return; }
+  let stream;
+  try { stream = await navigator.mediaDevices.getDisplayMedia({video: {frameRate: 5}, audio: false}); }
+  catch (e) { renderMessage("창을 고르지 않았습니다.", false); return; }
+  const source = {id: `소스 ${cap.next++}`, stream, live: true, busy: false, changed: true, movedAt: 0, sentAt: -1e9, look: null, state: null, error: null};
+  const node = source.node = el("div", "source"), head = el("div", "row");
+  const name = source.label = el("input"); name.type = "text"; name.value = source.id; name.setAttribute("aria-label", "소스 이름 (프로그램 이름)");
+  name.onclick = e => e.stopPropagation();
+  const now = el("button", "btn", "지금 읽기"); now.type = "button"; now.onclick = e => { e.stopPropagation(); if (source.live && !source.busy) capSend(source); };
+  const reset = el("button", "btn", "핸드 다시"); reset.type = "button"; reset.title = "따라가던 핸드를 잊고 지금 화면부터 다시 읽습니다";
+  reset.onclick = async e => { e.stopPropagation(); await post("/api/capture", {do: "reset", source: source.id}); source.state = null; source.changed = true; capRefresh(source); if (cap.active === source) capShow(); };
+  const remove = el("button", "btn", "삭제"); remove.type = "button";
+  remove.onclick = e => {
+    e.stopPropagation(); for (const track of stream.getTracks()) track.stop();
+    cap.sources.splice(cap.sources.indexOf(source), 1); node.remove(); post("/api/capture", {do: "remove", source: source.id});
+    if (cap.active === source) cap.active = cap.sources[0] || null;
+    for (const other of cap.sources) capRefresh(other);
+    capShow();
+  };
+  head.append(name, now, reset, remove);
+  const video = source.video = el("video"); video.muted = true; video.playsInline = true; video.srcObject = stream;
+  const options = el("div", "row"), every = source.every = el("select"); every.setAttribute("aria-label", "다시 읽는 최소 간격");
+  for (const [v, t] of [["2", "2초마다"], ["3", "3초마다"], ["5", "5초마다"], ["10", "10초마다"]]) { const o = el("option", null, t); o.value = v; every.append(o); }
+  every.value = "3";
+  const notes = source.notes = el("input"); notes.type = "text"; notes.placeholder = "이 프로그램의 화면에 대한 메모 (예: 스택은 칩 단위, 내 자리는 왼쪽 아래)";
+  notes.setAttribute("aria-label", "인식 메모");
+  options.append(every, notes);
+  for (const control of [every, notes]) control.onclick = e => e.stopPropagation();
+  source.line = el("div", "state");
+  node.append(head, video, options, source.line);
+  node.onclick = () => { cap.active = source; for (const other of cap.sources) capRefresh(other); capShow(); };
+  stream.getVideoTracks()[0].addEventListener("ended", () => { source.live = false; capRefresh(source); });
+  $("capSources").append(node); cap.sources.push(source); cap.active = source;
+  try { await video.play(); } catch (e) { /* the picture still arrives once the page is clicked */ }
+  for (const other of cap.sources) capRefresh(other);
+  capShow();
+  if (!cap.timer) cap.timer = setInterval(capTick, 400);
+}
+
+async function setMode(mode) {
+  for (const [name, button, panel] of [["analyze", "modeAnalyze", "input"], ["play", "modePlay", "play"], ["capture", "modeCapture", "capture"]]) {
+    $(button).setAttribute("aria-selected", name === mode); $(panel).hidden = name !== mode;
+  }
+  state.seq++; live.seq++; $("result").classList.remove("loading");
+  if (mode === "capture") { capShow(); return; }
+  if (mode === "analyze") { if (fromTable() || (state.slots[0] && state.slots[1])) schedule(0); else renderMessage("내 카드 두 장을 고르면 계산합니다. 보드는 비워 두거나 3·4·5장을 고르세요."); return; }
   if (!live.started) { await liveDo({do: "state"}); if (!live.started) await liveNew(); } else liveShow();
 }
 
@@ -828,8 +958,18 @@ $("addOpponent").onclick = () => { state.opponents.push({type: "line", streets: 
 for (const [v, t] of SEATS) { const o = el("option", null, t); o.value = v; $("position").append(o); }
 $("position").onchange = () => schedule();
 $("table").onchange = () => schedule();
-$("modeAnalyze").onclick = () => setMode(false);
-$("modePlay").onclick = () => setMode(true);
+$("modeAnalyze").onclick = () => setMode("analyze");
+$("modePlay").onclick = () => setMode("play");
+$("modeCapture").onclick = () => setMode("capture");
+$("capAdd").onclick = capAdd;
+$("capModel").onchange = async () => {              // the same pictures, read with another model: nothing is captured again
+  const [model, profile] = $("capModel").value.split(":");
+  for (const source of cap.sources) {
+    const data = await post("/api/capture", {do: "state", source: source.id, model, profile, trials: 100000});
+    if (!data.error) source.state = data;
+  }
+  if (!$("capture").hidden) capShow();
+};
 $("liveNew").onclick = liveNew;
 $("liveHelp").onchange = liveShow;
 document.addEventListener("keydown", e => {         // f fold, c check or call, while playing and not typing a number

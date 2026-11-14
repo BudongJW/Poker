@@ -48,11 +48,15 @@ def normalize(snapshot):
     * ``big_blind``: if the table shows its stakes
     * ``seats``: one dict per player at the table, with ``stack`` (chips behind), ``bet`` (chips in
       front on this street), ``in_hand`` (still holds cards), ``hero``, ``button``, ``name``,
-      ``sitting_out`` and the place on the picture ``x``, ``y`` (0-1, y downwards). With places for
-      everyone the seats are sorted clockwise by them; otherwise they must come clockwise.
+      ``sitting_out``, ``acting`` (it is this player's turn) and the place on the picture ``x``,
+      ``y`` (0-1, y downwards). With places for everyone the seats are sorted clockwise by them;
+      otherwise they must come clockwise.
+    * ``hero_to_act``: True when it is the hero's turn, False when it is not or cannot be told.
+      Leave it out for pictures taken at the hero's decisions: then it is taken to be the hero's.
 
     Returns {'hero': cards, 'board': cards, 'street', 'pot', 'pot_includes_bets', 'big_blind',
-    'seats': [...], 'hero_seat', 'button'} with only the players who were dealt in.
+    'seats': [...], 'hero_seat', 'button', 'actor' (the seat to act, None if unknown)} with only
+    the players who were dealt in.
     """
     board = parse_cards(snapshot.get("board") or "")
     if len(board) not in _STREET_OF:
@@ -64,7 +68,7 @@ def normalize(snapshot):
         seats.append({"name": (raw.get("name") or "").strip(), "stack": _number(raw.get("stack")),
                       "bet": max(_number(raw.get("bet"), 0.0), 0.0), "in_hand": bool(raw.get("in_hand", True)),
                       "hero": bool(raw.get("hero")), "button": bool(raw.get("button")),
-                      "away": bool(raw.get("sitting_out")) and not raw.get("hero"),
+                      "away": bool(raw.get("sitting_out")) and not raw.get("hero"), "acting": bool(raw.get("acting")),
                       "x": _number(raw.get("x")), "y": _number(raw.get("y")), "cards": raw.get("cards")})
     if all(s["x"] is not None and s["y"] is not None for s in seats) and seats:
         cx, cy = sum(s["x"] for s in seats) / len(seats), sum(s["y"] for s in seats) / len(seats)
@@ -92,10 +96,17 @@ def normalize(snapshot):
     if len(set(hero + board)) != len(hero) + len(board):
         raise ValueError("같은 카드가 두 번 읽혔습니다")
     seats[heroes[0]]["in_hand"] = True
+    # whose turn it is: a picture that says nothing about it was taken at the hero's turn (pictures put in by
+    # hand are); one from a running capture says so when it is, marks another seat, or leaves it open
+    acting = [i for i, s in enumerate(seats) if s["acting"] and s["in_hand"]]
+    if snapshot.get("hero_to_act") or ("hero_to_act" not in snapshot and not acting):
+        actor = heroes[0]
+    else:
+        actor = acting[0] if len(acting) == 1 else None
     return {"hero": hero, "board": board, "street": _STREET_OF[len(board)], "pot": _number(snapshot.get("pot")),
             "pot_includes_bets": bool(snapshot.get("pot_includes_bets", True)),
             "big_blind": _number(snapshot.get("big_blind")), "seats": seats, "hero_seat": heroes[0],
-            "button": buttons[0]}
+            "button": buttons[0], "actor": actor}
 
 
 def _aligned(base, shot):
@@ -162,25 +173,31 @@ class _Street:
         self.cur[seat], self.stack[seat] = to, self.stack[seat] - added
         self.acted.add(seat)
 
-    def play(self, target, gone, start, hero_first=False, until_hero=True):
+    def play(self, target, gone, start, first_acts=False, stop_at=None, complete=False):
         """Replay the betting from ``start`` so that everybody ends with ``target`` chips in front and
         the players in ``gone`` have folded.
 
         Each player in turn does the least that their final chips require: fold when they put in
         nothing more and face a bet, call when they end level, raise when they end higher. A
         raise waits a turn when somebody else must first put in a smaller raise (the player who
-        was raised did bet). With ``until_hero`` the replay stops where the hero is next to act;
-        otherwise it runs until the round is over.
+        was raised did bet).
+
+        Where the replay ends. With ``complete``: when the round is over. With ``stop_at``: at that
+        seat once everything on the table is explained; it is that player's turn, so everybody
+        before them has acted, with a check where nothing else shows. With neither: as soon as
+        everything is explained; whose turn it is is unknown, so no check is assumed.
+        ``first_acts``: the player at ``start`` is known to have acted.
         """
-        n, hero = self.hand["n_players"], self.hand["hero_seat"]
+        n = self.hand["n_players"]
         need = lambda i: max(0.0, target[i] - self.cur[i])
-        seat, first = start % n, True
-        for _ in range(8 * n):
+        seat = start % n
+        for step in range(8 * n):
             unexplained = [i for i in self.live if need(i) > 1e-9 or i in gone]
+            forced = first_acts and step == 0
             if seat not in self.live or (self.stack[seat] <= 1e-9 and need(seat) <= 1e-9):
                 pass                                    # folded earlier, or all-in: no turn
-            elif seat == hero and until_hero and not (first and hero_first) and need(seat) <= 1e-9 and not unexplained:
-                return                                  # everything on the table is explained: the hero is to act
+            elif not (forced or unexplained or complete) and stop_at in (None, seat):
+                return                                  # everything on the table is explained
             else:
                 owed = self.level - self.cur[seat]
                 if need(seat) > 1e-9:
@@ -200,13 +217,13 @@ class _Street:
                     else:
                         self.put(seat, self.cur[seat])  # checks now, folds to the bet that is coming
                 elif owed > 1e-9:
-                    return                              # has not answered the bet yet: this is where the picture was taken
+                    if not forced:
+                        return                          # has not answered the bet yet: this is where the picture was taken
                 elif seat in self.acted and not unexplained:
                     return                              # the round is complete
                 else:
                     self.put(seat, self.cur[seat])      # a check
-                first = False
-            if not until_hero and not unexplained and all(
+            if complete and not [i for i in self.live if need(i) > 1e-9 or i in gone] and all(
                     i in self.acted or self.stack[i] <= 1e-9 for i in self.live) and all(
                     self.cur[i] >= self.level - 1e-9 or self.stack[i] <= 1e-9 for i in self.live):
                 return
@@ -233,12 +250,16 @@ def _big_blind(shot, sb_seat, bb_seat):
 def reconstruct(snapshots):
     """Snapshots of one hand, in order -> the hand so far.
 
+    The snapshots may be pictures taken at the hero's decisions, or the frames of a running
+    capture taken at any moment (see ``hero_to_act`` in :func:`normalize`). A frame that shows the
+    same chips as the one before adds nothing and is skipped.
+
     Returns a dict: 'n_players', 'button', 'hero_seat', 'hero', 'board', 'big_blind' (None if never
     seen), 'actions' (the engine's action log, hero's own actions included), 'absent' (seats that
     were out before the first picture's street), 'posted' (blinds by seat, if the hand was seen
-    before the flop), 'pot' (everything in it now), 'to_call' (what the
-    hero must add to continue), 'stacks' and 'bets' per seat now, 'live' (seats still in),
-    'names', and 'notes' (what had to be assumed).
+    before the flop), 'pot' (everything in it now), 'to_call' (what the hero must add to
+    continue), 'stacks' and 'bets' per seat now, 'live' (seats still in), 'actor' (the seat to
+    act, None if unknown), 'names', and 'notes' (what had to be assumed).
     """
     if not snapshots:
         raise ValueError("이미지가 없습니다")
@@ -265,12 +286,30 @@ def reconstruct(snapshots):
             return None
         return shot["pot"] - sum(read(frame, "bet", 0.0)) if shot["pot_includes_bets"] else shot["pot"]
 
-    first, frame = base, frames[0]
+    kept = []                                   # [snapshot, its seats in the first one's order, the seat to act]
+    for shot, frame in zip(shots, frames):
+        actor = None if shot["actor"] is None else next(
+            (i for i, s in enumerate(frame) if s is shot["seats"][shot["actor"]]), None)
+        chips = (shot["street"], [None if s is None else (s["bet"], s["in_hand"], s["stack"]) for s in frame])
+        if kept and kept[-1][3] == chips:       # nothing moved: at most it is now known whose turn it is
+            kept[-1][2] = actor if actor is not None else kept[-1][2]
+            continue
+        kept.append([shot, frame, actor, chips])
+
+    sb_seat, bb_seat = _blind_seats(button, n)
+    first_to_act = lambda street: bb_seat + 1 if street == 0 else button + 1
+
+    def resume(table, was_to_act):
+        """Where the replay goes on after a picture: (seat, whether that seat is known to have acted)."""
+        if was_to_act is not None and was_to_act in table.live:
+            return was_to_act, True
+        last = next((a[1] for a in reversed(hand["actions"]) if a[0] == table.street), None)
+        return (first_to_act(table.street) if last is None else last + 1), False
+
+    first, frame, actor, _ = kept[0]
     bets, live_now = read(frame, "bet", 0.0), {i for i, s in enumerate(frame) if s["in_hand"]}
     stacks = [_INF if unknown_stacks else x for x in read(frame, "stack", 0.0)]
-    after_button = (button + 1) % n
     if first["street"] == 0:
-        sb_seat, bb_seat = _blind_seats(button, n)
         big, note = _big_blind(first, sb_seat, bb_seat)
         if note:
             hand["notes"].append(note)
@@ -280,7 +319,7 @@ def reconstruct(snapshots):
         target = {i: max(bets[i], posted.get(i, 0.0)) for i in range(n)}
         stack = {i: stacks[i] + target[i] - posted.get(i, 0.0) for i in range(n)}
         table = _Street(hand, 0, 0.0, range(n), stack, posted, big)
-        table.play(target, set(range(n)) - live_now, bb_seat + 1)
+        table.play(target, set(range(n)) - live_now, first_to_act(0), stop_at=actor)
     else:
         hand["notes"].append(f"{STREET_KO[first['street']]} 이전의 액션은 이미지에 없어 반영하지 않았습니다")
         pot = start_of_street(first, frame)
@@ -290,18 +329,18 @@ def reconstruct(snapshots):
         dealt = live_now | {i for i in range(n) if bets[i] > 0}     # folded on this street after putting chips in
         hand["absent"] = sorted(set(range(n)) - dealt)              # out of the hand before the first picture
         table = _Street(hand, first["street"], max(pot, 0.0), dealt, {i: stacks[i] + bets[i] for i in range(n)})
-        table.play(dict(enumerate(bets)), dealt - live_now, after_button)
+        table.play(dict(enumerate(bets)), dealt - live_now, first_to_act(first["street"]), stop_at=actor)
 
-    for shot, frame in zip(shots[1:], frames[1:]):
+    for shot, frame, now_to_act, _ in kept[1:]:
+        was_to_act, actor = actor, now_to_act
         bets, live_now = read(frame, "bet", 0.0), {i for i, s in enumerate(frame) if s is not None and s["in_hand"]}
         stacks = [_INF if unknown_stacks else x for x in read(frame, "stack", 0.0)]
         if hero not in table.live:
             raise ValueError("내가 폴드한 뒤의 이미지가 들어 있습니다")
+        start, acted = resume(table, was_to_act)
         if shot["street"] == table.street:
             target = {i: max(bets[i], table.cur[i]) for i in range(n)}
-            if target[hero] <= table.cur[hero] + 1e-9 and table.level > table.cur[hero] + 1e-9:
-                raise ValueError("연속된 두 이미지 사이에 내 액션이 보이지 않습니다. 같은 이미지를 두 번 넣지 않았는지 확인해 주세요")
-            table.play(target, table.live - live_now, hero, hero_first=True)
+            table.play(target, table.live - live_now, start, first_acts=acted, stop_at=actor)
             continue
         # the street the last picture showed is over: what everybody put in since then went into it
         if unknown_stacks:
@@ -316,7 +355,7 @@ def reconstruct(snapshots):
             raise ValueError("이미지 사이에 내 액션이 맞지 않습니다. 같은 핸드의 이미지를 순서대로 넣었는지 확인해 주세요")
         folded = table.live - live_now
         folded_here = {i for i in folded if target[i] < final - 1e-9}       # did not match the last bet of the street
-        table.play(target, folded_here, hero, hero_first=True, until_hero=False)
+        table.play(target, folded_here, start, first_acts=acted, complete=True)
         pot = table.pot()
         shown = start_of_street(shot, frame)
         if shown is not None and abs(shown - pot) > 0.1 * max(pot, 1e-9) + 1e-9:
@@ -326,13 +365,13 @@ def reconstruct(snapshots):
             hand["notes"].append("이미지가 없는 스트리트의 액션은 반영하지 않았습니다")
         dealt = table.live
         table = _Street(hand, shot["street"], pot, dealt, table.stack)
-        table.play(dict(enumerate(bets)), dealt - live_now, after_button)
+        table.play(dict(enumerate(bets)), dealt - live_now, first_to_act(shot["street"]), stop_at=actor)
 
     others = [j for j in table.live if j != hero]
     if not others:
         raise ValueError("남은 상대가 없습니다")
     cover = max(table.cur[j] + table.stack[j] for j in others)
-    hand.update(pot=table.pot(), live=sorted(table.live), bets=[table.cur[i] for i in range(n)],
+    hand.update(pot=table.pot(), live=sorted(table.live), bets=[table.cur[i] for i in range(n)], actor=actor,
                 stacks=[None if table.stack[i] == _INF else table.stack[i] for i in range(n)],
                 to_call=min(max(0.0, min(table.level, cover) - table.cur[hero]), table.stack[hero]))
     return hand
@@ -363,23 +402,32 @@ def chips(actions, stacks, button, small_blind, big_blind):
     return {"stack": stack, "bet": bet, "live": live, "pot": pot, "street": street, "posted": posted}
 
 
-def frames(result, stacks, hero_seat, small_blind):
+def frames(result, stacks, hero_seat, small_blind, every=False, turns=True):
     """A hand the engine played -> the snapshots a camera would have taken at each of the hero's
-    decisions (seat places on a circle, so that sorting by place is exercised too)."""
+    decisions (seat places on a circle, so that sorting by place is exercised too).
+
+    every: a snapshot before every action instead, as a running capture sees the table, up to the
+    hero's last decision. turns: those say whose turn it is; without, they leave it open.
+    """
     n, button, big = result.n_players, result.button, result.big_blind
+    mine = [index for index, action in enumerate(result.actions) if action[1] == hero_seat]
     out = []
-    for index, action in enumerate(result.actions):
-        if action[1] != hero_seat:
+    for index, action in enumerate(result.actions[:mine[-1] + 1] if mine else []):
+        if action[1] != hero_seat and not every:
             continue
         now = chips(result.actions[:index], stacks, button, small_blind, big)
         cards = result.board[:(0, 3, 4, 5)[action[0]]]
-        bet = now["bet"] if now["street"] == action[0] else [0] * n         # the hero is first to act on a new street
-        out.append({
+        bet = now["bet"] if now["street"] == action[0] else [0] * n         # the first action of a new street
+        shot = {
             "hero": "".join(card_str(c) for c in result.hole[hero_seat]), "board": "".join(card_str(c) for c in cards),
             "pot": now["pot"], "big_blind": big,
             "seats": [{"name": f"p{i}", "stack": now["stack"][i], "bet": bet[i], "in_hand": i in now["live"],
                        "hero": i == hero_seat, "button": i == button, "x": 0.5 + 0.4 * math.cos(2 * math.pi * i / n),
-                       "y": 0.5 + 0.3 * math.sin(2 * math.pi * i / n)} for i in range(n)]})
+                       "y": 0.5 + 0.3 * math.sin(2 * math.pi * i / n)} for i in range(n)]}
+        if every:
+            shot["hero_to_act"] = turns and action[1] == hero_seat
+            shot["seats"][action[1]]["acting"] = turns
+        out.append(shot)
     return out
 
 
