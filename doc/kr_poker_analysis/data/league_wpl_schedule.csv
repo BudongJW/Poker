@@ -1,0 +1,155 @@
+schedule,recurrence,start,name,type,tier,speed,format,buyin,buyin_note,gtd,gtd_note,series
+매일,daily,00:00,[단풍] 비기너스 6억 GTD,NLH,beginners,regular,standard,700000,,600000000,,1
+매일,daily,00:00,클래식 400억 GTD,NLH,classic,regular,standard,270000000,,40000000000,,0
+매일,daily,00:15,[단풍] 워밍업 85억 GTD,NLH,warmup,regular,standard,35000000,,8500000000,,1
+매일,daily,00:30,워밍업 터보 20억 GTD,NLH,warmup,turbo,standard,10000000,,2000000000,,0
+매일,daily,00:30,클래식 프리즈아웃 100억 GTD,NLH,classic,regular,freezeout,100000000,,10000000000,,0
+매일,daily,01:00,[단풍] 프리롤 6천만 GTD,Freeroll(NLH),freeroll,regular,freeroll,,-,60000000,,1
+매일,daily,01:00,클래식 300억 GTD,NLH,classic,regular,standard,165000000,,30000000000,,0
+매일,daily,01:15,[단풍] 클래식 85억 GTD,NLH,classic,regular,standard,45000000,,8500000000,,1
+매일,daily,01:30,[단풍] 루키스 터보 10억 GTD,NLH,rookies,turbo,standard,3000000,,1000000000,,1
+매일,daily,01:30,클래식 200억 GTD,NLH,classic,regular,standard,180000000,,20000000000,,0
+매일,daily,02:00,[단풍] 비기너스 6천만 GTD,NLH,beginners,regular,standard,100000,,60000000,,1
+매일,daily,02:00,클래식 200억 GTD,NLH,classic,regular,standard,110000000,,20000000000,,0
+매일,daily,02:15,스텝업 터보 10억 GTD,NLH,stepup,turbo,standard,7000000,,1000000000,,0
+매일,daily,02:30,[단풍] 워밍업 65억 GTD,NLH,warmup,regular,standard,35000000,,6500000000,,1
+매일,daily,03:00,[단풍] 프리롤 6천만 GTD,Freeroll(NLH),freeroll,regular,freeroll,,-,60000000,,1
+매일,daily,03:00,[단풍] 클래식 550억 GTD,NLH,classic,regular,standard,330000000,,55000000000,,1
+매일,daily,03:15,[단풍] 루키스 터보 9억 GTD,NLH,rookies,turbo,standard,4500000,,900000000,,1
+매일,daily,03:30,[단풍] 워밍업 55억 GTD,NLH,warmup,regular,standard,35000000,,5500000000,,1
+매일,daily,04:00,[단풍] 비기너스 6천만 GTD,NLH,beginners,regular,standard,100000,,60000000,,1
+매일,daily,04:00,클래식 260억 GTD,NLH,classic,regular,standard,280000000,,26000000000,,0
+매일,daily,04:15,스텝업 터보 7억 GTD,NLH,stepup,turbo,standard,6000000,,700000000,,0
+매일,daily,04:30,클래식 60억 GTD,NLH,classic,regular,standard,77000000,,6000000000,,0
+매일,daily,05:00,[단풍] 프리롤 6천만 GTD,Freeroll(NLH),freeroll,regular,freeroll,,-,60000000,,1
+매일,daily,05:00,워밍업 20억 GTD,NLH,warmup,regular,standard,30000000,,2000000000,,0
+매일,daily,05:15,[단풍] 루키스 터보 5.3억 GTD,NLH,rookies,turbo,standard,3000000,,530000000,,1
+매일,daily,05:30,[단풍] 스텝업 바운티 터보 18억 GTD,Bounty(P)(NLH),stepup,turbo,bounty,10000000,,1800000000,,1
+매일,daily,06:00,"[단풍] 비기너스 5,500만 GTD",NLH,beginners,regular,standard,100000,,55000000,,1
+매일,daily,06:00,[단풍] 워밍업 65억 GTD,NLH,warmup,regular,standard,50000000,,6500000000,,1
+매일,daily,06:15,[단풍] 루키스 터보 7억 GTD,NLH,rookies,turbo,standard,5000000,,700000000,,1
+매일,daily,06:30,[단풍] 스텝업 바운티 20억 GTD,Bounty(P)(NLH),stepup,regular,bounty,10000000,,2000000000,,1
+매일,daily,07:00,[단풍] 프리롤 6천만 GTD,Freeroll(NLH),freeroll,regular,freeroll,,-,60000000,,1
+매일,daily,07:00,[단풍] 클래식 60억 GTD,NLH,classic,regular,standard,50000000,,6000000000,,1
+매일,daily,07:15,[단풍] 루키스 4억 GTD,NLH,rookies,regular,standard,1500000,,400000000,,1
+매일,daily,07:30,스텝업 터보 12억 GTD,NLH,stepup,turbo,standard,12000000,,1200000000,,0
+매일,daily,08:00,[단풍] 비기너스 6천만 GTD,NLH,beginners,regular,standard,100000,,60000000,,1
+매일,daily,08:00,클래식 200억 GTD,NLH,classic,regular,standard,190000000,,20000000000,,0
+매일,daily,08:15,[단풍] 루키스 터보 10억 GTD,NLH,rookies,turbo,standard,5000000,,1000000000,,1
+매일,daily,08:30,클래식 70억 GTD,NLH,classic,regular,standard,77000000,,7000000000,,0
+매일,daily,09:00,[단풍] 프리롤 6천만 GTD,Freeroll(NLH),freeroll,regular,freeroll,,-,60000000,,1
+매일,daily,09:00,클래식 140억 GTD,NLH,classic,regular,standard,110000000,,14000000000,,0
+매일,daily,09:15,[단풍] 루키스 3억 GTD,NLH,rookies,regular,standard,1200000,,300000000,,1
+매일,daily,09:30,[단풍] 스텝업 터보 30억 GTD,NLH,stepup,turbo,standard,12000000,,3000000000,,1
+매일,daily,10:00,[단풍] 비기너스 6천만 GTD,NLH,beginners,regular,standard,100000,,60000000,,1
+매일,daily,10:00,클래식 200억 GTD,NLH,classic,regular,standard,165000000,,20000000000,,0
+매일,daily,10:15,[단풍] 루키스 터보 10억 GTD,NLH,rookies,turbo,standard,5000000,,1000000000,,1
+매일,daily,10:30,워밍업 터보 20억 GTD,NLH,warmup,turbo,standard,12000000,,2000000000,,0
+매일,daily,11:00,[단풍] 프리롤 6천만 GTD,Freeroll(NLH),freeroll,regular,freeroll,,-,60000000,,1
+매일,daily,11:00,클래식 170억 GTD,NLH,classic,regular,standard,110000000,,17000000000,,0
+매일,daily,11:15,[단풍] 스텝업 바운티 50억 GTD,Bounty(P)(NLH),stepup,regular,bounty,10000000,,5000000000,,1
+매일,daily,11:30,[단풍] 루키스 터보 4.5억 GTD,NLH,rookies,turbo,standard,3000000,,450000000,,1
+매일,daily,11:30,워밍업 35억 GTD,NLH,warmup,regular,standard,35000000,,3500000000,,0
+매일,daily,12:00,[단풍] 비기너스 1.5억 GTD,NLH,beginners,regular,standard,200000,,150000000,,1
+매일,daily,12:00,[단풍] 클래식 550억 GTD,NLH,classic,regular,standard,220000000,,55000000000,,1
+매일,daily,12:15,워밍업 터보 17억 GTD,NLH,warmup,turbo,standard,12000000,,1700000000,,0
+11.02(월) ~ 11.04(수),dated,12:30,"[단풍 DAY1] 루키스 스페셜 1,500억 GTD",NLH,multiday_day1,regular,standard,110000000,,,FINAL GO,1
+11.05(목) ~ 11.08(일),dated,12:30,"[단풍 DAY1] 프로 스페셜 2,500억 GTD",NLH,multiday_day1,regular,standard,300000000,,,FINAL GO,1
+매일,daily,12:30,[단풍] 루키스 터보 12억 GTD,NLH,rookies,turbo,standard,5000000,,1200000000,,1
+매일,daily,12:30,클래식 80억 GTD,NLH,classic,regular,standard,77000000,,8000000000,,0
+매일,daily,13:00,[단풍] 프리롤 6천만 GTD,Freeroll(NLH),freeroll,regular,freeroll,,-,60000000,,1
+매일,daily,13:00,클래식 250억 GTD,NLH,classic,regular,standard,250000000,,25000000000,,0
+매일,daily,13:15,[단풍] 워밍업 60억 GTD,NLH,warmup,regular,standard,10000000,,6000000000,,1
+10.19(월) ~ 10.25(일),dated,13:30,"[단풍 DAY1] 프로 5,000억 GTD",NLH,multiday_day1,regular,standard,300000000,,,FINAL GO,1
+10.26(월) ~ 11.01(일),dated,13:30,"[단풍 DAY1] 루키스 3,500억 GTD",NLH,multiday_day1,regular,standard,110000000,,,FINAL GO,1
+11.02(월) ~ 11.08(일),dated,13:30,"[단풍 DAY1] 슈퍼 하이롤러 7,500억 GTD",NLH,multiday_day1,regular,standard,750000000,,,FINAL GO,1
+11.09(월) ~ 11.15(일),dated,13:30,"[단풍 DAY1] 마스터스 6,000억 GTD",NLH,multiday_day1,regular,standard,600000000,,,FINAL GO,1
+매일,daily,13:30,스텝업 터보 10억 GTD,NLH,stepup,turbo,standard,7000000,,1000000000,,0
+매일,daily,13:30,클래식 80억 GTD,NLH,classic,regular,standard,60000000,,8000000000,,0
+매일,daily,14:00,[단풍] 비기너스 6억 GTD,NLH,beginners,regular,standard,700000,,600000000,,1
+매일,daily,14:00,[단풍] 클래식 660억 GTD,NLH,classic,regular,standard,370000000,,66000000000,,1
+매일,daily,14:15,스텝업 터보 7억 GTD,NLH,stepup,turbo,standard,6000000,,700000000,,0
+매일,daily,14:15,클래식 90억 GTD,NLH,classic,regular,standard,80000000,,9000000000,,0
+매일,daily,14:30,워밍업 터보 24억 GTD,NLH,warmup,turbo,standard,12000000,,2400000000,,0
+매일,daily,14:30,클래식 바운티 160억 GTD,Bounty(P)(NLH),classic,regular,bounty,160000000,,16000000000,,0
+매일,daily,15:00,[단풍] 프리롤 6천만 GTD,Freeroll(NLH),freeroll,regular,freeroll,,-,60000000,,1
+매일,daily,15:00,클래식 400억 GTD,NLH,classic,regular,standard,220000000,,40000000000,,0
+매일,daily,15:15,[단풍] 스텝업 바운티 65억 GTD,Bounty(P)(NLH),stepup,regular,bounty,10000000,,6500000000,,1
+매일,daily,15:30,[단풍] 루키스 터보 7.5억 GTD,NLH,rookies,turbo,standard,3000000,,750000000,,1
+매일,daily,15:30,클래식 프리즈아웃 60억 GTD,NLH,classic,regular,freezeout,60000000,,6000000000,,0
+매일,daily,16:00,[단풍] 비기너스 1.5억 GTD,NLH,beginners,regular,standard,200000,,150000000,,1
+매일,daily,16:00,[단풍] 클래식 600억 GTD,NLH,classic,regular,standard,330000000,,60000000000,,1
+매일,daily,16:15,스텝업 터보 9억 GTD,NLH,stepup,turbo,standard,6000000,,900000000,,0
+매일,daily,16:15,클래식 90억 GTD,NLH,classic,regular,standard,80000000,,9000000000,,0
+매일,daily,16:30,워밍업 터보 24억 GTD,NLH,warmup,turbo,standard,12000000,,2400000000,,0
+매일,daily,16:30,클래식 바운티 220억 GTD,Bounty(P)(NLH),classic,regular,bounty,220000000,,22000000000,,0
+매일,daily,17:00,[단풍] 프리롤 1억 GTD,Freeroll(NLH),freeroll,regular,freeroll,,-,100000000,,1
+매일,daily,17:00,클래식 400억 GTD,NLH,classic,regular,standard,220000000,,40000000000,,0
+매일,daily,17:15,[단풍] 워밍업 70억 GTD,NLH,warmup,regular,standard,10000000,,7000000000,,1
+11.02(월) ~ 11.03(화),dated,17:30,"[단풍 DAY1] 루키스 스페셜 1,500억 GTD",NLH,multiday_day1,regular,standard,110000000,,,FINAL GO,1
+11.05(목) ~ 11.07(토),dated,17:30,"[단풍 DAY1] 프로 스페셜 2,500억 GTD",NLH,multiday_day1,regular,standard,300000000,,,FINAL GO,1
+매일,daily,17:30,[단풍] 루키스 6.5억 GTD,NLH,rookies,regular,standard,1200000,,650000000,,1
+매일,daily,17:30,클래식 100억 GTD,NLH,classic,regular,standard,80000000,,10000000000,,0
+매일,daily,18:00,[단풍] 비기너스 1.5억 GTD,NLH,beginners,regular,standard,200000,,150000000,,1
+매일,daily,18:00,데일리 스페셜 450억 GTD,NLH,daily_special,regular,standard,330000000,,45000000000,,0
+매일,daily,18:15,스텝업 터보 9억 GTD,NLH,stepup,turbo,standard,6000000,,900000000,,0
+매일,daily,18:15,클래식 70억 GTD,NLH,classic,regular,standard,35000000,,7000000000,,0
+10.19(월) ~ 10.24(토),dated,18:30,"[단풍 DAY1] 프로 5,000억 GTD",NLH,multiday_day1,regular,standard,300000000,,,FINAL GO,1
+10.26(월) ~ 10.31(토),dated,18:30,"[단풍 DAY1] 루키스 3,500억 GTD",NLH,multiday_day1,regular,standard,110000000,,,FINAL GO,1
+11.02(월) ~ 11.07(토),dated,18:30,"[단풍 DAY1] 슈퍼 하이롤러 7,500억 GTD",NLH,multiday_day1,regular,standard,750000000,,,FINAL GO,1
+11.08(일),dated,18:30,"[단풍 FINAL] 프로 스페셜 2,500억 GTD",NLH,multiday_final,regular,standard,,DAY1 통과,250000000000,,1
+11.09(월) ~ 11.14(토),dated,18:30,"[단풍 DAY1] 마스터스 6,000억 GTD",NLH,multiday_day1,regular,standard,600000000,,,FINAL GO,1
+매일,daily,18:30,워밍업 터보 24억 GTD,NLH,warmup,turbo,standard,12000000,,2400000000,,0
+매일,daily,18:30,클래식 165억 GTD,NLH,classic,regular,standard,110000000,,16500000000,,0
+매일,daily,19:00,[단풍] 프리롤 2억 GTD,Freeroll(NLH),freeroll,regular,freeroll,,-,200000000,,1
+매일,daily,19:00,[단풍] 데일리 스페셜 750억 GTD,NLH,daily_special,regular,standard,330000000,,75000000000,,1
+매일,daily,19:15,워밍업 터보 24억 GTD,NLH,warmup,turbo,standard,12000000,,2400000000,,0
+매일,daily,19:15,클래식 70억 GTD,NLH,classic,regular,standard,60000000,,7000000000,,0
+11.04(수),dated,19:30,"[단풍 FINAL] 루키스 스페셜 1,500억 GTD",NLH,multiday_final,regular,standard,,DAY1 통과,150000000000,,1
+매일,daily,19:30,[단풍] 루키스 터보 10억 GTD,NLH,rookies,turbo,standard,3000000,,1000000000,,1
+매일,daily,19:30,클래식 50억 GTD,NLH,classic,regular,standard,35000000,,5000000000,,0
+매일,daily,19:30,클래식 165억 GTD,NLH,classic,regular,standard,110000000,,16500000000,,0
+11.07(토),dated,20:00,"[단풍 트로피] 포커고수 스페셜 1,500억 GTD",NLH,trophy,regular,standard,550000000,,150000000000,,1
+11.08(일),dated,20:00,"[단풍 트로피] BOXER 스페셜 바운티 헌터 2,000억 GTD",Bounty(P)(NLH),trophy,regular,bounty,650000000,,200000000000,,1
+11.14(토),dated,20:00,"[단풍 트로피] 포커고수 하이롤러 1,700억 GTD",NLH,trophy,regular,standard,650000000,,170000000000,,1
+11.15(일),dated,20:00,"[단풍 트로피] BOXER 울트라 스택 2,000억 GTD",NLH,trophy,regular,standard,550000000,,200000000000,,1
+매일,daily,20:00,[단풍] 비기너스 6억 GTD,NLH,beginners,regular,standard,700000,,600000000,,1
+매일,daily,20:00,데일리 스페셜 550억 GTD,NLH,daily_special,regular,standard,370000000,,55000000000,,0
+매일,daily,20:15,스텝업 터보 14억 GTD,NLH,stepup,turbo,standard,7000000,,1400000000,,0
+매일,daily,20:15,클래식 프리즈아웃 90억 GTD,NLH,classic,regular,freezeout,80000000,,9000000000,,0
+매일,daily,20:30,클래식 70억 GTD,NLH,classic,regular,standard,45000000,,7000000000,,0
+매일,daily,20:30,클래식 270억 GTD,NLH,classic,regular,standard,180000000,,27000000000,,0
+매일,daily,21:00,[단풍] 프리롤 2억 GTD,Freeroll(NLH),freeroll,regular,freeroll,,-,200000000,,1
+평일,weekday,21:00,데일리 미니 메인 150억 GTD(평일),NLH,daily_main,regular,standard,25000000,,15000000000,,0
+평일,weekday,21:00,"[단풍] 데일리 메인 2,400억 GTD(평일)",NLH,daily_main,regular,standard,400000000,,240000000000,,1
+주말,weekend,21:00,[단풍] 위켄드 빌리언즈 미니 220억 GTD(주말),NLH,weekend_main,regular,standard,60000000,,22000000000,,1
+주말,weekend,21:00,"[단풍] 위켄드 빌리언즈 3,250억 GTD(주말)",NLH,weekend_main,regular,standard,800000000,,325000000000,,1
+주말,weekend,21:15,클래식 60억 GTD(주말),NLH,classic,regular,standard,35000000,,6000000000,,0
+평일,weekday,21:15,클래식 65억 GTD(평일),NLH,classic,regular,standard,60000000,,6500000000,,0
+10.25(일),dated,21:30,"[단풍 FINAL] 프로 5,000억 GTD",NLH,multiday_final,regular,standard,,DAY1 통과,500000000000,,1
+11.01(일),dated,21:30,"[단풍 FINAL] 루키스 3,500억 GTD",NLH,multiday_final,regular,standard,,DAY1 통과,350000000000,,1
+11.02(월) ~ 11.03(화),dated,21:30,"[단풍 DAY1] 루키스 스페셜 1,500억 GTD",NLH,multiday_day1,regular,standard,110000000,,,FINAL GO,1
+11.05(목) ~ 11.07(토),dated,21:30,"[단풍 DAY1] 프로 스페셜 2,500억 GTD",NLH,multiday_day1,regular,standard,300000000,,,FINAL GO,1
+11.08(일),dated,21:30,"[단풍 FINAL] 슈퍼 하이롤러 7,500억 GTD",NLH,multiday_final,regular,standard,,DAY1 통과,750000000000,,1
+11.15(일),dated,21:30,"[단풍 FINAL] 마스터스 6,000억 GTD",NLH,multiday_final,regular,standard,,DAY1 통과,600000000000,,1
+매일,daily,21:30,스텝업 터보 15억 GTD(매일),NLH,stepup,turbo,standard,6000000,,1500000000,,0
+매일,daily,21:30,클래식 200억 GTD(매일),NLH,classic,regular,standard,110000000,,20000000000,,0
+매일,daily,22:00,[단풍] 비기너스 1.5억 GTD,NLH,beginners,regular,standard,200000,,150000000,,1
+매일,daily,22:00,데일리 스페셜 하이롤러 800억 GTD,NLH,daily_special,regular,standard,550000000,,80000000000,,0
+매일,daily,22:15,[단풍] 스텝업 터보 65억 GTD,NLH,stepup,turbo,standard,10000000,,6500000000,,1
+매일,daily,22:15,클래식 200억 GTD,NLH,classic,regular,standard,110000000,,20000000000,,0
+10.19(월) ~ 10.24(토),dated,22:30,"[단풍 DAY1] 프로 5,000억 GTD",NLH,multiday_day1,regular,standard,300000000,,,FINAL GO,1
+10.24(토) ~ 10.25(일),dated,22:30,[단풍] 체크 포인트 600억 GTD,NLH,series_side,regular,standard,200000000,,60000000000,,1
+10.26(월) ~ 10.31(토),dated,22:30,"[단풍 DAY1] 루키스 3,500억 GTD",NLH,multiday_day1,regular,standard,110000000,,,FINAL GO,1
+11.02(월) ~ 11.07(토),dated,22:30,"[단풍 DAY1] 슈퍼 하이롤러 7,500억 GTD",NLH,multiday_day1,regular,standard,750000000,,,FINAL GO,1
+11.07(토) ~ 11.08(일),dated,22:30,[단풍] 체크 포인트 600억 GTD,NLH,series_side,regular,standard,200000000,,60000000000,,1
+11.09(월) ~ 11.14(토),dated,22:30,"[단풍 DAY1] 마스터스 6,000억 GTD",NLH,multiday_day1,regular,standard,600000000,,,FINAL GO,1
+11.15(일),dated,22:30,"[단풍] 피날레 1,000억 GTD",NLH,series_side,regular,standard,300000000,,100000000000,,1
+매일,daily,22:30,클래식 90억 GTD,NLH,classic,regular,standard,55000000,,9000000000,,0
+매일,daily,22:30,데일리 스페셜 500억 GTD,NLH,daily_special,regular,standard,250000000,,50000000000,,0
+매일,daily,23:00,[단풍] 프리롤 2억 GTD,Freeroll(NLH),freeroll,regular,freeroll,,-,200000000,,1
+매일,daily,23:00,"데일리 스페셜 슈퍼 하이롤러 1,200억 GTD",NLH,daily_special,regular,standard,1000000000,,120000000000,,0
+매일,daily,23:15,[단풍] 스텝업 터보 65억 GTD,NLH,stepup,turbo,standard,10000000,,6500000000,,1
+매일,daily,23:15,클래식 200억 GTD,NLH,classic,regular,standard,110000000,,20000000000,,0
+매일,daily,23:30,클래식 70억 GTD,NLH,classic,regular,standard,45000000,,7000000000,,0
+매일,daily,23:30,데일리 스페셜 500억 GTD,NLH,daily_special,regular,standard,300000000,,50000000000,,0
