@@ -69,7 +69,7 @@ OBS에 없는 것도 두 가지 더했습니다. OBS는 모든 프레임을 그�
 
 ## 6. 확인한 방법
 
-헤드리스 Chromium에서 선택 창 대신 캔버스 영상(1280×720)을, Gemini 대신 저장된 스냅샷 재생(`POKERLAB_VISION_REPLAY`)을 써서 다음을 확인했습니다.
+헤드리스 Chromium에서 선택 창 대신 캔버스 영상(1280×720)을, 인식 서비스 대신 저장된 스냅샷 재생(`POKERLAB_VISION_REPLAY`)을 써서 다음을 확인했습니다.
 
 - 창 소스 추가: 선택 창 옵션(`displaySurface: "window"`, `selfBrowserSurface: "exclude"`, `surfaceSwitching: "include"`), 첫 프레임이 1280×720 JPEG로 전송, 분석 표시
 - 영역: 미리보기에서 끈 상자가 비율 `{x: 0.15, y: 0.2, w: 0.7, h: 0.7}`로 저장되고, 그 뒤로 보내는 그림이 896×504
@@ -79,4 +79,4 @@ OBS에 없는 것도 두 가지 더했습니다. OBS는 모든 프레임을 그�
 - 동영상 파일(VP9 WebM, 2초마다 바뀌는 16초 영상): 파일 이름이 소스 이름이 되고, 0:00·0:02·0:04·0:05에서 읽었으며, 기록에 `at`이 남음
 - 소스 삭제가 저장된 설정에서도 빠짐, 페이지 오류 없음
 
-`at` 기록은 `tests/test_pokerlab.py`의 `test_a_recording_keeps_where_each_hand_began`로 시험합니다. 실제 선택 창, 실제 Gemini 인식, Firefox·Edge는 확인하지 못했습니다.
+`at` 기록은 `tests/test_pokerlab.py`의 `test_a_recording_keeps_where_each_hand_began`로 시험합니다. 실제 탭 캡처와 실제 인식(Claude, Gemini)으로 게임 화면을 읽힌 결과는 [`TUNING.md`](TUNING.md)에 있습니다. Firefox·Edge는 확인하지 못했습니다.

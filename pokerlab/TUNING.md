@@ -8,7 +8,8 @@ Gemini 인식 호출은 Gemini의 OpenAI 호환 주소로 보냈습니다(프롬
 
 | 값 | 어디 | 정한 값 | 근거 |
 |---|---|---|---|
-| 생각 강도 (`POKERLAB_VISION_EFFORT`) | `vision.py` | `low` | 읽기 9.1초 → 7.4초, 같은 프레임 11장에서 읽은 값 동일 |
+| 기본 인식 서비스 (`POKERLAB_VISION_PROVIDER`) | `vision.py` | `claude` (`claude-opus-5-5`) | 같은 프레임 11장에서 Gemini와 같은 값, 읽기 5.0초 대 7.4초 |
+| 생각 강도 (`POKERLAB_VISION_EFFORT`) | `vision.py` | `low` | Gemini: 읽기 9.1초 → 7.4초, 읽은 값 동일. Claude: `medium`보다 빠르고(5.0초 대 5.9초) 값도 같거나 나음 |
 | 감시용 축소 화면 (`CAP_GRID`) | `index.html` | 96×54 (전에는 48×27) | 1280px 화면에서 확실히 잡는 변화가 16px → 8px |
 | 칸이 바뀐 것으로 치는 밝기 차 (`CAP_GREY`) | `index.html` | 14 | 바뀌지 않은 화면의 프레임 간 차이는 0 |
 | 멈춘 것으로 치는 움직임 (`CAP_STILL`) | `index.html` | 4칸 이하 | 정적인 게임에서는 2~20 어느 값이든 결과가 같음. 키우면 실제 전환의 20~43%가 멈춤으로 통과 |

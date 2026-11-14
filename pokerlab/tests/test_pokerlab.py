@@ -1165,6 +1165,7 @@ def test_vision_answers_become_snapshots(monkeypatch):
     answer_with({"status": "completed", "steps": [{"type": "thought"}, {"type": "model_output", "content": [
         {"type": "text", "text": json.dumps(answer)}]}]})
     monkeypatch.setenv("GEMINI_API_KEY", "test-key")
+    monkeypatch.setenv("POKERLAB_VISION_PROVIDER", "gemini")                # the Gemini call is what is under test here
     assert vision.recognize(b"\x89PNG...", "image/png") == snapshot
     assert sent["url"] == vision.URL and sent["headers"]["X-goog-api-key"] == "test-key"
     assert sent["body"]["model"] == vision.DEFAULT_MODEL and sent["body"]["store"] is False
@@ -1361,7 +1362,7 @@ def test_a_recording_keeps_where_each_hand_began(tmp_path, monkeypatch):
 
 
 def test_claude_as_the_reader(monkeypatch):
-    """POKERLAB_VISION_PROVIDER=claude: the same prompt and schema go to the Messages API through the anthropic package
+    """Claude, the default reader: the prompt and schema go to the Messages API through the anthropic package
     (here a stand-in for it that keeps what it was asked)."""
     import sys
     import types
@@ -1404,7 +1405,8 @@ def test_claude_as_the_reader(monkeypatch):
     monkeypatch.setitem(sys.modules, "anthropic", fake)
     for name in ("POKERLAB_VISION_REPLAY", "POKERLAB_VISION_MODEL", "POKERLAB_VISION_EFFORT"):
         monkeypatch.delenv(name, raising=False)
-    monkeypatch.setenv("POKERLAB_VISION_PROVIDER", "claude")
+    monkeypatch.delenv("POKERLAB_VISION_PROVIDER", raising=False)              # nothing chosen: Claude
+    assert vision.provider() == "claude"
     said = lambda reason, text: types.SimpleNamespace(stop_reason=reason, content=[
         types.SimpleNamespace(type="thinking", thinking=""), types.SimpleNamespace(type="text", text=text)])
     state["reply"] = said("end_turn", json.dumps(answer))
@@ -1452,6 +1454,12 @@ def test_claude_as_the_reader(monkeypatch):
         state["error"] = error
         with pytest.raises(vision.VisionError, match=words):
             vision.recognize(b"x", "image/png")
+    state["error"] = TypeError('"Could not resolve authentication method. Expected one of api_key, auth_token, ..."')
+    with pytest.raises(vision.VisionError, match="키가 없습니다"):               # the package found no key anywhere
+        vision.recognize(b"x", "image/png")
+    state["error"] = TypeError("something else")
+    with pytest.raises(TypeError, match="something else"):
+        vision.recognize(b"x", "image/png")
     state["error"] = None
     with pytest.raises(vision.VisionError, match="Claude는 PNG"):
         vision.recognize(b"x", "image/heic")
@@ -1497,8 +1505,10 @@ def test_recognizer_extras(tmp_path, monkeypatch):
             return json.dumps({"output_text": json.dumps(answer)}).encode()
 
     monkeypatch.setattr(vision.urllib.request, "urlopen", lambda request, timeout=None: sent.update(body=json.loads(request.data)) or Reply())
-    monkeypatch.delenv("POKERLAB_VISION_PROVIDER", raising=False)
+    monkeypatch.setenv("POKERLAB_VISION_PROVIDER", "gemini")                # Claude is the default reader: this is the other one
     monkeypatch.delenv("POKERLAB_VISION_EFFORT", raising=False)
+    monkeypatch.delenv("POKERLAB_VISION_MODEL", raising=False)
+    assert vision.info() == {"provider": "gemini", "service": "Google Gemini", "model": "gemini-4-hydrogen"}
     vision.recognize(b"x", "image/png", key="k", notes="stacks are in chips")
     assert sent["body"]["input"][0]["text"].endswith("About the program in this picture: stacks are in chips")
     assert sent["body"]["generation_config"] == {"thinking_level": "low"} and sent["body"]["store"] is False

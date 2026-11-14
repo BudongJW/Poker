@@ -1,6 +1,6 @@
 # pokerlab
 
-선택한 프로그램의 창이나 녹화해 둔 영상을 읽어 상대 레인지와 내 승률을 계산합니다. 창에 보이는 테이블(좌석, 스택, 앞에 놓인 칩, 딜러 버튼, 카드)을 인식하고, 거기서 포지션과 액션 이력을 복원해, 공개 핸드 히스토리로 학습한 레인지 모델로 계산합니다. 그 밑에는 자체 텍사스 홀덤 엔진, 승률(에퀴티) 계산기, 봇 자가대전으로 매일 학습하는 파이프라인이 있습니다. 같은 저장소의 `poker/`와는 완전히 독립적입니다. 계산 부분의 의존성은 NumPy와 pandas뿐이고, 창 인식 단계만 외부 서비스(Google Gemini, 또는 골랐다면 Anthropic Claude)를 호출합니다.
+선택한 프로그램의 창이나 녹화해 둔 영상을 읽어 상대 레인지와 내 승률을 계산합니다. 창에 보이는 테이블(좌석, 스택, 앞에 놓인 칩, 딜러 버튼, 카드)을 인식하고, 거기서 포지션과 액션 이력을 복원해, 공개 핸드 히스토리로 학습한 레인지 모델로 계산합니다. 그 밑에는 자체 텍사스 홀덤 엔진, 승률(에퀴티) 계산기, 봇 자가대전으로 매일 학습하는 파이프라인이 있습니다. 같은 저장소의 `poker/`와는 완전히 독립적입니다. 계산 부분의 의존성은 NumPy와 pandas뿐이고, 창 인식 단계만 외부 서비스(Anthropic Claude, 또는 골랐다면 Google Gemini)를 호출합니다.
 
 | 모듈 | 역할 |
 |---|---|
@@ -11,7 +11,7 @@
 | `inference.py` | 상대의 액션 이력으로 레인지를 추정하는 모델: 학습(숨은 카드는 EM), 추정, 정확도 평가 |
 | `phh.py` | 공개 핸드 히스토리(PHH 형식) 읽기 |
 | `table.py` | 테이블에 보이는 것(좌석, 스택, 앞에 놓인 칩, 딜러 버튼, 카드)에서 포지션과 액션 이력을 복원 |
-| `vision.py` | 창의 한 프레임을 읽어 그 값들을 돌려주는 인식 단계 (Google Gemini 또는 Anthropic Claude) |
+| `vision.py` | 창의 한 프레임을 읽어 그 값들을 돌려주는 인식 단계 (Anthropic Claude 또는 Google Gemini) |
 | `follow.py` | 창 하나를 따라가는 추적기: 새 핸드 감지, 프레임 이어 붙이기, 기록 |
 | `advisor.py` | 한 상황을 숫자·한국어 해석·JSON으로 정리 |
 | `web.py`, `static/` | 창·화면·탭·녹화 영상을 소스로 받아 읽는 로컬 웹 화면(소스 설정은 [`CAPTURE_SOURCES.md`](CAPTURE_SOURCES.md)). 카드를 직접 넣는 계산기도 들어 있음 |
@@ -81,25 +81,26 @@ python -m pokerlab serve
 | 전체 (3,541) | 8.50%p | 7.86%p | 7.61%p |
 | 그 핸드의 두 번째 이후 결정 (502) | 22.1%p | 20.3%p | 18.6%p |
 
-**인식 서비스와 키.** 인식은 기본으로 Google Gemini API를 쓰고, Anthropic Claude API로 바꿀 수 있습니다. 키는 환경 변수로 줍니다. 프레임은 인식을 위해 고른 서비스로 전송되며(Google에는 저장 안 함 옵션으로 호출), 창에 보이는 다른 플레이어의 닉네임이 함께 나갑니다. 어느 서비스의 어느 모델로 보내는지는 화면의 소스 목록 아래에 표시됩니다.
+**인식 서비스와 키.** 인식은 기본으로 Anthropic Claude API를 쓰고, Google Gemini API로 바꿀 수 있습니다. 키는 환경 변수로 줍니다. 프레임은 인식을 위해 고른 서비스로 전송되며, 창에 보이는 다른 플레이어의 닉네임이 함께 나갑니다. 어느 서비스의 어느 모델로 보내는지는 화면의 소스 목록 아래에 표시됩니다.
 
 ```bash
-export GEMINI_API_KEY=...                    # 기본: Google Gemini (gemini-4-hydrogen)
+export ANTHROPIC_API_KEY=...                 # 기본: Anthropic Claude (claude-opus-5-5)
 ```
 
 ```bash
-pip install "pokerlab[claude]"               # Claude로 읽을 때만: 공식 anthropic 패키지
-export POKERLAB_VISION_PROVIDER=claude
-export ANTHROPIC_API_KEY=...                 # 기본 모델 claude-opus-5-5
+export POKERLAB_VISION_PROVIDER=gemini       # Gemini로 읽을 때
+export GEMINI_API_KEY=...                    # 기본 모델 gemini-4-hydrogen
 ```
 
 | 환경 변수 | 뜻 | 기본 |
 |---|---|---|
-| `POKERLAB_VISION_PROVIDER` | `gemini` 또는 `claude` | `gemini` |
-| `POKERLAB_VISION_MODEL` | 고른 서비스의 다른 모델 | `gemini-4-hydrogen` / `claude-opus-5-5` |
-| `POKERLAB_VISION_EFFORT` | 모델이 생각하는 강도 (Gemini의 `thinking_level`, Claude의 `effort`) | `low` |
+| `POKERLAB_VISION_PROVIDER` | `claude` 또는 `gemini` | `claude` |
+| `POKERLAB_VISION_MODEL` | 고른 서비스의 다른 모델 | `claude-opus-5-5` / `gemini-4-hydrogen` |
+| `POKERLAB_VISION_EFFORT` | 모델이 생각하는 강도 (Claude의 `effort`, Gemini의 `thinking_level`) | `low` |
 
-생각 강도를 `low`로 둔 것은 읽기 한 번의 지연 대부분이 생각 토큰에서 나오기 때문입니다. Gemini에서 평균 9.1초가 7.4초로 줄었고 읽은 값은 같았습니다([`TUNING.md`](TUNING.md)). Claude 쪽은 같은 프롬프트와 스키마를 Messages API의 구조화 출력으로 보내고, 모델이 정책상 답을 거절하면 서비스가 정한 대체 모델이 답하도록 해 두었습니다(Opus 5.5 등 이를 지원하는 모델에서). Claude는 그림 토큰이 크기에 비례하므로(28px 조각당 1토큰) 영역을 지정하면 비용도 줄어듭니다.
+Claude를 기본으로 둔 것은 같은 프레임에서 같은 값을 더 빨리 읽었기 때문입니다(아래). Claude 쪽은 공식 `anthropic` 패키지로 프롬프트와 스키마를 Messages API의 구조화 출력으로 보내고, 모델이 정책상 답을 거절하면 서비스가 정한 대체 모델이 답하도록 해 두었습니다(Opus 5.5 등 이를 지원하는 모델에서). Claude는 그림 토큰이 크기에 비례하므로(28px 조각당 1토큰) 영역을 지정하면 비용도 줄어듭니다. Gemini 쪽은 표준 라이브러리만으로 Interactions API를 부르며, 저장 안 함 옵션으로 호출합니다.
+
+생각 강도를 `low`로 둔 것은 읽기 한 번의 지연 대부분이 생각 토큰에서 나오기 때문입니다. Gemini에서 평균 9.1초가 7.4초로 줄었고 읽은 값은 같았습니다. Claude도 `low`에서 `medium`보다 빨랐고(평균 5.0초 대 5.9초) 읽은 값은 `low`가 11장 모두, `medium`이 10장 같았습니다.
 
 같은 프레임 11장으로 비교하면 둘 다 11장 모두 같은 값을 읽었고, 읽기 한 번은 Gemini(`gemini-4-hydrogen`)가 평균 7.4초, Claude(`claude-opus-5-5`)가 평균 5.0초였습니다. Claude는 읽기 한 번에 입력 약 2,100토큰(418×412 영역 기준), 출력 약 570토큰을 씁니다. 자세한 수치는 [`TUNING.md`](TUNING.md)에 있습니다.
 

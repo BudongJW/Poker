@@ -8,10 +8,13 @@ from the snapshots, not asked of the model.
 
 Two services can do the reading; ``POKERLAB_VISION_PROVIDER`` picks one:
 
-- ``gemini`` (the default): Google's Gemini over its Interactions API, with the standard library
-  only. The key is read from ``GEMINI_API_KEY`` (or ``GOOGLE_API_KEY``).
-- ``claude``: Anthropic's Claude over the Messages API, with the ``anthropic`` package
-  (``pip install "pokerlab[claude]"``). The key is read from ``ANTHROPIC_API_KEY``.
+- ``claude`` (the default): Anthropic's Claude over the Messages API, with the ``anthropic``
+  package. The key is read from ``ANTHROPIC_API_KEY``.
+- ``gemini``: Google's Gemini over its Interactions API, with the standard library only. The key
+  is read from ``GEMINI_API_KEY`` (or ``GOOGLE_API_KEY``).
+
+Claude is the default because it was the faster of the two at the same accuracy when both were
+measured on the same frames (TUNING.md).
 
 ``POKERLAB_VISION_MODEL`` names another model of the chosen service, ``POKERLAB_VISION_EFFORT``
 how hard it should think (``low`` by default: reading a table needs little, and thinking is most of
@@ -37,7 +40,8 @@ CLAUDE_MIME_TYPES = ("image/png", "image/jpeg", "image/webp", "image/gif")
 CLAUDE_MAX_TOKENS = 16_000      # thinking counts towards it; the answer itself is a few hundred tokens
 CLAUDE_FALLBACK_BETA = "server-side-fallback-2026-07-01"
 CLAUDE_FALLBACK_MODELS = ("claude-opus-5", "claude-sonnet-5-5", "claude-fable-5-1", "claude-fable-5-2")    # prefixes
-SERVICES = {"gemini": "Google Gemini", "claude": "Anthropic Claude"}
+SERVICES = {"claude": "Anthropic Claude", "gemini": "Google Gemini"}
+DEFAULT_PROVIDER = "claude"
 
 PROMPT = """You are reading one frame of a program's window that shows a Texas Hold'em table. Report only what is visible in the picture. \
 Never guess a card or a number you cannot read: use null (or leave the list short) instead.
@@ -160,8 +164,8 @@ def _replay(path):
 
 
 def provider():
-    """Which service reads the pictures: 'gemini' or 'claude', from ``POKERLAB_VISION_PROVIDER``."""
-    name = (os.environ.get("POKERLAB_VISION_PROVIDER") or "gemini").strip().lower()
+    """Which service reads the pictures: 'claude' or 'gemini', from ``POKERLAB_VISION_PROVIDER``."""
+    name = (os.environ.get("POKERLAB_VISION_PROVIDER") or DEFAULT_PROVIDER).strip().lower()
     name = {"anthropic": "claude", "google": "gemini"}.get(name, name)
     if name not in SERVICES:
         raise VisionError(f"POKERLAB_VISION_PROVIDER는 {', '.join(SERVICES)} 중 하나여야 합니다 ({name!r})")
@@ -259,7 +263,8 @@ def _claude(image, mime_type, prompt, model, key, timeout):
     try:
         import anthropic
     except ImportError:
-        raise VisionError('Claude로 읽으려면 anthropic 패키지가 필요합니다: pip install "pokerlab[claude]"') from None
+        raise VisionError("Claude로 읽으려면 anthropic 패키지가 필요합니다: pip install anthropic "
+                          "(Gemini로 읽으려면 POKERLAB_VISION_PROVIDER=gemini)") from None
     if mime_type not in CLAUDE_MIME_TYPES:
         raise VisionError(f"지원하지 않는 이미지 형식입니다 ({mime_type}). Claude는 PNG, JPEG, WebP, GIF를 받습니다")
     model = model or CLAUDE_MODEL
@@ -288,8 +293,13 @@ def _claude(image, mime_type, prompt, model, key, timeout):
         raise VisionError(f"이미지 인식 서비스 오류 {error.status_code}: {str(error.message)[:300]}") from None
     except anthropic.APIConnectionError as error:
         raise VisionError(f"이미지 인식 서비스에 연결하지 못했습니다: {error}") from None
-    except anthropic.AnthropicError as error:             # no key at all, among others
+    except anthropic.AnthropicError as error:
         raise VisionError(f"Claude API를 부르지 못했습니다: {error}") from None
+    except TypeError as error:                            # the package's way of saying that it found no key anywhere
+        if "authentication" not in str(error):
+            raise
+        raise VisionError("Claude API 키가 없습니다. 환경 변수 ANTHROPIC_API_KEY에 키를 넣어 주세요 "
+                          "(Gemini로 읽으려면 POKERLAB_VISION_PROVIDER=gemini)") from None
     if message.stop_reason == "refusal":
         raise VisionError("Claude가 이 이미지를 읽지 않겠다고 답했습니다")
     if message.stop_reason == "max_tokens":

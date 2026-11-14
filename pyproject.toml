@@ -8,10 +8,7 @@ version = "0.2.0"
 description = "Hold'em equity calculator, opponent range inference and bot self-play"
 readme = "pokerlab/README.md"
 requires-python = ">=3.9"
-dependencies = ["numpy", "pandas"]
-
-[project.optional-dependencies]
-claude = ["anthropic>=1.0"]      # only for POKERLAB_VISION_PROVIDER=claude
+dependencies = ["numpy", "pandas", "anthropic>=1.0"]      # anthropic: the default reader of table pictures (vision.py)
 
 [project.scripts]
 pokerlab = "pokerlab.__main__:main"
