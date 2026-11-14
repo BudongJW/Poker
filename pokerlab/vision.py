@@ -1,4 +1,4 @@
-"""Read a poker table off a picture.
+"""Read a poker table off one frame of a program's window.
 
 :func:`recognize` sends one image to a vision model and returns a snapshot for
 :mod:`pokerlab.table`: who sits where, stacks, the chips in front of each player, who still holds
@@ -13,7 +13,6 @@ another model. The picture leaves this machine: it is sent to Google, with ``sto
 
 import base64
 import json
-import mimetypes
 import os
 import urllib.error
 import urllib.request
@@ -24,7 +23,7 @@ DEFAULT_MODEL = "gemini-4-hydrogen"
 MAX_IMAGE_BYTES = 12_000_000
 MIME_TYPES = ("image/png", "image/jpeg", "image/webp", "image/heic", "image/heif")
 
-PROMPT = """You are reading a screenshot of an online Texas Hold'em table. Report only what is visible in the picture. \
+PROMPT = """You are reading one frame of a program's window that shows a Texas Hold'em table. Report only what is visible in the picture. \
 Never guess a card or a number you cannot read: use null (or leave the list short) instead.
 
 seats: one entry for every seat that has a player (a name plate or avatar), including players who have folded and \
@@ -187,13 +186,3 @@ def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, no
         return to_snapshot(json.loads(_output_text(reply)))
     except json.JSONDecodeError:
         raise VisionError("이미지 인식 결과를 읽지 못했습니다 (JSON이 아닙니다)") from None
-
-
-def read_file(path, **options):
-    """A picture file -> snapshot; a ``.json`` file is taken as a snapshot (or a list of them) already read."""
-    if path.lower().endswith(".json"):
-        with open(path, encoding="utf-8") as fh:
-            return json.load(fh)
-    mime_type = mimetypes.guess_type(path)[0] or "image/png"
-    with open(path, "rb") as fh:
-        return recognize(fh.read(), mime_type, **options)

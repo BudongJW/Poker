@@ -1,25 +1,19 @@
 """Follow a table as it is played, from a stream of snapshots.
 
-A :class:`Follower` takes the snapshots that a running capture of one window produces, in the
-order they come, and keeps the hand being played up to date: it notices when a new hand starts,
-puts the hand so far back together (:func:`pokerlab.table.reconstruct`) and, when a frame does
-not fit the ones before it, carries on from that frame alone rather than stop. Each window that
-is captured gets a follower of its own, so several programs can be followed side by side.
-
-:func:`watch` feeds a follower from a folder that a capture tool fills with pictures: the way in
-for captures that do not come through the web page.
+A :class:`Follower` takes the snapshots that one window being watched produces, in the order
+they come, and keeps the hand being played up to date: it notices when a new hand starts, puts
+the hand so far back together (:func:`pokerlab.table.reconstruct`) and, when a frame does not
+fit the ones before it, carries on from that frame alone rather than stop. Each window gets a
+follower of its own, so several programs can be followed side by side.
 """
 
 import datetime
 import json
-import os
-import time
 
-from . import advisor, table, vision
+from . import advisor, table
 from .cards import card_str
 
 MAX_FRAMES = 80             # snapshots kept per hand
-PICTURES = (".png", ".jpg", ".jpeg", ".webp", ".json")
 
 
 class Follower:
@@ -101,33 +95,3 @@ class Follower:
             out["table"] = self.state()["table"]
             self._analysis = (key, out)
         return self._analysis[1]
-
-
-def watch(directory, follower, on_change, notes=None, poll=0.5, once=False):
-    """Read every picture that turns up in ``directory``, in name order, into ``follower``.
-
-    ``on_change(follower)`` is called after each picture that changed what the table shows.
-    Pictures are read with :func:`pokerlab.vision.read_file` (``.json`` files hold snapshots that
-    were read before). With ``once`` the pictures already there are read and the call returns;
-    otherwise it keeps looking until interrupted.
-    """
-    seen = set()
-    while True:
-        names = sorted(name for name in os.listdir(directory) if name.lower().endswith(PICTURES) and name not in seen)
-        for name in names:
-            seen.add(name)
-            path = os.path.join(directory, name)
-            try:
-                found = vision.read_file(path) if name.lower().endswith(".json") else vision.read_file(path, notes=notes)
-            except (ValueError, OSError) as error:
-                follower.error, changed = f"{name}: {error}", True
-                follower.version += 1
-            else:
-                changed = False
-                for snapshot in found if isinstance(found, list) else [found]:
-                    changed = follower.push(snapshot) or changed
-            if changed:
-                on_change(follower)
-        if once:
-            return
-        time.sleep(poll)

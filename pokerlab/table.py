@@ -377,7 +377,7 @@ def reconstruct(snapshots):
     return hand
 
 
-# ---- pictures of a hand the engine played (for tests and demonstrations) ---------------
+# ---- frames of a hand the engine played (for tests and replays) ------------------------
 
 def chips(actions, stacks, button, small_blind, big_blind):
     """Where the chips are after ``actions`` of a hand that started with ``stacks``:
@@ -429,17 +429,6 @@ def frames(result, stacks, hero_seat, small_blind, every=False, turns=True):
             shot["seats"][action[1]]["acting"] = turns
         out.append(shot)
     return out
-
-
-def from_engine(actions, stacks, button, small_blind, big_blind, hero_seat, hole, board, to_call, names=None):
-    """A hand the engine is playing, at one of the hero's decisions, in the form :func:`reconstruct`
-    returns: nothing has to be worked out, the log is the engine's own."""
-    n, now = len(stacks), chips(actions, stacks, button, small_blind, big_blind)
-    street = {0: 0, 3: 1, 4: 2, 5: 3}[len(board)]
-    return {"n_players": n, "button": button, "hero_seat": hero_seat, "hero": list(hole), "board": list(board),
-            "big_blind": big_blind, "actions": list(actions), "notes": [], "absent": [], "posted": now["posted"],
-            "names": list(names or [f"p{i}" for i in range(n)]), "pot": now["pot"], "live": sorted(now["live"]),
-            "bets": now["bet"] if now["street"] == street else [0] * n, "stacks": now["stack"], "to_call": to_call}
 
 
 # ---- what the hand says ----------------------------------------------------------------
@@ -495,7 +484,7 @@ def summary(hand):
 
 
 def analyze_hand(hand, model=advisor.DEFAULT_MODEL, profile="all", trials=200_000, seed=None, precision=None):
-    """The hand so far (from :func:`reconstruct` or :func:`from_engine`) -> analysis as
+    """The hand so far (from :func:`reconstruct`) -> analysis as
     :func:`pokerlab.advisor.analyze` returns it.
 
     Every opponent still in the hand gets the range that their actions imply; opponents who have

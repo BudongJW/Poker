@@ -1,10 +1,9 @@
-"""Local web page for the equity calculator: ``python -m pokerlab serve``.
+"""Local web page: ``python -m pokerlab serve``.
 
-Standard library only. ``GET /`` returns the page, ``POST /api/analyze`` takes a spot as JSON
-and returns :func:`pokerlab.advisor.to_json` of its analysis. ``POST /api/recognize`` reads one
-picture of a table into a snapshot, and ``POST /api/table`` analyses the hand that a list of
-snapshots shows. ``POST /api/live`` runs the table at which the visitor plays the bots, and
-``POST /api/capture`` follows the windows the visitor captures, one source each.
+Standard library only. ``GET /`` returns the page. ``POST /api/capture`` takes the frames of the
+windows the visitor has picked as sources, one source per program, and answers with the table
+each one shows and the analysis of the hand being played there. ``POST /api/analyze`` takes a
+spot typed in by hand and returns :func:`pokerlab.advisor.to_json` of its analysis.
 """
 
 import base64
@@ -13,8 +12,8 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import advisor, follow, live, table, vision
-from .cards import card_str, parse_cards
+from . import advisor, follow, vision
+from .cards import parse_cards
 from .inference import MODELS
 from .preflop import parse_range
 
@@ -66,72 +65,6 @@ def analyze_request(body):
     return advisor.to_json(analysis)
 
 
-def recognize_request(body):
-    """{'image': base64 or a data URL, 'mime_type'} -> {'snapshot': ...}."""
-    return {"snapshot": vision.recognize(*_picture(body))}
-
-
-def table_request(body):
-    """{'snapshots': [...], 'model', 'profile', 'precision', 'trials'} -> analysis plus the reconstructed table."""
-    snapshots = body.get("snapshots")
-    if not isinstance(snapshots, list) or not snapshots or len(snapshots) > 12:
-        raise ValueError("스냅샷은 1~12개여야 합니다")
-    model = str(body.get("model") or advisor.DEFAULT_MODEL)
-    if model not in MODELS:
-        raise ValueError(f"모델은 {', '.join(MODELS)} 중 하나여야 합니다")
-    precision = _number(body.get("precision"))
-    analysis, hand = table.analyze(
-        snapshots, model, str(body.get("profile", "all")), trials=min(int(body.get("trials", 200_000)), MAX_TRIALS),
-        precision=max(precision, MIN_PRECISION) if precision else None)
-    out = advisor.to_json(analysis)
-    out["table"] = {
-        "seats": table.describe(hand), "notes": hand["notes"], "pot": hand["pot"], "to_call": hand["to_call"],
-        "big_blind": hand["big_blind"], "n_players": hand["n_players"], "live": len(hand["live"]),
-        "hero": [card_str(c) for c in hand["hero"]], "board": [card_str(c) for c in hand["board"]],
-        "lines": table.summary(hand)}
-    return out
-
-
-_LIVE = {"session": None}       # one table: this is a page for one person on their own machine
-_LIVE_LOCK = threading.Lock()
-
-
-def live_request(body):
-    """{'do': 'new' | 'deal' | 'act' | 'state' | 'analysis', ...} -> the state of the table the visitor plays at.
-
-    'new' takes 'opponents' (a list of bot names) or 'kind' and 'players', and 'stack_bb'; 'act' takes
-    'action' ('fold', 'call', 'raise') and 'amount' (chips in front after a raise); 'analysis' takes
-    what /api/table takes and answers {'analysis': ...} for the decision at hand.
-    """
-    do = body.get("do")
-    with _LIVE_LOCK:
-        session = _LIVE["session"]
-        if do == "new":
-            opponents = body.get("opponents") or [str(body.get("kind") or "human")] * (int(body.get("players", 6)) - 1)
-            fresh = live.Session([str(kind) for kind in opponents], int(body.get("stack_bb", 100)))
-            if session:
-                session.close()
-            _LIVE["session"] = fresh
-            return fresh.deal()
-        if session is None:
-            return {"phase": "none"}
-        if do == "deal":
-            return session.deal()
-        if do == "act":
-            return session.act(str(body.get("action")), body.get("amount"))
-        if do == "analysis":
-            model = str(body.get("model") or advisor.DEFAULT_MODEL)
-            if model not in MODELS:
-                raise ValueError(f"모델은 {', '.join(MODELS)} 중 하나여야 합니다")
-            precision = _number(body.get("precision"))
-            return {"analysis": session.analysis(
-                model, str(body.get("profile", "all")), trials=min(int(body.get("trials", 200_000)), MAX_TRIALS),
-                precision=max(precision, MIN_PRECISION) if precision else None)}
-        if do == "state":
-            return session.state()
-    raise ValueError(f"unknown request {do!r}")
-
-
 _SOURCES = {}       # captured windows by the name the page gives them -> the follower of each
 _SOURCES_LOCK = threading.Lock()
 MAX_SOURCES = 8
@@ -154,8 +87,8 @@ def capture_request(body):
     """One frame of a captured window -> what that source shows now, with the analysis of the hand.
 
     {'source': a name, 'image': a frame (or 'snapshot': values already read), 'notes': what is
-    particular about the program}, plus what /api/table takes. {'do': 'state'} asks without a
-    frame, 'reset' forgets the hand being followed, 'remove' drops the source.
+    particular about the program, 'model', 'profile', 'precision', 'trials'}. {'do': 'state'} asks
+    without a frame, 'reset' forgets the hand being followed, 'remove' drops the source.
     """
     do, name = body.get("do", "frame"), str(body.get("source") or "1")[:60]
     snapshot = None
@@ -197,9 +130,6 @@ def capture_request(body):
 ROUTES = {      # path -> (handler, largest request body in bytes)
     "/api/analyze": (analyze_request, 100_000),
     "/api/capture": (capture_request, 17_000_000),
-    "/api/live": (live_request, 10_000),
-    "/api/table": (table_request, 1_000_000),
-    "/api/recognize": (recognize_request, 17_000_000),
 }
 
 
@@ -239,7 +169,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def serve(host="127.0.0.1", port=8765, record=None):
-    """Run the page. record: a file to which every hand followed through a capture is appended."""
+    """Run the page. record: a file to which every hand followed in a window is appended."""
     global RECORD
     RECORD = record
     server = ThreadingHTTPServer((host, port), Handler)
