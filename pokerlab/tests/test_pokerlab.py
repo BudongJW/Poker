@@ -1337,6 +1337,27 @@ def test_capture_sources_through_the_web_api(tmp_path, monkeypatch):
     web._SOURCES.clear()
 
 
+def test_a_recording_keeps_where_each_hand_began(tmp_path, monkeypatch):
+    """Frames read off a video file say where they are in it; the record keeps where each hand began."""
+    web._SOURCES.clear()
+    record = tmp_path / "followed.jsonl"
+    monkeypatch.setattr(web, "RECORD", str(record))
+    ask = {"source": "V", "label": "session.mp4", "trials": 2000}
+    web.capture_request({**ask, "snapshot": _shot(), "at": "0:05"})
+    web.capture_request({**ask, "snapshot": _shot(pot=10), "at": "0:09"})            # the same hand, later on
+    assert web._SOURCES["V"].started == "0:05"
+    web.capture_request({**ask, "snapshot": _shot(hero="QhQd"), "at": "1:02"})       # new hole cards: a new hand
+    assert web._SOURCES["V"].started == "1:02"
+    web.capture_request({"source": "V", "do": "reset"})
+    web.capture_request({"source": "W", "snapshot": _shot(), "trials": 2000})        # a window: no place in a recording
+    web.capture_request({"source": "W", "do": "remove"})
+    rows = [json.loads(line) for line in record.read_text().splitlines()]
+    assert [(row["source"], row.get("at"), row["hero"]) for row in rows] == [
+        ("session.mp4", "0:05", "AsKd"), ("session.mp4", "1:02", "QhQd"), ("W", None, "AsKd")]
+    assert web._SOURCES["V"].started is None
+    web._SOURCES.clear()
+
+
 def test_recognizer_extras(tmp_path, monkeypatch):
     result, chips, button = next(x for x in _played(("human", "pro", "tag"), 6, (1000,), seed=9, hands=30)
                                  if sum(a[1] == 1 for a in x[0].actions) >= 2)

@@ -87,8 +87,9 @@ def capture_request(body):
     """One frame of a captured window -> what that source shows now, with the analysis of the hand.
 
     {'source': a name, 'image': a frame (or 'snapshot': values already read), 'notes': what is
-    particular about the program, 'model', 'profile', 'precision', 'trials'}. {'do': 'state'} asks
-    without a frame, 'reset' forgets the hand being followed, 'remove' drops the source.
+    particular about the program, 'at': where the frame is in a recording, 'model', 'profile',
+    'precision', 'trials'}. {'do': 'state'} asks without a frame, 'reset' forgets the hand being
+    followed, 'remove' drops the source.
     """
     do, name = body.get("do", "frame"), str(body.get("source") or "1")[:60]
     snapshot = None
@@ -112,7 +113,7 @@ def capture_request(body):
         if do == "reset":
             follower.close()
         elif do == "frame":
-            follower.push(snapshot)
+            follower.push(snapshot, at=str(body["at"])[:20] if body.get("at") not in (None, "") else None)
         elif do != "state":
             raise ValueError(f"unknown request {do!r}")
         out = follower.state()

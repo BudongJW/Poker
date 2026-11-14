@@ -24,10 +24,15 @@ class Follower:
         self.shots, self.hand = [], None        # the snapshots of the hand being played and what they add up to
         self.note = self.error = None
         self.version = self.hands = 0           # version: counts every change; hands: hands that have ended
+        self.started = None                     # where in a recording the hand being followed began, if it comes from one
         self._last = self._analysis = None
 
-    def push(self, snapshot):
-        """Take the next snapshot. Returns True if anything changed."""
+    def push(self, snapshot, at=None):
+        """Take the next snapshot. Returns True if anything changed.
+
+        at: where the frame was in a recording ("12:34"), for a source that plays a video file; the
+        record keeps where each hand began, so that it can be found again in the video.
+        """
         if snapshot == self._last:
             return False
         self._last = snapshot
@@ -44,13 +49,15 @@ class Follower:
                     and shot["board"][:len(before["board"])] == before["board"])
             if not same:
                 self.close()
+        if not self.shots:
+            self.started = at
         self.shots = (self.shots + [snapshot])[-MAX_FRAMES:]
         self.error = self.note = None
         try:
             self.hand = table.reconstruct(self.shots)
         except ValueError as error:
             try:                                # this frame does not follow from the earlier ones: start again from it
-                self.hand, self.shots = table.reconstruct([snapshot]), [snapshot]
+                self.hand, self.shots, self.started = table.reconstruct([snapshot]), [snapshot], at
                 self.note = f"앞선 화면과 이어지지 않아 지금 화면부터 다시 읽었습니다 ({error})"
             except ValueError as alone:
                 self.error, self.shots = str(alone), self.shots[:-1]
@@ -66,10 +73,11 @@ class Follower:
                         "board": "".join(card_str(c) for c in self.hand["board"]),
                         **{key: self.hand[key] for key in ("n_players", "button", "hero_seat", "names", "big_blind", "actions",
                                                            "absent", "notes")},
+                        **({"at": self.started} if self.started is not None else {}),
                         "snapshots": self.shots}
                 with open(self.record, "a", encoding="utf-8") as fh:
                     fh.write(json.dumps(line, ensure_ascii=False) + "\n")
-        self.shots, self.hand, self.note = [], None, None
+        self.shots, self.hand, self.note, self.started = [], None, None, None
 
     def state(self):
         """What the source shows now, JSON-ready."""
