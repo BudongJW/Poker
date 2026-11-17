@@ -20,6 +20,7 @@ import math
 from . import advisor
 from .cards import card_str, parse_cards
 from .engine import CALL, CHECK, FOLD, RAISE, position_name
+from .equity import Range, matchup
 from .inference import ALL_IN, NOTHING_BEHIND, bet_class, depth_class, infer_ranges, load_model
 
 _STREET_OF = {0: 0, 3: 1, 4: 2, 5: 3}
@@ -53,6 +54,12 @@ def normalize(snapshot):
       otherwise they must come clockwise.
     * ``hero_to_act``: True when it is the hero's turn, False when it is not or cannot be told.
       Leave it out for pictures taken at the hero's decisions: then it is taken to be the hero's.
+    * ``cards`` on a seat: that player's two cards when they can be seen (a showdown, or a program
+      that shows every hand).
+
+    A table with no seat marked as the hero is watched from outside (a spectator's view, a replay):
+    then 'hero_seat' is None and 'hero' is empty. The hero's ``in_hand`` is read like anyone's, so a
+    program that keeps showing the hero's cards after a fold says so with ``in_hand`` False.
 
     Returns {'hero': cards, 'board': cards, 'street', 'pot', 'pot_includes_bets', 'big_blind',
     'seats': [...], 'hero_seat', 'button', 'actor' (the seat to act, None if unknown)} with only
@@ -86,39 +93,54 @@ def normalize(snapshot):
         raise ValueError(f"테이블에서 플레이어 {len(seats)}명을 읽었습니다. 2~10명이어야 합니다")
     heroes = [i for i, s in enumerate(seats) if s["hero"]]
     buttons = [i for i, s in enumerate(seats) if s["button"]]
-    if len(heroes) != 1:
-        raise ValueError("내 자리를 하나로 정하지 못했습니다 (앞면이 보이는 카드를 가진 자리가 한 곳이어야 합니다)")
+    if len(heroes) > 1:
+        raise ValueError("내 자리가 여러 곳으로 읽혔습니다. 소스 메모에 내 자리를 적어 주세요 (예: 내 자리는 아래 가운데)")
     if len(buttons) != 1:
         raise ValueError("딜러 버튼의 위치를 하나로 정하지 못했습니다")
-    hero = parse_cards(snapshot.get("hero") or seats[heroes[0]].get("cards") or "")
-    if len(hero) != 2:
+    hero_seat = heroes[0] if heroes else None
+    hero = [] if hero_seat is None else parse_cards(snapshot.get("hero") or seats[hero_seat].get("cards") or "")
+    if hero_seat is not None and len(hero) != 2:
         raise ValueError("내 카드 두 장을 읽지 못했습니다")
     if len(set(hero + board)) != len(hero) + len(board):
         raise ValueError("같은 카드가 두 번 읽혔습니다")
-    seats[heroes[0]]["in_hand"] = True
     # whose turn it is: a picture that says nothing about it was taken at the hero's turn (pictures put in by
     # hand are); one from a running capture says so when it is, marks another seat, or leaves it open
     acting = [i for i, s in enumerate(seats) if s["acting"] and s["in_hand"]]
-    if snapshot.get("hero_to_act") or ("hero_to_act" not in snapshot and not acting):
-        actor = heroes[0]
+    if hero_seat is not None and seats[hero_seat]["in_hand"] and (
+            snapshot.get("hero_to_act") or ("hero_to_act" not in snapshot and not acting)):
+        actor = hero_seat
     else:
         actor = acting[0] if len(acting) == 1 else None
     return {"hero": hero, "board": board, "street": _STREET_OF[len(board)], "pot": _number(snapshot.get("pot")),
             "pot_includes_bets": bool(snapshot.get("pot_includes_bets", True)),
-            "big_blind": _number(snapshot.get("big_blind")), "seats": seats, "hero_seat": heroes[0],
+            "big_blind": _number(snapshot.get("big_blind")), "seats": seats, "hero_seat": hero_seat,
             "button": buttons[0], "actor": actor}
+
+
+def shown_cards(shot):
+    """{seat: (card, card)} of the players other than the hero whose cards a normalized snapshot shows."""
+    out = {}
+    for seat, found in enumerate(shot["seats"]):
+        cards = parse_cards(found["cards"]) if found and not found["hero"] and found.get("cards") else []
+        if len(cards) == 2 and not set(cards) & set(shot["hero"] + shot["board"]):
+            out[seat] = tuple(cards)
+    return out
 
 
 def _aligned(base, shot):
     """The seats of a later snapshot in the seat order of the first one (None where a player is missing).
 
     The same table shows the same seats in the same places, so with as many players as before
-    the order round the table from the hero is taken. Only when a player is missing are places
-    (or, failing those, names) compared: names are read less reliably than where a seat is.
+    the order round the table from the hero is taken (from the button when nobody is the hero).
+    Only when a player is missing are places (or, failing those, names) compared: names are read
+    less reliably than where a seat is.
     """
     first, later = base["seats"], shot["seats"]
+    if (base["hero_seat"] is None) != (shot["hero_seat"] is None):
+        raise ValueError("한 핸드 안에서 내 자리가 있는 화면과 없는 화면이 섞였습니다")
     if len(later) == len(first):
-        shift = shot["hero_seat"] - base["hero_seat"]
+        anchor = "button" if base["hero_seat"] is None else "hero_seat"
+        shift = shot[anchor] - base[anchor]
         return [later[(i + shift) % len(later)] for i in range(len(first))]
     if all(s["x"] is not None for s in first + later):
         out = []
@@ -129,7 +151,7 @@ def _aligned(base, shot):
     else:
         by_name = {s["name"]: s for s in later if s["name"]}
         out = [by_name.get(seat["name"]) for seat in first]
-    if out[base["hero_seat"]] is None or not out[base["hero_seat"]]["hero"]:
+    if base["hero_seat"] is not None and (out[base["hero_seat"]] is None or not out[base["hero_seat"]]["hero"]):
         raise ValueError("이미지마다 내 자리가 다릅니다. 같은 핸드의 이미지를 순서대로 넣어 주세요")
     return out
 
@@ -338,8 +360,6 @@ def reconstruct(snapshots, finished=False):
         was_to_act, actor = actor, now_to_act
         bets, live_now = read(frame, "bet", 0.0), {i for i, s in enumerate(frame) if s is not None and s["in_hand"]}
         stacks = [_INF if unknown_stacks else x for x in read(frame, "stack", 0.0)]
-        if hero not in table.live:
-            raise ValueError("내가 폴드한 뒤의 이미지가 들어 있습니다")
         start, acted = resume(table, was_to_act)
         if shot["street"] == table.street:
             target = {i: max(bets[i], table.cur[i]) for i in range(n)}
@@ -347,14 +367,14 @@ def reconstruct(snapshots, finished=False):
             continue
         # the street the last picture showed is over: what everybody put in since then went into it
         if unknown_stacks:
-            level = max(table.level, table.cur[hero])
+            level = max(table.level, table.cur[hero] if hero is not None else 0.0)
             put = {i: (max(0.0, level - table.cur[i]) if i in live_now else 0.0) for i in table.live}
             hand["notes"].append("스택을 읽지 못해, 이미지 사이의 벳은 콜로만 이어진 것으로 보았습니다")
         else:
             put = {i: max(0.0, table.stack[i] - stacks[i] - bets[i]) for i in table.live}
         target = {i: table.cur[i] + put.get(i, 0.0) for i in range(n)}
         final = max(target[i] for i in table.live)
-        if target[hero] < final - 1e-9 and stacks[hero] + bets[hero] > 1e-9:
+        if hero in table.live and hero in live_now and target[hero] < final - 1e-9 and stacks[hero] + bets[hero] > 1e-9:
             raise ValueError("이미지 사이에 내 액션이 맞지 않습니다. 같은 핸드의 이미지를 순서대로 넣었는지 확인해 주세요")
         folded = table.live - live_now
         folded_here = {i for i in folded if target[i] < final - 1e-9}       # did not match the last bet of the street
@@ -370,16 +390,16 @@ def reconstruct(snapshots, finished=False):
         table = _Street(hand, shot["street"], pot, dealt, table.stack)
         table.play(dict(enumerate(bets)), dealt - live_now, first_to_act(shot["street"]), stop_at=actor)
 
-    if finished:
+    if finished and len(table.live) > 1:      # with one player left the hand ended on that fold: nobody else acts
         start, acted = resume(table, actor)
         table.play({i: table.cur[i] for i in range(n)}, set(), start, first_acts=acted, complete=True)
     others = [j for j in table.live if j != hero]
-    if not others:
-        raise ValueError("남은 상대가 없습니다")
-    cover = max(table.cur[j] + table.stack[j] for j in others)
+    to_call = 0.0
+    if hero in table.live and others:
+        cover = max(table.cur[j] + table.stack[j] for j in others)
+        to_call = min(max(0.0, min(table.level, cover) - table.cur[hero]), table.stack[hero])
     hand.update(pot=table.pot(), live=sorted(table.live), bets=[table.cur[i] for i in range(n)], actor=actor,
-                stacks=[None if table.stack[i] == _INF else table.stack[i] for i in range(n)],
-                to_call=min(max(0.0, min(table.level, cover) - table.cur[hero]), table.stack[hero]))
+                stacks=[None if table.stack[i] == _INF else table.stack[i] for i in range(n)], to_call=to_call)
     return hand
 
 
@@ -408,7 +428,8 @@ def chips(actions, stacks, button, small_blind, big_blind):
     return {"stack": stack, "bet": bet, "live": live, "pot": pot, "street": street, "posted": posted}
 
 
-def frames(result, stacks, hero_seat, small_blind, every=False, turns=True, to_end=False):
+def frames(result, stacks, hero_seat, small_blind, every=False, turns=True, to_end=False, cards="hero", keep_hero=False,
+           payout=False):
     """A hand the engine played -> the snapshots a camera would have taken at each of the hero's
     decisions (seat places on a circle, so that sorting by place is exercised too).
 
@@ -417,41 +438,57 @@ def frames(result, stacks, hero_seat, small_blind, every=False, turns=True, to_e
     to_end (with every): go on for as long as the hero holds cards, the way a window that hides
     folded cards shows a hand: after the last action one more frame, and at a showdown a last one
     with the cards turned up.
+    hero_seat None: the table as a spectator sees it, no seat is the hero's, every action to the end.
+    cards: 'hero' (other players' cards only at a showdown) or 'all' (everyone still in the hand
+    shows their cards all along, as study and replay programs do).
+    keep_hero: the hero's cards stay on the screen after a fold, so the frames go on to the end.
+    payout: a last frame with the pot pushed to the winners (stacks after the hand, no bets, no pot).
     """
     n, button, big = result.n_players, result.button, result.big_blind
-    mine = [index for index, action in enumerate(result.actions) if action[1] == hero_seat]
-    out = []
+    observer = hero_seat is None
+    every, to_end = every or observer, to_end or observer
+    mine = [] if observer else [index for index, action in enumerate(result.actions) if action[1] == hero_seat]
+    folds = [index for index in mine if result.actions[index][2] == FOLD]
+    to_the_end = observer or keep_hero or not folds
     if to_end:
-        folds = [index for index in mine if result.actions[index][2] == FOLD]
-        last = folds[0] + 1 if folds else len(result.actions) + 1
+        last = len(result.actions) + 1 if to_the_end else folds[0] + 1
     else:
         last = mine[-1] + 1 if mine else 0
+    hero_cards = "" if observer else "".join(card_str(c) for c in result.hole[hero_seat])
+    out = []
     for index in range(min(last, len(result.actions) + (1 if to_end else 0))):
         action = result.actions[index] if index < len(result.actions) else None
         if action is not None and action[1] != hero_seat and not every:
             continue
         now = chips(result.actions[:index], stacks, button, small_blind, big)
         street = action[0] if action else now["street"]
-        cards = result.board[:(0, 3, 4, 5)[street]]
+        board = result.board[:(0, 3, 4, 5)[street]]
         bet = now["bet"] if now["street"] == street else [0] * n            # the first action of a new street
         shot = {
-            "hero": "".join(card_str(c) for c in result.hole[hero_seat]), "board": "".join(card_str(c) for c in cards),
-            "pot": now["pot"], "big_blind": big,
+            "hero": hero_cards, "board": "".join(card_str(c) for c in board), "pot": now["pot"], "big_blind": big,
             "seats": [{"name": f"p{i}", "stack": now["stack"][i], "bet": bet[i], "in_hand": i in now["live"],
                        "hero": i == hero_seat, "button": i == button, "x": 0.5 + 0.4 * math.cos(2 * math.pi * i / n),
                        "y": 0.5 + 0.3 * math.sin(2 * math.pi * i / n)} for i in range(n)]}
+        if cards == "all":
+            for i in now["live"]:
+                if i != hero_seat:
+                    shot["seats"][i]["cards"] = "".join(card_str(c) for c in result.hole[i])
         if every:
             shot["hero_to_act"] = bool(turns and action and action[1] == hero_seat)
             if action:
                 shot["seats"][action[1]]["acting"] = turns
         out.append(shot)
-    if to_end and not folds and result.showdown:      # the cards turned up, before the pot goes to the winner
-        shown = dict(out[-1], board="".join(card_str(c) for c in result.board), hero_to_act=False,
-                     seats=[dict(seat, acting=False) for seat in out[-1]["seats"]])
+    if to_end and to_the_end and result.showdown and out:   # the cards turned up, before the pot goes to the winner
+        shown = dict(out[-1], board="".join(card_str(c) for c in result.board), hero_to_act=False,     # bets gathered in
+                     seats=[dict(seat, acting=False, bet=0) for seat in out[-1]["seats"]])
         for i, seat in enumerate(shown["seats"]):
             if seat["in_hand"] and not seat["hero"]:
                 seat["cards"] = "".join(card_str(c) for c in result.hole[i])
         out.append(shown)
+    if payout and to_end and to_the_end and out:
+        after = [stacks[i] - result.invested[i] + result.payouts[i] for i in range(n)]
+        out.append(dict(out[-1], board="".join(card_str(c) for c in result.board), pot=0, hero_to_act=False,
+                        seats=[dict(seat, stack=after[i], bet=0, acting=False) for i, seat in enumerate(out[-1]["seats"])]))
     return out
 
 
@@ -507,19 +544,23 @@ def summary(hand):
     return lines
 
 
-def analyze_hand(hand, model=advisor.DEFAULT_MODEL, profile="all", trials=200_000, seed=None, precision=None):
-    """The hand so far (from :func:`reconstruct`) -> analysis as
-    :func:`pokerlab.advisor.analyze` returns it.
+def analyze_hand(hand, model=advisor.DEFAULT_MODEL, profile="all", trials=200_000, seed=None, precision=None, known=None):
+    """The hand so far (from :func:`reconstruct`) -> analysis as :func:`pokerlab.advisor.analyze` returns it.
 
     Every opponent still in the hand gets the range that their actions imply; opponents who have
-    not acted yet hold random hands.
+    not acted yet hold random hands. known: {seat: (card, card)} of opponents whose cards can be
+    seen: they hold exactly those.
     """
-    seats = describe(hand)
+    seats, known = describe(hand), known or {}
     found = infer_ranges(load_model(model), hand["actions"], hand["hero_seat"], hand["hero"], hand["board"],
                          hand["n_players"], hand["button"], profile, absent=hand["absent"])
     rivals = [seat for seat in hand["live"] if seat != hand["hero_seat"]]
+    for seat in rivals:
+        if seat in known:
+            found[seat] = Range([known[seat]])
     ranged = [seat for seat in rivals if seat in found]
-    labels = [f"{seats[seat]['position_ko']}: {seats[seat]['actions']}" for seat in ranged]
+    labels = [f"{seats[seat]['position_ko']}: " + (f"공개된 카드 {''.join(card_str(c) for c in known[seat])}" if seat in known
+                                                   else seats[seat]["actions"]) for seat in ranged]
     unit = hand["big_blind"] or 1.0             # pot odds in big blinds when the big blind is known
     analysis = advisor.analyze(hand["hero"], hand["board"], len(rivals) + 1, hand["pot"] / unit,
                                hand["to_call"] / unit or None, [found[seat] for seat in ranged], trials, seed, precision,
@@ -528,6 +569,35 @@ def analyze_hand(hand, model=advisor.DEFAULT_MODEL, profile="all", trials=200_00
     for seat, summary in zip(ranged, analysis["ranges"]):
         summary["seat"] = seat
     return analysis
+
+
+def analyze_table(hand, model=advisor.DEFAULT_MODEL, profile="all", trials=200_000, seed=None, precision=None, known=None):
+    """Every player still in the hand, watched from outside (or after the hero's fold) -> JSON-ready dict.
+
+    Each player holds the cards that can be seen (known: {seat: (card, card)}), else the range
+    their actions imply, else a random hand; then everyone's equity against everyone else.
+    {'mode': 'table', 'board', 'exact', 'trials', 'players': [{'seat', 'name', 'position_ko',
+    'cards', 'equity', 'win', 'tie', 'range' (label, width, top, classes) or None}]}.
+    """
+    seats, known = describe(hand), known or {}
+    dead = list(hand["hero"]) if hand["hero_seat"] is not None else []      # a hero who folded: those cards are out
+    found = infer_ranges(load_model(model), hand["actions"], None, dead, hand["board"], hand["n_players"], hand["button"],
+                         profile, absent=hand["absent"])
+    live = [seat for seat in hand["live"] if seat != hand["hero_seat"]]
+    players = [known[seat] if seat in known else found.get(seat) for seat in live]
+    results = matchup(players, hand["board"], dead, trials, seed=seed, precision=precision)
+    taken = [c for cards in known.values() for c in cards] + list(hand["board"]) + dead
+    out = []
+    for seat, player, result in zip(live, players, results):
+        summary = None
+        if isinstance(player, Range):
+            summary = dict(advisor.range_summary(player.without(taken)), label=f"{seats[seat]['position_ko']}: {seats[seat]['actions']}")
+            summary["top"] = [list(item) for item in summary["top"]]
+        out.append({"seat": seat, "name": seats[seat]["name"], "position_ko": seats[seat]["position_ko"],
+                    "cards": [card_str(c) for c in known[seat]] if seat in known else None,
+                    "equity": result.equity, "win": result.win, "tie": result.tie, "range": summary})
+    return {"mode": "table", "board": [card_str(c) for c in hand["board"]], "exact": results[0].exact,
+            "trials": results[0].trials, "ci95": results[0].ci95, "players": out}
 
 
 def analyze(snapshots, model=advisor.DEFAULT_MODEL, profile="all", trials=200_000, seed=None, precision=None):

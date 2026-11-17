@@ -431,13 +431,17 @@ async function post(url, body) {
 /* ---- the table a window shows ---- */
 function tableCard(t) {
   const amount = x => x == null ? "모름" : t.big_blind ? (x / t.big_blind).toFixed(1) + "bb" : String(+x.toFixed(2));
-  const box = section("창에서 읽은 테이블", `${t.n_players}명 중 ${t.live}명 남음 · 팟 ${amount(t.pot)} · 콜 금액 ${amount(t.to_call)}`);
+  const box = section(t.observer ? "창에서 읽은 테이블 (관전 화면)" : "창에서 읽은 테이블",
+    `${t.n_players}명 중 ${t.live}명 남음 · 팟 ${amount(t.pot)}` + (t.observer ? "" : ` · 콜 금액 ${amount(t.to_call)}`));
   const table = el("table", "seats"), head = el("tr");
-  for (const title of ["포지션", "플레이어", "스택", "앞에 놓인 칩", "액션"]) head.append(el("th", null, title));
+  for (const title of ["포지션", "플레이어", "카드", "스택", "앞에 놓인 칩", "액션"]) head.append(el("th", null, title));
   table.append(head);
   for (const seat of t.seats) {
-    const row = el("tr", (seat.hero ? "me " : "") + (seat.in_hand ? "" : "out"));
-    row.append(el("td", null, seat.position_ko), el("td", null, seat.hero ? "나" : seat.name || `자리 ${seat.seat + 1}`),
+    const row = el("tr", (seat.hero ? "me " : "") + (seat.in_hand ? "" : "out")), cards = el("td", "num");
+    const shown = seat.hero ? t.hero : seat.cards ? seat.cards.match(/../g) : null;
+    if (shown && shown.length) for (const card of shown) cards.append(el("span", "suit-" + card[1], cardLabel(card) + " "));
+    else cards.textContent = "—";
+    row.append(el("td", null, seat.position_ko), el("td", null, seat.hero ? "나" : seat.name || `자리 ${seat.seat + 1}`), cards,
       el("td", "num", amount(seat.stack)), el("td", "num", seat.bet ? amount(seat.bet) : "—"),
       el("td", null, seat.actions || (seat.in_hand ? "아직 액션 없음" : "폴드")));
     table.append(row);
@@ -465,7 +469,8 @@ function capDescribe(source) {
   if (source.busy) return "읽는 중…";
   if (!st) return "화면을 기다리는 중";
   const t = st.table;
-  return (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]} · ${t.n_players}명 중 ${t.live}명 · ${st.hero_to_act ? "내 차례" : "진행 중"}`
+  return (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]} · ${t.n_players}명 중 ${t.live}명 · ${
+      st.observer ? "관전 화면" : st.hero_folded ? "내가 폴드함" : st.hero_to_act ? "내 차례" : "진행 중"}`
     : st.error || "핸드를 기다리는 중") + ` · 끝난 핸드 ${st.hands}개` +
     (st.profile && st.profile !== "all" ? " · 이 프로그램의 기록으로 읽는 중" : "") +
     (source.label.value.trim() ? "" : " · 이름 없음: 이 소스의 핸드는 학습에 쓰지 않습니다") + ` · ${source.readAt || ""}`;
@@ -480,8 +485,32 @@ function capShow() {
   if (!source) { renderMessage(capSupported() ? "창을 추가하면 그 창에 보이는 테이블을 읽기 시작합니다." : "이 브라우저는 창을 소스로 받을 수 없습니다. 읽을 프로그램이 떠 있는 컴퓨터의 Chrome, Edge, Firefox에서 열어 주세요.", !capSupported()); return; }
   const st = source.state;
   if (source.error && !(st && st.analysis)) renderMessage(source.error, true);
+  else if (st && st.analysis && st.analysis.mode === "table") renderPlayers(st.analysis);
   else if (st && st.analysis) renderResult(st.analysis);
+  else if (st && st.table) {                     // a hand is followed but there is nothing to compare (one player left)
+    const box = el("div", "card-box"); box.append(el("p", "hint", st.hero_folded ? "내가 폴드한 핸드입니다. 나머지 진행을 따라가며 기록합니다." : "남은 플레이어가 한 명입니다."));
+    $("result").replaceChildren(box, tableCard(st.table));
+  }
   else renderMessage(st && st.error ? st.error : "이 창에서 아직 핸드를 읽지 못했습니다.");
+}
+function renderPlayers(d) {         // watched from outside, or after the hero's fold: everyone's equity against everyone
+  const box = section(d.table && d.table.observer ? "모든 플레이어의 승률 (관전 화면)" : "남은 플레이어의 승률 (내가 폴드한 핸드)",
+    (d.board.length ? `보드 ${d.board.map(cardLabel).join(" ")} · ` : "프리플랍 · ") +
+    (d.exact ? "전수 계산, 오차 없음" : `몬테카를로 ${d.trials.toLocaleString()}회, ±${(d.ci95 * 100).toFixed(2)}%p`));
+  const bars = el("div", "bars"), top = Math.max(...d.players.map(p => p.equity));
+  for (const p of d.players) {
+    const name = el("div", "name");
+    name.append(document.createTextNode(`${p.position_ko} ${p.name || "자리 " + (p.seat + 1)} `));
+    if (p.cards) for (const card of p.cards) name.append(el("span", "suit-" + card[1], cardLabel(card)));
+    else name.append(el("span", null, p.range ? `· 레인지 약 ${pct(p.range.width, 0)}` : "· 랜덤 핸드"));
+    const track = el("div", "track"), bar = el("div", "bar");
+    bar.style.width = `calc((100% - 56px) * ${top > 0 ? p.equity / top : 0})`;
+    attachTip(bar, pct(p.equity, 2), p.cards ? "공개된 카드 기준" : p.range ? p.range.label : "아직 액션 없음");
+    track.append(bar, el("span", "value", pct(p.equity)));
+    bars.append(name, track);
+  }
+  box.append(bars, el("p", "hint", "카드가 보이는 플레이어는 그 카드로, 보이지 않는 플레이어는 액션에서 추정한 레인지로 계산합니다."));
+  $("result").replaceChildren(box, ...(d.table ? [tableCard(d.table)] : []));
 }
 async function capSend(source) {
   const video = source.video, scale = Math.min(1, 1600 / video.videoWidth);

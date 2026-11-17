@@ -14,7 +14,9 @@ model's, untouched by any program's records.
 
 Only hands that were followed from the start are used: the follower did not have to start again
 from a single frame (a frame that did not fit, perhaps misread), and the action log begins
-before the flop. The hero's own actions are left out: the model is for reading opponents. Hands
+before the flop. The hero's own actions are left out: the model is for reading opponents (a table
+watched from outside has no hero, and everyone at it is learned from). Cards that a program shows
+all along are used like cards shown at a showdown, so such programs teach the most. Hands
 of a source that was never given a name are left out too: an unnamed source could be any
 program, and its hands would blur the profile of whichever program it was taken for.
 """
@@ -50,7 +52,8 @@ def to_hand(record, label=None):
     if record.get("named") is False or record.get("restarted") or record.get("absent") or not actions or actions[0][0] != 0:
         return None
     try:
-        n, button, hero_seat = int(record["n_players"]), int(record["button"]), int(record["hero_seat"])
+        n, button = int(record["n_players"]), int(record["button"])
+        hero_seat = None if record.get("hero_seat") is None else int(record["hero_seat"])       # None: watched from outside
         board, hero = parse_cards(record.get("board") or ""), parse_cards(record.get("hero") or "")
         holes = {hero_seat: tuple(hero)} if len(hero) == 2 else {}
         for seat, cards in (record.get("shown") or {}).items():
@@ -101,7 +104,7 @@ def learn(records, out=None, base=BASE, prior_hands=PRIOR_HANDS, flop_runouts=15
     hands = [hand for hand in (to_hand(record) for record in records) if hand is not None]
     summary = {"records": len(records), "hands": len(hands), "out": out,
                "programs": sorted({label for hand in hands for label in hand["bots"].values() if label}),
-               "shown": sum(len(hand["holes"]) - 1 for hand in hands)}
+               "shown": sum(sum(1 for seat in hand["holes"] if hand["bots"].get(seat)) for hand in hands)}   # others' cards
     if not hands:
         return summary
     model = adapt(inference.load_model(base), inference.prepare(hands, flop_runouts, processes=processes), prior_hands)

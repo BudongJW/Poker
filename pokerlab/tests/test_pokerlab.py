@@ -1659,3 +1659,113 @@ def test_the_server_learns_from_its_record_as_it_goes(tmp_path, monkeypatch):
     thread.join(5)
     assert os.path.exists(tmp_path / "live.json") and "lab A" in inference.ActionModel.load(str(tmp_path / "live.json")).counts
     inference.load_model.cache_clear()
+
+
+# ---- the screens that study and recording programs show ----------------------------------
+
+SCREENS = {     # name: (hero seat, frame options, what the follower should end up with)
+    "client": (0, dict(cards="hero", payout=True)),
+    "every card face up": (0, dict(cards="all", payout=True)),
+    "hero's cards stay after a fold": (0, dict(cards="hero", keep_hero=True, payout=True)),
+    "hero's seat stays, cards gone": (0, dict(cards="hero", keep_hero=True, payout=True, gone=True)),
+    "spectator, every card face up": (None, dict(cards="all", payout=True)),
+    "spectator, cards hidden": (None, dict(cards="hero", payout=True)),
+}
+
+
+@pytest.mark.parametrize("screen", sorted(SCREENS))
+@pytest.mark.parametrize("stacks", [(1000,) * 6, (60, 150, 300, 1000, 2500, 400)])
+def test_every_kind_of_screen_is_followed_to_the_end(screen, stacks):
+    from pokerlab.cards import card_str
+    hero, options = SCREENS[screen]
+    gone = options.get("gone", False)
+    options = {key: value for key, value in options.items() if key != "gone"}
+    rng = random.Random(7)
+    bots = [make_bot(kind, seed=index) for index, kind in enumerate(("station", "maniac", "human", "pro", "lag", "nit"))]
+    follower, checked = follow.Follower("lab"), 0
+    for index in range(60):
+        result = play_hand(bots, list(stacks), index % 6, 5, 10, rng)
+        shots = table.frames(result, list(stacks), hero, 5, every=True, to_end=True, **options)
+        if gone:
+            shots = [dict(shot, hero="") if not shot["seats"][hero]["in_hand"] else shot for shot in shots]
+        if not shots:
+            continue
+        for shot in shots:
+            follower.push(shot)
+        hand = follower.hand
+        engine = [int(name[1:]) for name in hand["names"]]
+        folds = [i for i, a in enumerate(result.actions) if hero is not None and a[1] == hero and a[2] == FOLD]
+        seen = folds[0] if folds and not options.get("keep_hero") else len(result.actions)
+        assert [(a[0], engine[a[1]], a[2], round(a[3])) for a in hand["actions"]] == [tuple(a[:4]) for a in result.actions[:seen]]
+        assert not follower.restarted
+        for seat, cards in follower.shown.items():
+            assert cards == "".join(card_str(c) for c in result.hole[engine[seat]])
+        if options["cards"] == "all":           # everyone still in shows their cards: all of them are kept
+            assert {engine[seat] for seat in follower.shown} >= {i for i in range(6) if result.folded_street[i] < 0 and i != hero}
+        follower.close()
+        checked += 1
+    assert checked > 40
+
+
+def test_what_is_shown_for_a_spectator_a_folded_hero_and_open_cards():
+    rng = random.Random(11)
+    bots = [make_bot(kind, seed=index) for index, kind in enumerate(("nit", "station", "station", "lag", "human", "pro"))]
+    result = next(r for r in (play_hand(bots, [1000] * 6, i % 6, 5, 10, rng) for i in range(400))
+                  if r.final_street >= 1 and sum(r.folded_street[i] < 0 for i in range(6)) >= 2 and r.folded_street[0] == 0)
+    # watched from outside with every card face up: everyone's equity, exact
+    follower = follow.Follower("lab")
+    shots = table.frames(result, [1000] * 6, None, 5, cards="all")
+    flop = next(i for i, shot in enumerate(shots) if len(shot["board"]) == 6)
+    for shot in shots[:flop + 1]:
+        follower.push(shot)
+    state, got = follower.state(), follower.analysis(trials=2000, seed=1)
+    assert state["observer"] and not state["hero_to_act"] and got["mode"] == "table" and got["exact"]
+    assert len(got["players"]) == len(follower.hand["live"]) and sum(p["equity"] for p in got["players"]) == pytest.approx(1.0)
+    assert all(p["cards"] for p in got["players"]) and all(seat["cards"] for seat in state["table"]["seats"] if seat["in_hand"])
+    json.dumps(got)
+    # the same without the cards: ranges from the actions, Monte Carlo
+    follower = follow.Follower("lab")
+    for shot in table.frames(result, [1000] * 6, None, 5)[:flop + 1]:
+        follower.push(shot)
+    got = follower.analysis(trials=2000, seed=1)
+    assert not got["exact"] and all(p["cards"] is None for p in got["players"]) and any(p["range"] for p in got["players"])
+    assert sum(p["equity"] for p in got["players"]) == pytest.approx(1.0, abs=0.02)
+    # the hero folded before the flop and the program keeps the cards on the screen: the others' equities
+    follower = follow.Follower("lab")
+    for shot in table.frames(result, [1000] * 6, 0, 5, every=True, to_end=True, keep_hero=True)[:flop + 1]:
+        follower.push(shot)
+    state, got = follower.state(), follower.analysis(trials=2000, seed=1)
+    assert state["hero_folded"] and got["mode"] == "table" and 0 not in [p["seat"] for p in got["players"]]
+    # a hero still in, with every opponent's cards face up: the hero's equity against those very cards
+    hero = next(i for i in range(6) if result.folded_street[i] < 0)
+    follower = follow.Follower("lab")
+    for shot in table.frames(result, [1000] * 6, hero, 5, every=True, to_end=True, cards="all")[:flop + 1]:
+        follower.push(shot)
+    got = follower.analysis(trials=2000, seed=1)
+    assert got["exact"] and all("공개된 카드" in r["label"] for r in got["ranges"])
+    # the recognizer: no seat marked is a spectator's view; two marked asks for a note
+    shot = table.frames(result, [1000] * 6, 0, 5)[0]
+    assert table.normalize(dict(shot, hero="", seats=[dict(s, hero=False) for s in shot["seats"]]))["hero_seat"] is None
+    with pytest.raises(ValueError, match="메모"):
+        table.normalize(dict(shot, seats=[dict(s, hero=True) for s in shot["seats"]]))
+
+
+def test_programs_that_show_every_card_teach_from_every_seat(tmp_path, monkeypatch):
+    monkeypatch.setitem(inference.MODELS, "live", str(tmp_path / "live.json"))
+    rng = random.Random(3)
+    bots = [make_bot(kind, seed=index) for index, kind in enumerate(("maniac", "station", "lag", "pro", "random", "nit"))]
+    path = str(tmp_path / "open.jsonl")
+    follower = follow.Follower("open lab", path)
+    for index in range(80):
+        result = play_hand(bots, [1000] * 6, index % 6, 5, 10, rng)
+        for shot in table.frames(result, [1000] * 6, None, 5, cards="all", payout=True):
+            follower.push(shot)
+    follower.close()
+    lines = [json.loads(line) for line in open(path)]
+    assert all(line["hero_seat"] is None for line in lines)
+    hands = [records.to_hand(line) for line in lines]
+    assert all(hand and None not in hand["bots"].values() for hand in hands)            # nobody is left out
+    assert sum(len(hand["holes"]) for hand in hands) == 6 * len(hands)                 # every hand fully known
+    summary = records.learn(path, prior_hands=100, flop_runouts=40)
+    assert summary["hands"] == len(lines) and summary["programs"] == ["open lab"]
+    inference.load_model.cache_clear()

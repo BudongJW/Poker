@@ -34,17 +34,21 @@ players who are sitting out. Skip empty seats.
 all_in is true.
 - bet: the chips lying in front of the player for the current betting round (posted blinds count). 0 if there are none. \
 The pot in the middle is not a bet.
-- in_hand: true if the player still holds hole cards (card backs or face-up cards next to the plate); false if the \
-player has folded or was not dealt in.
-- is_hero: true for the one player whose two hole cards are face up (normally at the bottom of the table).
+- in_hand: true if the player still takes part in the hand (card backs or face-up cards next to the plate); false if \
+the player has folded or was not dealt in, even when the folded cards are still shown (greyed, dimmed or marked folded).
+- is_hero: true for the one seat the program is played from: normally the seat at the bottom centre, or the one the \
+notes about the program name. Keep marking that seat after its player folds. When several players' cards are face up \
+(a program that shows every hand, a replay), still mark only that one seat. When the picture is a spectator's view \
+with no seat of its own, mark no seat.
 - has_button: true for the one player who has the dealer button (a disc marked D) next to them.
 - sitting_out: true if the plate says the player is sitting out or away.
 - acting: true for the one player whose turn it is, if the table shows it (a highlighted plate, a timer bar, a \
 countdown); false otherwise.
-- cards: for a player other than the hero whose two hole cards are turned face up (at a showdown), those two \
-cards; otherwise an empty list. Never list card backs.
+- cards: for a player other than the hero whose two hole cards can be seen face up (at a showdown, or in a program \
+that shows every hand), those two cards; otherwise an empty list. Never list card backs.
 
-hero_cards: the two face-up hole cards of the hero. board: the community cards in the middle, left to right \
+hero_cards: the two hole cards of the hero's seat if they can be seen; an empty list when there is no hero seat or \
+its cards are not shown. board: the community cards in the middle, left to right \
 (0, 3, 4 or 5 cards). Write each card as rank then suit: ranks 2 3 4 5 6 7 8 9 T J Q K A, suits s h d c \
 (for example "As", "Td", "9h"). In four-colour decks blue is diamonds and green is clubs.
 
