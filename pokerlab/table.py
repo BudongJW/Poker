@@ -247,8 +247,11 @@ def _big_blind(shot, sb_seat, bb_seat):
     raise ValueError("블라인드 금액을 알 수 없습니다")
 
 
-def reconstruct(snapshots):
+def reconstruct(snapshots, finished=False):
     """Snapshots of one hand, in order -> the hand so far.
+
+    finished: the betting is known to be over (the cards were turned up for a showdown), so the
+    players who had not acted yet in the last round checked or called.
 
     The snapshots may be pictures taken at the hero's decisions, or the frames of a running
     capture taken at any moment (see ``hero_to_act`` in :func:`normalize`). A frame that shows the
@@ -367,6 +370,9 @@ def reconstruct(snapshots):
         table = _Street(hand, shot["street"], pot, dealt, table.stack)
         table.play(dict(enumerate(bets)), dealt - live_now, first_to_act(shot["street"]), stop_at=actor)
 
+    if finished:
+        start, acted = resume(table, actor)
+        table.play({i: table.cur[i] for i in range(n)}, set(), start, first_acts=acted, complete=True)
     others = [j for j in table.live if j != hero]
     if not others:
         raise ValueError("남은 상대가 없습니다")
@@ -402,22 +408,32 @@ def chips(actions, stacks, button, small_blind, big_blind):
     return {"stack": stack, "bet": bet, "live": live, "pot": pot, "street": street, "posted": posted}
 
 
-def frames(result, stacks, hero_seat, small_blind, every=False, turns=True):
+def frames(result, stacks, hero_seat, small_blind, every=False, turns=True, to_end=False):
     """A hand the engine played -> the snapshots a camera would have taken at each of the hero's
     decisions (seat places on a circle, so that sorting by place is exercised too).
 
     every: a snapshot before every action instead, as a running capture sees the table, up to the
     hero's last decision. turns: those say whose turn it is; without, they leave it open.
+    to_end (with every): go on for as long as the hero holds cards, the way a window that hides
+    folded cards shows a hand: after the last action one more frame, and at a showdown a last one
+    with the cards turned up.
     """
     n, button, big = result.n_players, result.button, result.big_blind
     mine = [index for index, action in enumerate(result.actions) if action[1] == hero_seat]
     out = []
-    for index, action in enumerate(result.actions[:mine[-1] + 1] if mine else []):
-        if action[1] != hero_seat and not every:
+    if to_end:
+        folds = [index for index in mine if result.actions[index][2] == FOLD]
+        last = folds[0] + 1 if folds else len(result.actions) + 1
+    else:
+        last = mine[-1] + 1 if mine else 0
+    for index in range(min(last, len(result.actions) + (1 if to_end else 0))):
+        action = result.actions[index] if index < len(result.actions) else None
+        if action is not None and action[1] != hero_seat and not every:
             continue
         now = chips(result.actions[:index], stacks, button, small_blind, big)
-        cards = result.board[:(0, 3, 4, 5)[action[0]]]
-        bet = now["bet"] if now["street"] == action[0] else [0] * n         # the first action of a new street
+        street = action[0] if action else now["street"]
+        cards = result.board[:(0, 3, 4, 5)[street]]
+        bet = now["bet"] if now["street"] == street else [0] * n            # the first action of a new street
         shot = {
             "hero": "".join(card_str(c) for c in result.hole[hero_seat]), "board": "".join(card_str(c) for c in cards),
             "pot": now["pot"], "big_blind": big,
@@ -425,9 +441,17 @@ def frames(result, stacks, hero_seat, small_blind, every=False, turns=True):
                        "hero": i == hero_seat, "button": i == button, "x": 0.5 + 0.4 * math.cos(2 * math.pi * i / n),
                        "y": 0.5 + 0.3 * math.sin(2 * math.pi * i / n)} for i in range(n)]}
         if every:
-            shot["hero_to_act"] = turns and action[1] == hero_seat
-            shot["seats"][action[1]]["acting"] = turns
+            shot["hero_to_act"] = bool(turns and action and action[1] == hero_seat)
+            if action:
+                shot["seats"][action[1]]["acting"] = turns
         out.append(shot)
+    if to_end and not folds and result.showdown:      # the cards turned up, before the pot goes to the winner
+        shown = dict(out[-1], board="".join(card_str(c) for c in result.board), hero_to_act=False,
+                     seats=[dict(seat, acting=False) for seat in out[-1]["seats"]])
+        for i, seat in enumerate(shown["seats"]):
+            if seat["in_hand"] and not seat["hero"]:
+                seat["cards"] = "".join(card_str(c) for c in result.hole[i])
+        out.append(shown)
     return out
 
 

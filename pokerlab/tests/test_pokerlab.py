@@ -1,5 +1,6 @@
 import itertools
 import json
+import os
 import random
 import sqlite3
 import threading
@@ -8,7 +9,7 @@ import urllib.request
 import numpy as np
 import pytest
 
-from pokerlab import advisor, daily, follow, formats, inference, phh, preflop, report, selfplay, table, vision, web
+from pokerlab import advisor, daily, follow, formats, inference, phh, preflop, records, report, selfplay, table, vision, web
 from pokerlab.bots import BOT_TYPES, Bot, make_bot
 from pokerlab.cards import ALL_CLASSES, card, class_combos, hand_class, parse_cards
 from pokerlab.engine import CALL, FOLD, RAISE, play_hand, position_name
@@ -1555,3 +1556,96 @@ def test_paired_model_check_and_runs_that_are_made_up(tmp_path, capsys):
     assert not daily.due("19:38", options["state_dir"], datetime.datetime.now(utc))[0]
     with pytest.raises(ValueError):
         daily.run_cycle(**dict(options, challengers=0))
+
+
+# ---- learning from the hands followed in a window -----------------------------------------
+
+def _recorded(tmp_path, kinds, hands, seed, name="lab A", stacks=(1000,) * 6):
+    """Hands the engine played, followed through the frames a window shows, into a record file."""
+    rng = random.Random(seed)
+    bots = [make_bot(kind, seed=index) for index, kind in enumerate(kinds)]
+    path = str(tmp_path / f"{name}.jsonl")
+    follower, played = follow.Follower(name, path), []
+    for index in range(hands):
+        result = play_hand(bots, list(stacks), index % len(bots), 5, 10, rng)
+        for shot in table.frames(result, list(stacks), 0, 5, every=True, to_end=True):
+            follower.push(shot)
+        played.append(result)
+    follower.close()
+    return path, played
+
+
+def test_records_hold_the_whole_hand_and_the_shown_cards(tmp_path):
+    from pokerlab.cards import card_str
+    path, played = _recorded(tmp_path, ("station", "maniac", "human", "pro", "random", "lag"), 120, 5,
+                             stacks=(60, 150, 300, 1000, 2500, 400))
+    lines = [json.loads(line) for line in open(path)]
+    assert len(lines) == 120
+    shown = 0
+    for line, result in zip(lines, played):
+        engine = [int(name[1:]) for name in line["names"]]                 # record seat -> engine seat
+        got = [(a[0], engine[a[1]], a[2], round(a[3])) for a in line["actions"]]
+        folds = [i for i, a in enumerate(result.actions) if a[1] == 0 and a[2] == FOLD]
+        assert got == [tuple(a[:4]) for a in result.actions[:folds[0] if folds else len(result.actions)]]
+        assert not line["restarted"]
+        for seat, cards in line["shown"].items():
+            assert cards == "".join(card_str(c) for c in result.hole[engine[int(seat)]])
+            shown += 1
+    assert shown > 20
+    hands = [records.to_hand(line) for line in lines]
+    usable = [hand for hand in hands if hand]
+    assert len(usable) > 90 and all(hand["bots"][lines[0]["hero_seat"]] is None for hand in usable[:1])
+    assert records.to_hand(dict(lines[0], restarted=True)) is None and records.to_hand(dict(lines[0], absent=[2])) is None
+    late = dict(lines[0], actions=[a for a in lines[0]["actions"] if a[0] > 0])
+    assert records.to_hand(late) is None                                    # followed from the flop only
+
+
+def test_the_live_model_learns_each_programs_players(tmp_path, monkeypatch, capsys):
+    monkeypatch.setitem(inference.MODELS, "live", str(tmp_path / "live.json"))
+    inference.load_model.cache_clear()
+    assert inference.load_model("live").counts.keys() == inference.load_model("online").counts.keys()   # nothing learned yet
+    path, _ = _recorded(tmp_path, ("maniac", "maniac", "station", "lag", "pro", "random"), 150, 7)
+    summary = records.learn(path, prior_hands=100, flop_runouts=40)
+    assert summary["hands"] > 100 and summary["programs"] == ["lab A"] and summary["shown"] > 0
+    live = inference.load_model("live")
+    assert set(live.counts) == {"all", "lab A"}
+    # a model of maniacs bets more with weak hands than the 2009 players did
+    ctx = inference.context(0, 0, inference.NO_BET, 6, 6, inference.POSITIONS.index("mp"), inference.DEEP)
+    weak = slice(0, 3)
+    assert (live.likelihood(ctx, inference.AGGRESSIVE, "lab A")[weak].mean()
+            > inference.load_model("online").likelihood(ctx, inference.AGGRESSIVE)[weak].mean())
+    # the live tab reads the program's players with that program's profile
+    web._SOURCES.clear()
+    result, chips, _ = next(x for x in _played(("human", "pro", "tag"), 6, (1000,), seed=9, hands=30)
+                            if sum(a[1] == 0 for a in x[0].actions) >= 2)
+    for shot in table.frames(result, chips, 0, 5, every=True):
+        out = web.capture_request({"source": "1", "label": "lab A", "snapshot": shot, "model": "live", "profile": "auto",
+                                   "trials": 2000})
+    assert out["profile"] == "lab A" and "equity" in out["analysis"]
+    out = web.capture_request({"source": "2", "label": "lab B", "snapshot": shot, "model": "live", "profile": "auto", "trials": 2000})
+    assert out["profile"] == "all"
+    web._SOURCES.clear()
+    from pokerlab.__main__ import main
+    main(["learn", path, "--out", str(tmp_path / "other.json"), "--prior-hands", "50"])
+    assert "lab A" in capsys.readouterr().out and os.path.exists(tmp_path / "other.json")
+    empty = tmp_path / "empty.jsonl"
+    empty.write_text("not json\n")
+    main(["learn", str(empty), "--out", str(tmp_path / "none.json")])
+    assert "없습니다" in capsys.readouterr().out and not os.path.exists(tmp_path / "none.json")
+    inference.load_model.cache_clear()
+
+
+def test_the_server_learns_from_its_record_as_it_goes(tmp_path, monkeypatch):
+    monkeypatch.setitem(inference.MODELS, "live", str(tmp_path / "live.json"))
+    path, _ = _recorded(tmp_path, ("maniac", "station", "lag", "pro", "random", "nit"), 60, 3)
+    stop = threading.Event()
+    thread = threading.Thread(target=web._learner, args=(path, 10, stop, 0.05), daemon=True)
+    thread.start()
+    for _ in range(600):
+        if os.path.exists(tmp_path / "live.json"):
+            break
+        stop.wait(0.1)
+    stop.set()
+    thread.join(5)
+    assert os.path.exists(tmp_path / "live.json") and "lab A" in inference.ActionModel.load(str(tmp_path / "live.json")).counts
+    inference.load_model.cache_clear()

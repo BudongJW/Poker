@@ -170,6 +170,7 @@ th { color: var(--muted); }
     <div id="capSources" class="stack" style="gap:8px"></div>
     <label class="field">상대의 액션을 해석할 모델 (어떤 플레이어들의 습관으로 레인지를 추정할지)
       <select id="capModel">
+        <option value="live:auto" selected>이 프로그램에서 기록한 핸드로 보정 (기록이 없으면 실전 온라인)</option>
         <option value="online:all">실전 온라인 2009 · 전체</option>
         <option value="online:nl25-50">실전 온라인 · 25~50NL</option>
         <option value="online:nl100-200">실전 온라인 · 100~200NL</option>
@@ -465,7 +466,8 @@ function capDescribe(source) {
   if (!st) return "화면을 기다리는 중";
   const t = st.table;
   return (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]} · ${t.n_players}명 중 ${t.live}명 · ${st.hero_to_act ? "내 차례" : "진행 중"}`
-    : st.error || "핸드를 기다리는 중") + ` · 끝난 핸드 ${st.hands}개 · ${source.readAt || ""}`;
+    : st.error || "핸드를 기다리는 중") + ` · 끝난 핸드 ${st.hands}개` +
+    (st.profile && st.profile !== "all" ? " · 이 프로그램의 기록으로 읽는 중" : "") + ` · ${source.readAt || ""}`;
 }
 function capRefresh(source) {
   source.line.textContent = capDescribe(source);

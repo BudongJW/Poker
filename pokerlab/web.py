@@ -4,6 +4,10 @@ Standard library only. ``GET /`` returns the page. ``POST /api/capture`` takes t
 windows the visitor has picked as sources, one source per program, and answers with the table
 each one shows and the analysis of the hand being played there. ``POST /api/analyze`` takes a
 spot typed in by hand and returns :func:`pokerlab.advisor.to_json` of its analysis.
+
+With a record file the server also learns from it as it goes (:mod:`pokerlab.records`): every
+``learn_every`` new hands the 'live' model is fitted again, and the live tab reads the players of
+each program with what their own hands showed.
 """
 
 import base64
@@ -12,9 +16,9 @@ import os
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from . import advisor, follow, vision
+from . import advisor, follow, records, vision
 from .cards import parse_cards
-from .inference import MODELS
+from .inference import MODELS, load_model
 from .preflop import parse_range
 
 PAGE = os.path.join(os.path.dirname(__file__), "static", "index.html")
@@ -121,10 +125,41 @@ def capture_request(body):
             if model not in MODELS:
                 raise ValueError(f"모델은 {', '.join(MODELS)} 중 하나여야 합니다")
             precision = _number(body.get("precision"))
+            profile = str(body.get("profile", "all"))
+            if profile == "auto":               # the program's own profile, once its hands have been learned from
+                profile = follower.name if follower.name in load_model(model).counts else "all"
             out["analysis"] = follower.analysis(
-                model, str(body.get("profile", "all")), trials=min(int(body.get("trials", 200_000)), MAX_TRIALS),
+                model, profile, trials=min(int(body.get("trials", 200_000)), MAX_TRIALS),
                 precision=max(precision, MIN_PRECISION) if precision else None)
+            out["profile"] = profile
         return out
+
+
+def _learner(record, every, stop, wait=30.0):
+    """Fit the 'live' model again whenever ``every`` more hands are in the record (runs in a thread)."""
+    learned = None
+    while not stop.wait(wait if learned is not None else 0.0):
+        try:
+            with open(record, encoding="utf-8") as fh:
+                lines = sum(1 for _ in fh)
+        except OSError:
+            lines = 0
+        if learned is None:
+            learned = lines if os.path.exists(MODELS["live"]) else 0
+        if lines - learned < every:
+            continue
+        try:
+            summary = records.learn(record, processes=1)       # no worker processes from a server thread
+        except (ValueError, OSError) as error:
+            print(f"pokerlab: 기록에서 학습하지 못했습니다: {error}", flush=True)
+        else:
+            if summary["hands"]:
+                with _SOURCES_LOCK:             # analyses made with the old model are not reused
+                    for follower in _SOURCES.values():
+                        follower._analysis = None
+                print(f"pokerlab: 기록 {summary['hands']}핸드로 live 모델을 다시 학습했습니다 "
+                      f"(프로그램: {', '.join(summary['programs'])}, 공개된 카드 {summary['shown']}건)", flush=True)
+        learned = lines
 
 
 ROUTES = {      # path -> (handler, largest request body in bytes)
@@ -168,15 +203,20 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
 
-def serve(host="127.0.0.1", port=8765, record=None):
-    """Run the page. record: a file to which every hand followed in a window is appended."""
+def serve(host="127.0.0.1", port=8765, record=None, learn_every=50):
+    """Run the page. record: a file to which every hand followed in a window is appended.
+    learn_every: with a record, fit the 'live' model again after this many new hands (0: never)."""
     global RECORD
     RECORD = record
     server = ThreadingHTTPServer((host, port), Handler)
+    stop = threading.Event()
+    if record and learn_every:
+        threading.Thread(target=_learner, args=(record, learn_every, stop), daemon=True).start()
     print(f"pokerlab: http://{host}:{server.server_address[1]}  (Ctrl-C to stop)")
     try:
         server.serve_forever()
     except KeyboardInterrupt:
         pass
     finally:
+        stop.set()
         server.server_close()

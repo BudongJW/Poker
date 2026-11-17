@@ -35,6 +35,8 @@ MODELS = {      # bundled models by name
     "selfplay": MODEL_PATH,                                     # this package's bots; updated by the daily cycle
     "online": os.path.join(_DATA, "action_model_online.json"),  # real-money online play, July 2009 (HandHQ)
     "pro": os.path.join(_DATA, "action_model_pro.json"),        # Pluribus and the professionals it played
+    # 'online' plus the hands followed in windows, one profile per program (pokerlab.records); 'online' until there is one
+    "live": os.path.join(_DATA, "action_model_live.json"),
 }
 N_BUCKETS = 10
 # What a player can do. A bet or raise comes in three sizes, measured by the chips put in beyond the
@@ -555,7 +557,10 @@ class ActionModel:
 @lru_cache(maxsize=8)
 def load_model(name=MODEL_PATH):
     """A bundled model by name (see :data:`MODELS`) or the model stored in a file, read once per process."""
-    return ActionModel.load(MODELS.get(name, name))
+    path = MODELS.get(name, name)
+    if name == "live" and not os.path.exists(path):         # nothing learned from windows yet
+        path = MODELS["online"]
+    return ActionModel.load(path)
 
 
 def default_model():
@@ -673,6 +678,8 @@ def _prepare_chunk(job):
                    for street in {street for acts in by_seat.values() for street, _, _ in acts if street}}
         players = []
         for seat, acts in by_seat.items():
+            if hand["bots"].get(seat) is None:          # a seat that is not learned from (the hero of a record)
+                continue
             hole = hand["holes"].get(seat)
             players.append((hand["bots"][seat], -1 if hole is None else int(COMBO_INDEX[hole[0], hole[1]]), tuple(acts)))
         out.append((players, buckets))
@@ -686,6 +693,8 @@ def prepare(hands, flop_runouts=150, seed=0, processes=None):
     from multiprocessing import Pool
 
     jobs = [(chunk, flop_runouts, [seed, i]) for i, chunk in enumerate(_in_chunks(hands, 250))]
+    if processes == 1:                  # in this process: safe from a thread of a server, where forking is not
+        return [item for job in jobs for item in _prepare_chunk(job)]
     with Pool(processes) as pool:
         return [item for part in pool.imap(_prepare_chunk, jobs) for item in part]
 

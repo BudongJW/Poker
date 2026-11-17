@@ -145,6 +145,14 @@ def main(argv=None):
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--record", metavar="FILE",
                    help="append every hand followed in a window to this file (JSON lines)")
+    p.add_argument("--learn-every", type=int, default=50, metavar="HANDS",
+                   help="with --record: fit the 'live' model again after this many new hands (default 50; 0 = never)")
+
+    p = sub.add_parser("learn", help="fit the 'live' model from hands followed in windows (serve --record files)")
+    p.add_argument("records", nargs="+", metavar="FILE")
+    p.add_argument("--out", default=None, help="where to write the model (default: the bundled 'live' model)")
+    p.add_argument("--base", default="online", help="the model the programs' own hands are added to (default online)")
+    p.add_argument("--prior-hands", type=int, default=None, help="the weight of the base model, in hands (default 500)")
 
     p = sub.add_parser("preflop-table", help="recompute the 169-hand pre-flop equity table (about 25 minutes)")
     p.add_argument("--trials", type=int, default=4_000_000)
@@ -235,7 +243,18 @@ def main(argv=None):
         daily.print_history(args.state)
     elif args.command == "serve":
         from . import web
-        web.serve(args.host, args.port, args.record)
+        web.serve(args.host, args.port, args.record, args.learn_every)
+    elif args.command == "learn":
+        from . import records
+        lines = [line for path in args.records for line in records.read(path)]
+        summary = records.learn(lines, out=args.out, base=args.base,
+                                prior_hands=args.prior_hands or records.PRIOR_HANDS)
+        if not summary["hands"]:
+            print(f"기록 {summary['records']}줄 가운데 학습에 쓸 수 있는 핸드가 없습니다 "
+                  "(처음부터 따라간 핸드만 씁니다). 모델을 바꾸지 않았습니다.")
+        else:
+            print(f"기록 {summary['records']}줄 가운데 {summary['hands']}핸드로 학습했습니다 -> {summary['out']}\n"
+                  f"프로그램: {', '.join(summary['programs'])} · 쇼다운에서 공개된 카드 {summary['shown']}건")
     elif args.command == "preflop-table":
         preflop.build_table(args.trials, args.processes, progress=print)
         print("written", preflop.TABLE_PATH)

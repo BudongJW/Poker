@@ -143,7 +143,6 @@ def table(fmt, new_bot, rng, max_hands=None):
 
     The table ends when ``fmt.finish`` players are left in the field (one, or a satellite's nine).
     """
-    hands_per_level = fmt.hands_per_level
     players = [[new_bot(), fmt.start_chips] for _ in range(fmt.seats)]
     button, hand, late_entries, field = rng.randrange(fmt.seats), 0, 0, None
     while len(players) > 1 and (max_hands is None or hand < max_hands):

@@ -5,13 +5,18 @@ they come, and keeps the hand being played up to date: it notices when a new han
 the hand so far back together (:func:`pokerlab.table.reconstruct`) and, when a frame does not
 fit the ones before it, carries on from that frame alone rather than stop. Each window gets a
 follower of its own, so several programs can be followed side by side.
+
+A frame in which other players' cards are turned up is a showdown: the cards are kept for the
+record (they are what learning from the record needs most) and the chips in it are not read, since
+by then the pot may be on its way to the winner. The record of a hand says whether the follower
+had to start again from a single frame, so that learning can leave such hands out.
 """
 
 import datetime
 import json
 
 from . import advisor, table
-from .cards import card_str
+from .cards import card_str, parse_cards
 
 MAX_FRAMES = 80             # snapshots kept per hand
 
@@ -25,6 +30,7 @@ class Follower:
         self.note = self.error = None
         self.version = self.hands = 0           # version: counts every change; hands: hands that have ended
         self._last = self._analysis = None
+        self.shown, self.restarted = {}, False   # cards turned up at a showdown by seat; had to start again in this hand
 
     def push(self, snapshot):
         """Take the next snapshot. Returns True if anything changed."""
@@ -44,6 +50,8 @@ class Follower:
                     and shot["board"][:len(before["board"])] == before["board"])
             if not same:
                 self.close()
+            elif self._showdown(shot):
+                return True
         self.shots = (self.shots + [snapshot])[-MAX_FRAMES:]
         self.error = self.note = None
         try:
@@ -52,9 +60,29 @@ class Follower:
             try:                                # this frame does not follow from the earlier ones: start again from it
                 self.hand, self.shots = table.reconstruct([snapshot]), [snapshot]
                 self.note = f"앞선 화면과 이어지지 않아 지금 화면부터 다시 읽었습니다 ({error})"
+                self.restarted, self.shown = True, {}
             except ValueError as alone:
                 self.error, self.shots = str(alone), self.shots[:-1]
         return True
+
+    def _showdown(self, shot):
+        """Keep the cards other players turn up in a frame of the hand being followed -> was it a showdown?"""
+        try:
+            seats = table._aligned(table.normalize(self.shots[0]), shot)
+        except ValueError:
+            return False
+        shown = {}
+        for seat, found in enumerate(seats):
+            cards = parse_cards(found["cards"]) if found and not found["hero"] and found.get("cards") else []
+            if len(cards) == 2 and not set(cards) & set(shot["hero"] + shot["board"]):
+                shown[seat] = "".join(card_str(c) for c in cards)
+        self.shown.update(shown)
+        if shown and self.hand is not None:
+            try:                                # nobody acts after the cards are turned up: the last round was closed
+                self.hand = table.reconstruct(self.shots, finished=True)
+            except ValueError:
+                pass
+        return bool(shown)
 
     def close(self):
         """The hand being followed is over: write it to the record, if there is one, and forget it."""
@@ -66,10 +94,12 @@ class Follower:
                         "board": "".join(card_str(c) for c in self.hand["board"]),
                         **{key: self.hand[key] for key in ("n_players", "button", "hero_seat", "names", "big_blind", "actions",
                                                            "absent", "notes")},
-                        "snapshots": self.shots}
+                        "shown": {str(seat): cards for seat, cards in sorted(self.shown.items())},
+                        "restarted": self.restarted, "snapshots": self.shots}
                 with open(self.record, "a", encoding="utf-8") as fh:
                     fh.write(json.dumps(line, ensure_ascii=False) + "\n")
         self.shots, self.hand, self.note = [], None, None
+        self.shown, self.restarted = {}, False
 
     def state(self):
         """What the source shows now, JSON-ready."""

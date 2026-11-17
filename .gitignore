@@ -239,3 +239,6 @@ Poker.code-workspace
 *.sqlite-wal
 *.sqlite-shm
 pokerlab-daily.log
+
+# the live model each person learns from their own window records (pokerlab learn / serve --record)
+pokerlab/data/action_model_live.json

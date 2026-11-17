@@ -41,6 +41,8 @@ player has folded or was not dealt in.
 - sitting_out: true if the plate says the player is sitting out or away.
 - acting: true for the one player whose turn it is, if the table shows it (a highlighted plate, a timer bar, a \
 countdown); false otherwise.
+- cards: for a player other than the hero whose two hole cards are turned face up (at a showdown), those two \
+cards; otherwise an empty list. Never list card backs.
 
 hero_cards: the two face-up hole cards of the hero. board: the community cards in the middle, left to right \
 (0, 3, 4 or 5 cards). Write each card as rank then suit: ranks 2 3 4 5 6 7 8 9 T J Q K A, suits s h d c \
@@ -75,7 +77,7 @@ SCHEMA = {
                 "name": {"type": ["string", "null"]}, "x": {"type": "number"}, "y": {"type": "number"},
                 "stack": _NUMBER, "bet": _NUMBER, "in_hand": {"type": "boolean"}, "is_hero": {"type": "boolean"},
                 "has_button": {"type": "boolean"}, "sitting_out": {"type": "boolean"}, "all_in": {"type": "boolean"},
-                "acting": {"type": "boolean"}},
+                "acting": {"type": "boolean"}, "cards": {"type": "array", "items": {"type": "string"}}},
             "required": ["x", "y", "stack", "bet", "in_hand", "is_hero", "has_button", "sitting_out", "all_in", "acting"]}},
     },
     "required": ["is_poker_table", "hero_cards", "board", "pot", "hero_to_act", "seats"],
@@ -109,7 +111,8 @@ def to_snapshot(answer):
                       "stack": 0.0 if stack is None and seat.get("all_in") else stack, "bet": seat.get("bet") or 0.0,
                       "in_hand": bool(seat.get("in_hand")), "hero": bool(seat.get("is_hero")),
                       "button": bool(seat.get("has_button")), "sitting_out": bool(seat.get("sitting_out")),
-                      "acting": bool(seat.get("acting"))})
+                      "acting": bool(seat.get("acting")),
+                      "cards": "" if seat.get("is_hero") else "".join(_card(c) for c in seat.get("cards") or [])})
     includes = answer.get("pot_includes_bets")
     return {"hero": "".join(_card(c) for c in answer.get("hero_cards") or []),
             "board": "".join(_card(c) for c in answer.get("board") or []), "pot": answer.get("pot"),
