@@ -247,7 +247,7 @@ def print_history(state_dir=STATE_DIR):
         m = e["model"]
         before = "   -  " if m["mae_before"] is None else f"{m['mae_before']:.4f}"
         change = "        -        " if m.get("change") is None else f"{m['change']:+.4f}±{m['change_ci95']:.4f}"
-        duels = ", ".join(f"{x['diff_bb100']:+.0f}±{x['ci95']:.0f}{'*' if x['promoted'] else ''}" for x in e["matches"])
+        duels = ", ".join(f"{x['diff_bb100']:+.1f}±{x['ci95']:.1f}{'*' if x['promoted'] else ''}" for x in e["matches"])
         print(f"{e['cycle']:>4}   {e['date']}  {e['hands']:>7,}   {m['mae_random']:.4f} -> {before} -> {m['mae_after']:.4f}"
               f"   {change:<17}   {'반영' if m['kept'] else '기각'}   {e['champion']['generation']:>6}        {duels}"
               + (f"   [대회 형식 {e['formats']['names']} {e['formats']['hands']:,}핸드 포함]" if e.get("formats") else ""))

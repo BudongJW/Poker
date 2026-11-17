@@ -467,7 +467,8 @@ function capDescribe(source) {
   const t = st.table;
   return (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]} · ${t.n_players}명 중 ${t.live}명 · ${st.hero_to_act ? "내 차례" : "진행 중"}`
     : st.error || "핸드를 기다리는 중") + ` · 끝난 핸드 ${st.hands}개` +
-    (st.profile && st.profile !== "all" ? " · 이 프로그램의 기록으로 읽는 중" : "") + ` · ${source.readAt || ""}`;
+    (st.profile && st.profile !== "all" ? " · 이 프로그램의 기록으로 읽는 중" : "") +
+    (source.label.value.trim() ? "" : " · 이름 없음: 이 소스의 핸드는 학습에 쓰지 않습니다") + ` · ${source.readAt || ""}`;
 }
 function capRefresh(source) {
   source.line.textContent = capDescribe(source);
@@ -518,7 +519,9 @@ async function capAdd() {
   catch (e) { renderMessage("창을 고르지 않았습니다.", false); return; }
   const source = {id: `소스 ${cap.next++}`, stream, live: true, busy: false, changed: true, movedAt: 0, sentAt: -1e9, look: null, state: null, error: null};
   const node = source.node = el("div", "source"), head = el("div", "row");
-  const name = source.label = el("input"); name.type = "text"; name.value = source.id; name.setAttribute("aria-label", "소스 이름 (프로그램 이름)");
+  const name = source.label = el("input"); name.type = "text"; name.placeholder = `${source.id} · 프로그램 이름을 정해 주세요`;
+  name.setAttribute("aria-label", "프로그램 이름 (기록 학습과 프로그램별 모델이 이 이름으로 묶입니다)");
+  name.oninput = () => capRefresh(source);
   name.onclick = e => e.stopPropagation();
   const now = el("button", "btn", "지금 읽기"); now.type = "button"; now.onclick = e => { e.stopPropagation(); if (source.live && !source.busy) capSend(source); };
   const reset = el("button", "btn", "핸드 다시"); reset.type = "button"; reset.title = "따라가던 핸드를 잊고 지금 화면부터 다시 읽습니다";

@@ -1596,6 +1596,9 @@ def test_records_hold_the_whole_hand_and_the_shown_cards(tmp_path):
     usable = [hand for hand in hands if hand]
     assert len(usable) > 90 and all(hand["bots"][lines[0]["hero_seat"]] is None for hand in usable[:1])
     assert records.to_hand(dict(lines[0], restarted=True)) is None and records.to_hand(dict(lines[0], absent=[2])) is None
+    assert all(line["named"] for line in lines) and records.to_hand(dict(lines[0], named=False)) is None
+    old = {key: value for key, value in lines[0].items() if key != "named"}            # records from before names were marked
+    assert (records.to_hand(old) is None) == (records.to_hand(lines[0]) is None)
     late = dict(lines[0], actions=[a for a in lines[0]["actions"] if a[0] > 0])
     assert records.to_hand(late) is None                                    # followed from the flop only
 
@@ -1609,6 +1612,8 @@ def test_the_live_model_learns_each_programs_players(tmp_path, monkeypatch, caps
     assert summary["hands"] > 100 and summary["programs"] == ["lab A"] and summary["shown"] > 0
     live = inference.load_model("live")
     assert set(live.counts) == {"all", "lab A"}
+    # a program without hands of its own is read exactly as the online model reads it
+    assert np.array_equal(live.counts["all"], inference.load_model("online").counts["all"])
     # a model of maniacs bets more with weak hands than the 2009 players did
     ctx = inference.context(0, 0, inference.NO_BET, 6, 6, inference.POSITIONS.index("mp"), inference.DEEP)
     weak = slice(0, 3)
@@ -1624,6 +1629,11 @@ def test_the_live_model_learns_each_programs_players(tmp_path, monkeypatch, caps
     assert out["profile"] == "lab A" and "equity" in out["analysis"]
     out = web.capture_request({"source": "2", "label": "lab B", "snapshot": shot, "model": "live", "profile": "auto", "trials": 2000})
     assert out["profile"] == "all"
+    # a source nobody named is not taken for a program, even one whose name it happens to carry
+    out = web.capture_request({"source": "lab A", "label": "", "snapshot": shot, "model": "live", "profile": "auto", "trials": 2000})
+    assert out["profile"] == "all" and not web._SOURCES["lab A"].named
+    web.capture_request({"source": "1", "label": "  ", "do": "state"})
+    assert web._SOURCES["1"].name == "1" and not web._SOURCES["1"].named
     web._SOURCES.clear()
     from pokerlab.__main__ import main
     main(["learn", path, "--out", str(tmp_path / "other.json"), "--prior-hands", "50"])

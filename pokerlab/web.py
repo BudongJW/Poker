@@ -109,10 +109,11 @@ def capture_request(body):
         if name not in _SOURCES:
             if len(_SOURCES) >= MAX_SOURCES:
                 raise ValueError(f"소스는 {MAX_SOURCES}개까지 둘 수 있습니다")
-            _SOURCES[name] = follow.Follower(name, RECORD)
+            _SOURCES[name] = follow.Follower(name, RECORD, named=False)
         follower = _SOURCES[name]
-        if body.get("label"):
-            follower.name = str(body["label"])[:60]         # what the visitor calls the program; goes into the record
+        if "label" in body:                     # what the visitor calls the program: the record and the profile go by it
+            label = str(body.get("label") or "").strip()[:60]
+            follower.name, follower.named = (label, True) if label else (name, False)
         if do == "reset":
             follower.close()
         elif do == "frame":
@@ -127,7 +128,7 @@ def capture_request(body):
             precision = _number(body.get("precision"))
             profile = str(body.get("profile", "all"))
             if profile == "auto":               # the program's own profile, once its hands have been learned from
-                profile = follower.name if follower.name in load_model(model).counts else "all"
+                profile = follower.name if follower.named and follower.name in load_model(model).counts else "all"
             out["analysis"] = follower.analysis(
                 model, profile, trials=min(int(body.get("trials", 200_000)), MAX_TRIALS),
                 precision=max(precision, MIN_PRECISION) if precision else None)

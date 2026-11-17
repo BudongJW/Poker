@@ -24,8 +24,11 @@ MAX_FRAMES = 80             # snapshots kept per hand
 class Follower:
     """The table one source shows, hand after hand."""
 
-    def __init__(self, name="", record=None):
+    def __init__(self, name="", record=None, named=None):
+        """named: whether ``name`` says which program this is (a source the visitor named), which
+        decides whether its hands may be learned from; by default whenever there is a name."""
         self.name, self.record = name, record
+        self.named = bool(name) if named is None else named
         self.shots, self.hand = [], None        # the snapshots of the hand being played and what they add up to
         self.note = self.error = None
         self.version = self.hands = 0           # version: counts every change; hands: hands that have ended
@@ -89,7 +92,7 @@ class Follower:
         if self.hand is not None:
             self.hands += 1
             if self.record:
-                line = {"time": datetime.datetime.now().isoformat(timespec="seconds"), "source": self.name,
+                line = {"time": datetime.datetime.now().isoformat(timespec="seconds"), "source": self.name, "named": self.named,
                         "hero": "".join(card_str(c) for c in self.hand["hero"]),
                         "board": "".join(card_str(c) for c in self.hand["board"]),
                         **{key: self.hand[key] for key in ("n_players", "button", "hero_seat", "names", "big_blind", "actions",
