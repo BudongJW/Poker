@@ -42,13 +42,15 @@ PROMPT = """You are reading one frame of a program's window that shows a Texas H
 Never guess a card or a number you cannot read: use null (or leave the list short) instead.
 
 seats: one entry for every seat that has a player (a name plate or avatar), including players who have folded and \
-players who are sitting out. Skip empty seats.
+players who are sitting out. Skip empty seats, and a dealer drawn at the table who deals but does not play.
 - x, y: the centre of the player's name plate as fractions of the image width and height (0 to 1, y measured from the top).
 - name: the name on the plate, or null.
-- stack: the chips the player has left, as shown on the plate. If the plate says the player is all-in, stack is 0 and \
-all_in is true.
+- stack: the chips the player has left, as shown on the plate; null if the table does not show it as a number. If the \
+plate says the player is all-in, stack is 0 and all_in is true.
 - bet: the chips lying in front of the player for the current betting round (posted blinds count). 0 if there are none. \
-The pot in the middle is not a bet.
+The pot in the middle is not a bet. Some programs show by each player what that player has put in during the whole \
+hand instead (the amount stays after a betting round ends, and a player who folded still shows what they paid): then \
+report that amount and answer bets_whole_hand true.
 - in_hand: true if the player still takes part in the hand (card backs or face-up cards next to the plate); false if \
 the player has folded or was not dealt in, even when the folded cards are still shown (greyed, dimmed or marked folded).
 - is_hero: true for the one seat the program is played from: normally the seat at the bottom centre, or the one the \
@@ -70,6 +72,8 @@ its cards are not shown. board: the community cards in the middle, left to right
 pot: the number the table shows for the pot (prefer the one labelled total pot). pot_includes_bets: true if that number \
 already includes the chips lying in front of the players, false if it only counts chips already gathered in the middle, \
 null if you cannot tell.
+bets_whole_hand: true if the amounts by the players count the whole hand (see bet; the notes may say so), false if \
+they are for the current betting round, null if you cannot tell.
 big_blind: the big blind, from the stakes in the window title or table name if they are visible (for "$0.50/$1.00" \
 answer 1.0), else null.
 
@@ -88,6 +92,7 @@ SCHEMA = {
         "board": {"type": "array", "items": {"type": "string"}},
         "pot": _NUMBER,
         "pot_includes_bets": {"type": ["boolean", "null"]},
+        "bets_whole_hand": {"type": ["boolean", "null"]},
         "big_blind": _NUMBER,
         "hero_to_act": {"type": ["boolean", "null"]},
         "seats": {"type": "array", "items": {
@@ -156,7 +161,8 @@ def to_snapshot(answer):
     return {"hero": "".join(_card(c) for c in answer.get("hero_cards") or []),
             "board": "".join(_card(c) for c in answer.get("board") or []), "pot": answer.get("pot"),
             "pot_includes_bets": True if includes is None else bool(includes), "big_blind": answer.get("big_blind"),
-            "hero_to_act": bool(answer.get("hero_to_act")), "seats": seats}
+            "bets_whole_hand": answer.get("bets_whole_hand") is True, "hero_to_act": bool(answer.get("hero_to_act")),
+            "seats": seats}
 
 
 def _output_text(reply):

@@ -15,7 +15,12 @@ What different programs show is taken as it comes:
   hand as well, with or without a showdown;
 * a hero whose cards stay on the screen after a fold is followed out to the end of the hand, and so
   is a hero whose cards disappear, if the frame still marks the hero's seat;
-* a table with no hero (a spectator's view, a replay) is followed hand by hand by its button.
+* a table with no hero (a spectator's view, a replay) is followed hand by hand by its button; a
+  hand that began that way only because the hero's cards were not dealt yet becomes the hero's
+  as soon as they are (the frames before them are kept);
+* a hero's card read wrong in some frames (half hidden under the other card, say) does not start a
+  new hand: a new hand needs the button to move or the pot to go down as well, and the hand
+  goes by the cards most of its frames show.
 
 The record of a hand says whether the follower had to start again from a single frame, so that
 learning can leave such hands out.
@@ -51,6 +56,7 @@ class Follower:
         self.restarted = False                  # had to start again from a single frame in this hand
         self.finished = False                   # the betting of this hand is over: no more chips to read
         self.open = False                       # this program shows other players' cards all along
+        self.waiting = []                       # frames as read while the hero's seat had no cards yet (see _dealt)
 
     def push(self, snapshot):
         """Take the next snapshot. Returns True if anything changed."""
@@ -60,6 +66,10 @@ class Follower:
         self.version += 1
         self._analysis = None
         self.counts["frames"] += 1
+        read, outside = snapshot, False
+        if self.waiting and self._dealt(snapshot):  # the hero's cards have come: the hand is the hero's after all
+            self.shots = [dict(frame, hero=snapshot["hero"]) for frame in self.waiting]
+            self.hand, self.waiting = None, []
         snapshot = self._with_hero_cards(snapshot)
         try:
             shot = table.normalize(snapshot)
@@ -67,7 +77,7 @@ class Follower:
             try:                                # a seat marked as the hero's with no cards in it, and no hand to take them from:
                 if self.hand is not None and self.hand["hero_seat"] is not None:
                     raise ValueError            # (the hero's own hand goes on through _with_hero_cards)
-                snapshot = table.without_hero(snapshot)
+                snapshot, outside = table.without_hero(snapshot), True
                 shot = table.normalize(snapshot)          # watched from outside
             except ValueError:
                 self.error = str(error)
@@ -85,21 +95,27 @@ class Follower:
                     if self.hand is not None and not self.hand["actions"]:
                         self.open = True        # shown before anyone acted: a program that shows them all
                     else:                       # cards turned up: a showdown
-                        self._finish()
+                        self._finish(self._stayed_out(shot, out_of_hand=True))
                         return True
-        if not self.shots:
+        starts = not self.shots
+        if starts:
             self.open = bool(table.shown_cards(shot))
             self._keep_cards(shot, shot)
         self.shots = (self.shots + [snapshot])[-MAX_FRAMES:]
         self.error = self.note = None
         try:
-            self.hand = table.reconstruct(self.shots)
+            self.hand = table.reconstruct(self._agreed())
+            if starts:                          # read from outside before the flop: perhaps the hero's cards are still to come
+                self.waiting = [read] if outside and shot["street"] == 0 and not self.open else []
+            elif self.waiting:
+                self.waiting = self.waiting + [read] if shot["street"] == 0 else []
             if self._betting_over():
                 self._finish()
         except ValueError as error:
+            self.waiting = []
             if self.hand is not None and len(self.shots) > 1 and self._paid_out(shot):
                 self.shots.pop()                # the pot went to the winner: the hand is over
-                self._finish()
+                self._finish(self._stayed_out(shot))
                 return True
             try:                                # this frame does not follow from the earlier ones: start again from it
                 self.hand, self.shots = table.reconstruct([snapshot]), [snapshot]
@@ -141,6 +157,28 @@ class Follower:
             return snapshot                     # another hand has begun
         return filled
 
+    def _dealt(self, snapshot):
+        """Does a frame of a hand followed from outside show the hero's cards dealt (still before the
+        flop, at the same table with the button in the same place, nobody else's cards shown)?"""
+        try:
+            shot = table.normalize(snapshot)
+            first = table.normalize(dict(self.waiting[0], hero=snapshot.get("hero")))
+        except ValueError:
+            return False
+        if shot["hero_seat"] is None or first["hero_seat"] is None or shot["street"] or table.shown_cards(shot):
+            return False
+        n = len(shot["seats"])
+        return len(first["seats"]) == n and (shot["button"] - shot["hero_seat"]) % n == (first["button"] - first["hero_seat"]) % n
+
+    def _agreed(self):
+        """The hand's snapshots, each with the hero's cards that most of them show (the earliest on a tie)."""
+        reads = [frozenset(parse_cards(s["hero"])) for s in self.shots if s.get("hero")]
+        if len(set(reads)) <= 1:
+            return self.shots
+        common = max(reads, key=lambda cards: (reads.count(cards), -reads.index(cards)))
+        cards = next(s["hero"] for s in self.shots if s.get("hero") and frozenset(parse_cards(s["hero"])) == common)
+        return [dict(s, hero=cards) if s.get("hero") else s for s in self.shots]
+
     @staticmethod
     def _same(before, shot):
         """Is ``shot`` a later moment of the hand ``before`` belongs to?"""
@@ -148,9 +186,18 @@ class Follower:
             return False
         if shot["street"] < before["street"] or shot["board"][:len(before["board"])] != before["board"]:
             return False
+        n = len(before["seats"])
+        if len(shot["seats"]) != n:
+            return False
         if before["hero_seat"] is not None:
-            return shot["hero"] == before["hero"]
-        if len(shot["seats"]) != len(before["seats"]) or shot["button"] != before["button"]:
+            if set(shot["hero"]) == set(before["hero"]):
+                return True                     # other cards: a new deal only if the button moved or the pot went down
+            if (shot["button"] - shot["hero_seat"]) % n != (before["button"] - before["hero_seat"]) % n:
+                return False
+            middle = [None if s["pot"] is None else s["pot"] + (0 if s["pot_includes_bets"] else sum(x["bet"] for x in s["seats"]))
+                      for s in (before, shot)]
+            return None not in middle and middle[1] >= middle[0] - 1e-6
+        if shot["button"] != before["button"]:
             return False                        # watched from outside: the button tells the hands apart
         mine, now = table.shown_cards(before), table.shown_cards(shot)
         return all(now[seat] == cards for seat, cards in mine.items() if seat in now)
@@ -180,19 +227,43 @@ class Follower:
         """Nobody can bet any more: one player left, or everyone but at most one all-in with nothing owed."""
         hand = self.hand
         live, stacks = hand["live"], hand["stacks"]
-        if len(live) <= 1:
-            return True
+        if len(live) <= 1:      # a fold read in one frame only may be a misread: once the frame before agrees, or the pot is paid out
+            try:
+                base, last = table.normalize(self.shots[0]), table.normalize(self.shots[-1])
+                ins = [{i for i, seat in enumerate(table._aligned(base, table.normalize(frame))) if seat is not None and seat["in_hand"]}
+                       for frame in self.shots[-2:]]
+            except ValueError:
+                return True
+            return len(ins) < 2 or ins[0] == ins[1] or self._paid_out(last)
         if any(stacks[seat] is None for seat in live):
             return False
         level = max(hand["bets"][seat] for seat in live)
         owed = any(stacks[seat] > 1e-9 and hand["bets"][seat] < level - 1e-9 for seat in live)
         return not owed and sum(stacks[seat] > 1e-9 for seat in live) <= 1
 
-    def _finish(self):
-        """The betting is over: whoever had not acted in the last round checked or called."""
+    def _stayed_out(self, shot, out_of_hand=False):
+        """The players who owed chips when the betting ended and whose stack ``shot`` (taken after it
+        did: the pot pushed to the winner, or cards turned up) shows as it was: they put nothing more
+        in, so they folded. out_of_hand: only those that ``shot`` also shows out of the hand (at a
+        showdown the callers' stacks may not have been brought up to date yet)."""
+        try:
+            seats = table._aligned(table.normalize(self.shots[0]), shot)
+        except ValueError:
+            return set()
+        hand, out = self.hand, set()
+        level = max((hand["bets"][i] for i in hand["live"]), default=0.0)
+        for i in hand["live"]:
+            before, now = hand["stacks"][i], seats[i]["stack"] if seats[i] is not None else None
+            if hand["bets"][i] < level - 1e-9 and before is not None and now is not None and abs(now - before) <= 0.005 * max(before, 1.0) \
+                    and not (out_of_hand and seats[i]["in_hand"]):
+                out.add(i)
+        return out
+
+    def _finish(self, folded=()):
+        """The betting is over: whoever had not acted in the last round checked or called (or folded, if known)."""
         self.finished = True
         try:
-            self.hand = table.reconstruct(self.shots, finished=True)
+            self.hand = table.reconstruct(self._agreed(), finished=True, folded=folded)
         except ValueError:
             pass
 

@@ -587,7 +587,7 @@ async function capAdd() {
   const options = el("div", "row"), every = source.every = el("select"); every.setAttribute("aria-label", "다시 읽는 최소 간격");
   for (const [v, t] of [["2", "2초마다"], ["3", "3초마다"], ["5", "5초마다"], ["10", "10초마다"]]) { const o = el("option", null, t); o.value = v; every.append(o); }
   every.value = "3";
-  const notes = source.notes = el("input"); notes.type = "text"; notes.placeholder = "이 프로그램의 화면에 대한 메모 (예: 스택은 칩 단위, 내 자리는 왼쪽 아래)";
+  const notes = source.notes = el("input"); notes.type = "text"; notes.placeholder = "이 프로그램의 화면에 대한 메모 (예: 내 자리는 위 가운데, 아래 가운데 인물은 딜러, 앞의 숫자는 핸드 누적 금액)";
   notes.setAttribute("aria-label", "인식 메모");
   options.append(every, notes);
   for (const control of [every, notes]) control.onclick = e => e.stopPropagation();

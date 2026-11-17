@@ -1931,3 +1931,153 @@ def test_chips_that_do_not_add_up_show_misread_frames(tmp_path, capsys):
     main(["quality", path])
     out = capsys.readouterr().out
     assert "칩 합계" in out and "lab" in out
+
+
+# ---- what external programs showed: amounts for the whole hand, misread hero cards, late deals ----------
+
+def _engine_hands(count, stacks=(60, 150, 300, 1000), seed=11, kinds=("station", "maniac", "human", "pro", "lag", "nit")):
+    rng = random.Random(seed)
+    bots = [make_bot(kind, seed=index) for index, kind in enumerate(kinds)]
+    for index in range(count):
+        chips = [rng.choice(stacks) for _ in range(6)]
+        yield play_hand(bots, chips, index % 6, 5, 10, rng), chips
+
+
+def _actions(hand):
+    engine = [int(name[1:]) for name in hand["names"]]
+    return [(a[0], engine[a[1]], a[2], round(a[3])) for a in hand["actions"]]
+
+
+def test_programs_that_show_what_each_player_put_in_during_the_whole_hand():
+    checked = 0
+    for result, chips in _engine_hands(40):
+        shots = table.frames(result, chips, 0, 5, every=True, to_end=True)
+        if not shots or len(result.board) < 3 or len(shots[-1]["board"]) < 6:
+            continue
+        whole = [dict(shot, seats=[dict(seat, bet=chips[i] - seat["stack"]) for i, seat in enumerate(shot["seats"])])
+                 for shot in shots]
+        assert any(table.counts_whole_hand(table.normalize(shot)) for shot in whole)     # the pot is no more than the amounts
+        assert _actions(table.reconstruct(whole)) == _actions(table.reconstruct(shots))
+        blind = [dict(shot, seats=[dict(seat, stack=None) for seat in shot["seats"]]) for shot in whole]
+        plain = [dict(shot, seats=[dict(seat, stack=None) for seat in shot["seats"]]) for shot in shots]
+        assert _actions(table.reconstruct(blind)) == _actions(table.reconstruct(plain))   # no stacks on the screen
+        late = next(i for i, shot in enumerate(shots) if len(shot["board"]) >= 6)
+        assert _actions(table.reconstruct(whole[late:])) == _actions(table.reconstruct(shots[late:]))
+        checked += 1
+    assert checked > 10
+    # the reader says so when the notes or the screen tell it
+    answer = {"is_poker_table": True, "hero_cards": ["As", "Kd"], "board": [], "pot": 15, "bets_whole_hand": True,
+              "hero_to_act": True, "seats": [{"x": 0.5, "y": 0.9, "stack": None, "bet": 10, "in_hand": True, "is_hero": True,
+                                              "has_button": True}, {"x": 0.5, "y": 0.1, "stack": None, "bet": 5, "in_hand": True}]}
+    assert table.normalize(vision.to_snapshot(answer))["bets_whole_hand"]
+    assert "bets_whole_hand" in vision.CLAUDE_SCHEMA["required"]
+
+
+def test_a_hero_card_misread_in_some_frames_does_not_start_a_new_hand():
+    from pokerlab.cards import card_str
+    follower, clean, checked = follow.Follower("lab"), follow.Follower("lab"), 0
+    for result, chips in _engine_hands(30):
+        shots = table.frames(result, chips, 0, 5, every=True, to_end=True)
+        if len(shots) < 5:
+            continue
+        for shot in shots:
+            clean.push(shot)
+        hero = shots[0]["hero"]
+        used = set(parse_cards(hero)) | set(result.board)
+        other = next(card_str(c) for c in range(52) if c not in used)
+        wrong = hero[:2] + other                    # the second card read as another one
+        misread = [dict(shot, hero=wrong) if i in (1, len(shots) // 2) else shot for i, shot in enumerate(shots)]
+        hands = follower.counts["hands"]
+        for shot in misread:
+            follower.push(shot)
+        assert follower.counts["hands"] <= hands + 1 and not follower.restarted
+        assert follower.hand["hero"] == parse_cards(hero) and _actions(follower.hand) == _actions(clean.hand)
+        follower.close(), clean.close()
+        checked += 1
+    assert checked > 10
+
+
+def test_frames_before_the_heros_cards_are_dealt_are_kept():
+    for result, chips in itertools.islice(_engine_hands(10), 5):
+        shots = table.frames(result, chips, 0, 5, every=True, to_end=True)
+        follower = follow.Follower("lab")
+        follower.push(dict(shots[0], hero="", hero_to_act=False))        # blinds posted, cards still on their way
+        assert follower.hand["hero_seat"] is None                         # for now it looks like a view from outside
+        for shot in shots:
+            follower.push(shot)
+        clean = follow.Follower("lab")
+        for shot in shots:
+            clean.push(shot)
+        assert follower.hand["hero_seat"] is not None and not follower.restarted
+        assert _actions(follower.hand) == _actions(clean.hand) and follower.hand["posted"] == clean.hand["posted"]
+
+
+def test_bets_drawn_in_the_pot_and_a_pot_pushed_without_a_showdown():
+    checked = 0
+    for result, chips in _engine_hands(80, stacks=(1000,), kinds=("tag", "maniac", "human", "pro", "lag", "nit")):
+        shots = table.frames(result, chips, 0, 5, every=True, to_end=True, keep_hero=True, payout=True)
+        if len(shots) < 4:
+            continue
+        # the first frame of each street is missed and the next shows its bet already in the pot
+        kept, street = [], 0
+        for shot in shots[:-1]:
+            now = len(shot["board"]) // 2
+            if now > street:
+                street = now
+                continue
+            kept.append(shot)
+        changed = [dict(shot, seats=[dict(seat, bet=0) for seat in shot["seats"]])
+                   if i and len(shot["board"]) > len(kept[i - 1]["board"]) else shot for i, shot in enumerate(kept)]
+        assert _actions(table.reconstruct(changed)) == _actions(table.reconstruct(kept))
+        # the bets of a street drawn into the pot before the next card comes: no bet in front, stacks lower, pot higher
+        swept = []
+        for i, shot in enumerate(shots[:-1]):
+            if i and len(shot["board"]) > len(shots[i - 1]["board"]):
+                swept.append(dict(shot, board=shots[i - 1]["board"], hero_to_act=False,
+                                  seats=[dict(seat, acting=False) for seat in shot["seats"]]))
+            swept.append(shot)
+        assert _actions(table.reconstruct(swept)) == _actions(table.reconstruct(shots[:-1]))
+        # the frame of the last fold is missed: the pot pushed to the winner shows who put nothing more in
+        if not result.showdown and result.actions[-1][2] == FOLD:
+            follower = follow.Follower("lab")
+            for shot in shots[:-2] + shots[-1:]:
+                follower.push(shot)
+            assert follower.finished and _actions(follower.hand) == [tuple(a[:4]) for a in result.actions]
+            checked += 1
+    assert checked > 5
+
+
+def test_chips_a_player_did_not_have_are_a_misread():
+    result, chips = next(_engine_hands(1, stacks=(1000,)))
+    shots = table.frames(result, chips, 0, 5, every=True)
+    later = shots[1]
+    broken = dict(later, seats=[dict(seat, bet=seat["bet"] + 5000) if i == 3 else seat for i, seat in enumerate(later["seats"])])
+    with pytest.raises(ValueError, match="칩이 맞지"):
+        table.reconstruct([shots[0], broken])
+
+
+def test_one_frame_misreads_of_a_fold_the_button_and_blinds_still_posting():
+    checked = 0
+    for result, chips in _engine_hands(40, stacks=(1000,)):
+        shots = table.frames(result, chips, 0, 5, every=True, to_end=True)
+        if len(shots) < 6:
+            continue
+        clean = follow.Follower("lab")
+        for shot in shots:
+            clean.push(shot)
+        seat = next((i for i in range(1, 6) if all(shots[k]["seats"][i]["in_hand"] for k in range(1, 4))), None)
+        if seat is None:
+            continue
+        button = next(i for i, s in enumerate(shots[0]["seats"]) if s["button"])
+        sb, bb = (button + 1) % 6, (button + 2) % 6
+        posting = dict(shots[0], seats=[dict(s, bet=0, stack=s["stack"] + s["bet"]) if i == bb else s
+                                        for i, s in enumerate(shots[0]["seats"])])        # the big blind not in yet
+        flicker = dict(shots[2], seats=[dict(s, in_hand=False) if i == seat else s for i, s in enumerate(shots[2]["seats"])])
+        moved = dict(shots[3], seats=[dict(s, button=i == (button + 3) % 6) for i, s in enumerate(shots[3]["seats"])])
+        follower = follow.Follower("lab")
+        for shot in [posting, shots[0], shots[1], flicker, moved] + shots[4:]:
+            follower.push(shot)
+        assert not follower.restarted and follower.hand["button"] == clean.hand["button"]
+        assert follower.hand["posted"] == clean.hand["posted"] and _actions(follower.hand) == _actions(clean.hand)
+        checked += 1
+    assert checked > 10
