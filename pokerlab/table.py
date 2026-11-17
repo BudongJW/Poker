@@ -124,6 +124,34 @@ def without_hero(snapshot):
                 seats=[dict(seat, hero=False) for seat in snapshot.get("seats") or []])
 
 
+def chip_total(shot):
+    """All the chips a normalized snapshot shows: the stacks plus the pot with the bets in front.
+    Within a hand it does not change, so a frame that adds up to another total was misread
+    (a stack, a bet or the pot). None if a number is missing."""
+    if shot["pot"] is None or any(seat["stack"] is None for seat in shot["seats"]):
+        return None
+    total = sum(seat["stack"] for seat in shot["seats"]) + shot["pot"]
+    return total if shot["pot_includes_bets"] else total + sum(seat["bet"] for seat in shot["seats"])
+
+
+def mismatched_totals(snapshots, tolerance=0.005):
+    """Snapshots of one hand -> (how many add up to another chip total than most of them, how many could be checked).
+
+    ``tolerance`` is a share of the total, so that amounts a program rounds ('1.2K') are not counted."""
+    totals = []
+    for snapshot in snapshots:
+        try:
+            total = chip_total(normalize(snapshot))
+        except ValueError:
+            continue
+        if total is not None:
+            totals.append(total)
+    if len(totals) < 2:
+        return 0, len(totals)
+    common = max(totals, key=lambda t: sum(abs(t - other) <= tolerance * max(t, 1.0) for other in totals))
+    return sum(abs(t - common) > tolerance * max(common, 1.0) for t in totals), len(totals)
+
+
 def shown_cards(shot):
     """{seat: (card, card)} of the players other than the hero whose cards a normalized snapshot shows."""
     out = {}

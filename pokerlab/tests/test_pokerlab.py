@@ -1895,3 +1895,39 @@ def test_the_schema_claude_is_held_to():
     walk(vision.CLAUDE_SCHEMA)
     assert vision.CLAUDE_SCHEMA["properties"]["pot"] == {"anyOf": [{"type": "number"}, {"type": "null"}]}
     assert set(vision.CLAUDE_SCHEMA["properties"]["seats"]["items"]["properties"]) == set(vision.SCHEMA["properties"]["seats"]["items"]["properties"])
+
+
+# ---- how well a window is read, without the right answers ------------------------------------
+
+def test_chips_that_do_not_add_up_show_misread_frames(tmp_path, capsys):
+    rng = random.Random(8)
+    bots = [make_bot(kind, seed=index) for index, kind in enumerate(("station", "lag", "human", "pro", "maniac", "nit"))]
+    result = next(r for r in (play_hand(bots, [1000] * 6, i % 6, 5, 10, rng) for i in range(100)) if len(r.actions) >= 8)
+    shots = table.frames(result, [1000] * 6, 0, 5, every=True, to_end=True)
+    assert len({table.chip_total(table.normalize(shot)) for shot in shots}) == 1        # within a hand the chips never change
+    assert table.mismatched_totals(shots) == (0, len(shots))
+    bad = [dict(shot) for shot in shots]
+    bad[3] = dict(bad[3], seats=[dict(seat, stack=seat["stack"] + 300) if i == 2 else seat for i, seat in enumerate(bad[3]["seats"])])
+    bad[5] = dict(bad[5], pot=bad[5]["pot"] * 10)
+    assert table.mismatched_totals(bad) == (2, len(shots))
+    rounded = [dict(shot, pot=shot["pot"] + 2) if i == 4 else shot for i, shot in enumerate(shots)]   # within the rounding allowed
+    assert table.mismatched_totals(rounded)[0] == 0
+    assert table.chip_total(table.normalize(dict(shots[0], pot=None))) is None
+
+    path = str(tmp_path / "rec.jsonl")
+    follower = follow.Follower("lab", path)
+    for shot in bad:
+        follower.push(shot)
+    quality = follower.quality()                       # the hand going on counts already
+    assert quality["frames"] == len(shots) and quality["checked"] >= 2 and quality["mismatched"] >= 1
+    follower.push({"seats": []})                       # nothing to read
+    follower.close()
+    after = follower.quality()
+    assert after["unread"] == 1 and after["hands"] == 1 and after["mismatch_rate"] > 0
+    assert follower.state()["quality"]["hands"] == 1
+    rows = records.quality(records.read(path))
+    assert rows[0]["source"] == "lab" and rows[0]["hands"] == 1 and rows[0]["mismatched"] == after["mismatched"]
+    from pokerlab.__main__ import main
+    main(["quality", path])
+    out = capsys.readouterr().out
+    assert "칩 합계" in out and "lab" in out

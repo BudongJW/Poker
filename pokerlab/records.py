@@ -70,6 +70,29 @@ def to_hand(record, label=None):
             "bots": {seat: None if seat == hero_seat else label for seat in range(n)}}
 
 
+def quality(records):
+    """Record lines -> how well each program's window was read, per source name:
+    [{'source', 'hands', 'frames', 'checked', 'mismatched', 'mismatch_rate', 'restarted', 'restarted_rate',
+    'usable', 'shown'}] (see :meth:`pokerlab.follow.Follower.quality`)."""
+    from . import table
+    out = {}
+    for record in records:
+        row = out.setdefault(record.get("source") or "?", {"hands": 0, "frames": 0, "checked": 0, "mismatched": 0,
+                                                            "restarted": 0, "usable": 0, "shown": 0})
+        shots = record.get("snapshots") or []
+        mismatched, checked = table.mismatched_totals(shots)
+        hand = to_hand(record)
+        row.update(hands=row["hands"] + 1, frames=row["frames"] + len(shots), checked=row["checked"] + checked,
+                   mismatched=row["mismatched"] + mismatched, restarted=row["restarted"] + bool(record.get("restarted")),
+                   usable=row["usable"] + (hand is not None), shown=row["shown"] + len(record.get("shown") or {}))
+    rows = []
+    for source, row in sorted(out.items()):
+        row.update(source=source, mismatch_rate=row["mismatched"] / row["checked"] if row["checked"] else None,
+                   restarted_rate=row["restarted"] / row["hands"])
+        rows.append(row)
+    return rows
+
+
 def adapt(base, prepared, prior_hands=PRIOR_HANDS, iterations=4, view="unsized"):
     """A model for the players in ``prepared``: a profile per label (program), each the base's pooled
     counts scaled to ``prior_hands`` hands plus that program's own counts.

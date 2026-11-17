@@ -453,14 +453,21 @@ function tableCard(t) {
 
 /* ---- windows as sources: one per program, each read and followed on its own ---- */
 const cap = {sources: [], active: null, next: 1, timer: null, probe: document.createElement("canvas"), shot: document.createElement("canvas")};
-cap.probe.width = 48; cap.probe.height = 27;
+// the window in small (160x100 grey): fine enough that a changed number or a moved highlight shows
+const PROBE_W = 160, PROBE_H = 100;
+cap.probe.width = PROBE_W; cap.probe.height = PROBE_H;
 const capSupported = () => !!(navigator.mediaDevices && navigator.mediaDevices.getDisplayMedia);
-function capLook(source) {            // a thumbnail in grey: enough to tell whether the window has changed
+function capLook(source) {
   const ctx = cap.probe.getContext("2d", {willReadFrequently: true});
-  ctx.drawImage(source.video, 0, 0, 48, 27);
-  const rgba = ctx.getImageData(0, 0, 48, 27).data, grey = new Uint8Array(48 * 27);
+  ctx.drawImage(source.video, 0, 0, PROBE_W, PROBE_H);
+  const rgba = ctx.getImageData(0, 0, PROBE_W, PROBE_H).data, grey = new Uint8Array(PROBE_W * PROBE_H);
   for (let i = 0; i < grey.length; i++) grey[i] = (rgba[4 * i] * 3 + rgba[4 * i + 1] * 6 + rgba[4 * i + 2]) / 10;
   return grey;
+}
+function capMoved(before, now) {     // a few clearly changed spots, not the average over the whole window
+  let changed = 0;
+  for (let i = 0; i < now.length; i++) if (Math.abs(now[i] - before[i]) > 10 && ++changed >= 2) return true;
+  return false;
 }
 function capDescribe(source) {
   const st = source.state;
@@ -472,8 +479,15 @@ function capDescribe(source) {
   return (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]} · ${t.n_players}명 중 ${t.live}명 · ${
       st.observer ? "관전 화면" : st.hero_folded ? "내가 폴드함" : st.hero_to_act ? "내 차례" : "진행 중"}`
     : st.error || "핸드를 기다리는 중") + ` · 끝난 핸드 ${st.hands}개` +
-    (st.profile && st.profile !== "all" ? " · 이 프로그램의 기록으로 읽는 중" : "") +
+    (st.profile && st.profile !== "all" ? " · 이 프로그램의 기록으로 읽는 중" : "") + qualityText(st.quality) +
     (source.label.value.trim() ? "" : " · 이름 없음: 이 소스의 핸드는 학습에 쓰지 않습니다") + ` · ${source.readAt || ""}`;
+}
+function qualityText(q) {          // read from the frames themselves: chips that do not add up, hands started again
+  if (!q || !q.checked) return "";
+  const parts = [];
+  if (q.mismatched) parts.push(`칩 합계가 안 맞은 화면 ${q.mismatched}/${q.checked}`);
+  if (q.restarts) parts.push(`다시 읽음 ${q.restarts}번`);
+  return parts.length ? " · " + parts.join(" · ") : ` · 칩 합계 일치 ${q.checked}화면`;
 }
 function capRefresh(source) {
   source.line.textContent = capDescribe(source);
@@ -513,7 +527,8 @@ function renderPlayers(d) {         // watched from outside, or after the hero's
   $("result").replaceChildren(box, ...(d.table ? [tableCard(d.table)] : []));
 }
 async function capSend(source) {
-  const video = source.video, scale = Math.min(1, 1600 / video.videoWidth);
+  // long edge at most 1280 px: what the accuracy was measured at, and a third fewer image tokens than 1600
+  const video = source.video, scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
   cap.shot.width = Math.round(video.videoWidth * scale); cap.shot.height = Math.round(video.videoHeight * scale);
   cap.shot.getContext("2d").drawImage(video, 0, 0, cap.shot.width, cap.shot.height);
   const [model, profile] = $("capModel").value.split(":");
@@ -534,11 +549,15 @@ function capTick() {                  // read a window again when its picture ha
     if (source.live && source.stream.getVideoTracks().every(track => track.readyState === "ended")) { source.live = false; capRefresh(source); }
     if (!source.live || source.busy || source.video.readyState < 2 || !source.video.videoWidth) continue;
     const look = capLook(source);
-    let moved = !source.look;
-    if (source.look) { let sum = 0; for (let i = 0; i < look.length; i++) sum += Math.abs(look[i] - source.look[i]); moved = sum / look.length > 1.2; }
+    const moved = !source.look || capMoved(source.look, look);
     source.look = look;
-    if (moved) { source.changed = true; source.movedAt = now; }
-    if (source.changed && now - source.movedAt >= 350 && now - source.sentAt >= Number(source.every.value) * 1000) capSend(source);
+    if (moved) {
+      if (!source.changed) source.firstAt = now;
+      source.changed = true; source.movedAt = now;
+    }
+    // held still for a moment, or, on a screen that never does (a running timer bar), a little later anyway
+    const settled = now - source.movedAt >= 350 || now - source.firstAt >= 1500;
+    if (source.changed && settled && now - source.sentAt >= Number(source.every.value) * 1000) capSend(source);
   }
 }
 async function capAdd() {
@@ -546,7 +565,7 @@ async function capAdd() {
   let stream;
   try { stream = await navigator.mediaDevices.getDisplayMedia({video: {frameRate: 5}, audio: false}); }
   catch (e) { renderMessage("창을 고르지 않았습니다.", false); return; }
-  const source = {id: `소스 ${cap.next++}`, stream, live: true, busy: false, changed: true, movedAt: 0, sentAt: -1e9, look: null, state: null, error: null};
+  const source = {id: `소스 ${cap.next++}`, stream, live: true, busy: false, changed: true, movedAt: 0, firstAt: 0, sentAt: -1e9, look: null, state: null, error: null};
   const node = source.node = el("div", "source"), head = el("div", "row");
   const name = source.label = el("input"); name.type = "text"; name.placeholder = `${source.id} · 프로그램 이름을 정해 주세요`;
   name.setAttribute("aria-label", "프로그램 이름 (기록 학습과 프로그램별 모델이 이 이름으로 묶입니다)");

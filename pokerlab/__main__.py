@@ -148,6 +148,9 @@ def main(argv=None):
     p.add_argument("--learn-every", type=int, default=50, metavar="HANDS",
                    help="with --record: fit the 'live' model again after this many new hands (default 50; 0 = never)")
 
+    p = sub.add_parser("quality", help="how well windows were read, from serve --record files (no right answers needed)")
+    p.add_argument("records", nargs="+", metavar="FILE")
+
     p = sub.add_parser("learn", help="fit the 'live' model from hands followed in windows (serve --record files)")
     p.add_argument("records", nargs="+", metavar="FILE")
     p.add_argument("--out", default=None, help="where to write the model (default: the bundled 'live' model)")
@@ -244,6 +247,18 @@ def main(argv=None):
     elif args.command == "serve":
         from . import web
         web.serve(args.host, args.port, args.record, args.learn_every)
+    elif args.command == "quality":
+        from . import records
+        rows = records.quality([line for path in args.records for line in records.read(path)])
+        if not rows:
+            print("기록에 핸드가 없습니다.")
+        print("프로그램            핸드  화면  칩 합계 불일치   다시 읽은 핸드   학습에 쓰는 핸드   공개된 카드")
+        for row in rows:
+            rate = f"{row['mismatched']}/{row['checked']} ({row['mismatch_rate']:.1%})" if row["checked"] else "-"
+            print(f"{row['source'][:18]:<18} {row['hands']:>5} {row['frames']:>5}  {rate:<15}  "
+                  f"{row['restarted']:>4} ({row['restarted_rate']:.1%})   {row['usable']:>6}            {row['shown']:>6}")
+        print("칩 합계 불일치: 한 핸드 안에서는 테이블 위 칩 합계가 변하지 않으므로, 합계가 다른 화면은 스택이나 팟을 잘못 읽은 것입니다."
+              "\n시뮬레이션에서 이 비율은 실제로 잘못 읽은 화면 비율의 약 0.55~0.75배였습니다(앞에 놓인 칩만 잘못 읽은 경우는 드러나지 않음).")
     elif args.command == "learn":
         from . import records
         lines = [line for path in args.records for line in records.read(path)]

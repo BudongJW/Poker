@@ -42,6 +42,8 @@ class Follower:
         self.note = self.error = None
         self.version = self.hands = 0           # version: counts every change; hands: hands that have ended
         self._last = self._analysis = None
+        # how well the window is being read, without knowing the right answers (see quality())
+        self.counts = {"frames": 0, "unread": 0, "restarts": 0, "hands": 0, "restarted_hands": 0, "checked": 0, "mismatched": 0}
         self._clear()
 
     def _clear(self):
@@ -57,6 +59,7 @@ class Follower:
         self._last = snapshot
         self.version += 1
         self._analysis = None
+        self.counts["frames"] += 1
         snapshot = self._with_hero_cards(snapshot)
         try:
             shot = table.normalize(snapshot)
@@ -68,6 +71,7 @@ class Follower:
                 shot = table.normalize(snapshot)          # watched from outside
             except ValueError:
                 self.error = str(error)
+                self.counts["unread"] += 1
                 return True
         if self.shots:
             base = table.normalize(self.shots[0])
@@ -101,6 +105,7 @@ class Follower:
                 self.hand, self.shots = table.reconstruct([snapshot]), [snapshot]
                 self.note = f"앞선 화면과 이어지지 않아 지금 화면부터 다시 읽었습니다 ({error})"
                 self.restarted, self.shown = True, {}
+                self.counts["restarts"] += 1
                 self._keep_cards(shot, shot)
             except ValueError as alone:
                 self.error, self.shots = str(alone), self.shots[:-1]
@@ -195,6 +200,9 @@ class Follower:
         """The hand being followed is over: write it to the record, if there is one, and forget it."""
         if self.hand is not None:
             self.hands += 1
+            mismatched, checked = table.mismatched_totals(self.shots)
+            self.counts.update(hands=self.counts["hands"] + 1, restarted_hands=self.counts["restarted_hands"] + self.restarted,
+                               checked=self.counts["checked"] + checked, mismatched=self.counts["mismatched"] + mismatched)
             if self.record:
                 line = {"time": datetime.datetime.now().isoformat(timespec="seconds"), "source": self.name, "named": self.named,
                         "hero": "".join(card_str(c) for c in self.hand["hero"]),
@@ -208,10 +216,25 @@ class Follower:
         self.shots, self.hand, self.note = [], None, None
         self._clear()
 
+    def quality(self):
+        """How well the window is being read, from the frames themselves (no right answers needed).
+
+        frames: frames taken in; unread: frames from which no table could be read; restarts: frames
+        that did not follow from the hand so far (the hand was started again from them); checked /
+        mismatched: frames whose chips could be added up, and those that added up to another total
+        than the rest of their hand. Within a hand the chips on the table do not change, so a
+        mismatched frame had a stack or the pot misread; a misread bet alone does not show here.
+        """
+        mismatched, checked = table.mismatched_totals(self.shots)        # the hand going on now as well
+        out = dict(self.counts, checked=self.counts["checked"] + checked, mismatched=self.counts["mismatched"] + mismatched)
+        out["mismatch_rate"] = out["mismatched"] / out["checked"] if out["checked"] else None
+        out["restarted_rate"] = out["restarted_hands"] / out["hands"] if out["hands"] else None
+        return out
+
     def state(self):
         """What the source shows now, JSON-ready."""
         out = {"name": self.name, "version": self.version, "hands": self.hands, "frames": len(self.shots),
-               "error": self.error, "note": self.note, "phase": "hand" if self.hand else "waiting"}
+               "error": self.error, "note": self.note, "phase": "hand" if self.hand else "waiting", "quality": self.quality()}
         if self.hand:
             hand = self.hand
             hero = hand["hero_seat"]
