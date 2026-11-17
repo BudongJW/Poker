@@ -61,8 +61,14 @@ class Follower:
         try:
             shot = table.normalize(snapshot)
         except ValueError as error:             # no hand to read: between hands, or the picture is something else
-            self.error = str(error)
-            return True
+            try:                                # a seat marked as the hero's with no cards in it, and no hand to take them from:
+                if self.hand is not None and self.hand["hero_seat"] is not None:
+                    raise ValueError            # (the hero's own hand goes on through _with_hero_cards)
+                snapshot = table.without_hero(snapshot)
+                shot = table.normalize(snapshot)          # watched from outside
+            except ValueError:
+                self.error = str(error)
+                return True
         if self.shots:
             base = table.normalize(self.shots[0])
             if not self._same(table.normalize(self.shots[-1]), shot):
@@ -101,18 +107,28 @@ class Follower:
         return True
 
     def _with_hero_cards(self, snapshot):
-        """A frame of the hand being followed that still marks the hero's seat but no longer shows the
-        hero's cards (they went with a fold) gets them back from the hand, with the hero out of it."""
+        """A frame read the way the hand being followed is read.
+
+        Watched from outside: a frame that takes a seat for the hero's (a reader marks the seat at
+        the bottom, above all when its cards turn up at a showdown) stays a spectator's frame, those
+        cards being that player's. With a hero: a frame that still marks the hero's seat but shows
+        no cards there (gone with a fold, or not read) gets them back from the hand."""
+        if self.hand is not None and self.hand["hero_seat"] is None:
+            seats = snapshot.get("seats") or []
+            if not any(seat.get("hero") for seat in seats):
+                return snapshot
+            return dict(table.without_hero(snapshot), seats=[
+                dict(seat, hero=False, cards=seat.get("cards") or snapshot.get("hero") or "") if seat.get("hero")
+                else dict(seat) for seat in seats])
         if self.hand is None or self.hand["hero_seat"] is None or snapshot.get("hero"):
             return snapshot
         seats = snapshot.get("seats") or []
         marked = [i for i, seat in enumerate(seats) if seat.get("hero")]
         if len(marked) != 1 or seats[marked[0]].get("cards"):
             return snapshot
-        try:
+        try:                                    # folded if the frame says so; else the cards were there but not read
             before = table.normalize(self.shots[-1])
-            filled = dict(snapshot, hero="".join(card_str(c) for c in self.hand["hero"]),
-                          seats=[dict(seat, in_hand=False) if i == marked[0] else seat for i, seat in enumerate(seats)])
+            filled = dict(snapshot, hero="".join(card_str(c) for c in self.hand["hero"]))
             shot = table.normalize(filled)
         except ValueError:
             return snapshot

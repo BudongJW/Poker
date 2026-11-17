@@ -1125,6 +1125,7 @@ def test_snapshots_are_checked_and_put_in_order():
 
 
 def test_vision_answers_become_snapshots(monkeypatch):
+    monkeypatch.setenv("POKERLAB_VISION_PROVIDER", "gemini")          # these test the Gemini path, whatever keys are around
     answer = {"is_poker_table": True, "hero_cards": ["as", "10d"], "board": ["Q♠", "7h", "2D"], "pot": 23, "pot_includes_bets": None,
               "big_blind": 2, "seats": [
                   {"name": "me", "x": 0.5, "y": 0.9, "stack": 194, "bet": 0, "in_hand": True, "is_hero": True, "has_button": False,
@@ -1339,6 +1340,7 @@ def test_capture_sources_through_the_web_api(tmp_path, monkeypatch):
 
 
 def test_recognizer_extras(tmp_path, monkeypatch):
+    monkeypatch.setenv("POKERLAB_VISION_PROVIDER", "gemini")          # these test the Gemini path, whatever keys are around
     result, chips, button = next(x for x in _played(("human", "pro", "tag"), 6, (1000,), seed=9, hands=30)
                                  if sum(a[1] == 1 for a in x[0].actions) >= 2)
     shots = table.frames(result, chips, 1, 5, every=True)
@@ -1743,6 +1745,21 @@ def test_what_is_shown_for_a_spectator_a_folded_hero_and_open_cards():
         follower.push(shot)
     got = follower.analysis(trials=2000, seed=1)
     assert got["exact"] and all("공개된 카드" in r["label"] for r in got["ranges"])
+    # a reader that takes the bottom seat for the hero's on a spectator's screen (cards hidden, then turned up at the showdown)
+    def as_read(shot):
+        seats = [dict(seat) for seat in shot["seats"]]
+        seats[0]["hero"] = True
+        return dict(shot, hero=seats[0].pop("cards", "") if seats[0].get("cards") else "", seats=seats)
+    plain, marked = follow.Follower("lab"), follow.Follower("lab")
+    for index in range(40):
+        hand = play_hand(bots, [1000] * 6, index % 6, 5, 10, rng)
+        for shot in table.frames(hand, [1000] * 6, None, 5, payout=True):
+            plain.push(shot)
+            marked.push(as_read(shot))
+        assert marked.hand["hero_seat"] is None and marked.hand["actions"] == plain.hand["actions"]
+        assert marked.shown == plain.shown and not marked.restarted
+        plain.close()
+        marked.close()
     # the recognizer: no seat marked is a spectator's view; two marked asks for a note
     shot = table.frames(result, [1000] * 6, 0, 5)[0]
     assert table.normalize(dict(shot, hero="", seats=[dict(s, hero=False) for s in shot["seats"]]))["hero_seat"] is None
@@ -1769,3 +1786,112 @@ def test_programs_that_show_every_card_teach_from_every_seat(tmp_path, monkeypat
     summary = records.learn(path, prior_hands=100, flop_runouts=40)
     assert summary["hands"] == len(lines) and summary["programs"] == ["open lab"]
     inference.load_model.cache_clear()
+
+
+# ---- reading a picture with Claude ---------------------------------------------------------
+
+def _fake_anthropic(replies, sent):
+    """A stand-in for the ``anthropic`` package that records the requests and hands out ``replies``."""
+    import types
+
+    class APIStatusError(Exception):
+        def __init__(self, message="error", status_code=400):
+            super().__init__(message)
+            self.message, self.status_code = message, status_code
+
+    errors = {name: type(name, (APIStatusError,), {}) for name in
+              ("AuthenticationError", "PermissionDeniedError", "RateLimitError", "BadRequestError")}
+
+    class APIConnectionError(Exception):
+        pass
+
+    def create(kind):
+        def call(**request):
+            sent.append((kind, request))
+            reply = replies.pop(0)
+            if isinstance(reply, Exception):
+                raise reply
+            return reply
+        return call
+
+    class Anthropic:
+        def __init__(self, **options):
+            sent.append(("client", options))
+            self.messages = types.SimpleNamespace(create=create("messages"))
+            self.beta = types.SimpleNamespace(messages=types.SimpleNamespace(create=create("beta")))
+
+    return types.SimpleNamespace(Anthropic=Anthropic, APIStatusError=APIStatusError, APIConnectionError=APIConnectionError, **errors)
+
+
+def _claude_reply(answer, stop_reason="end_turn"):
+    import types
+    usage = types.SimpleNamespace(input_tokens=1300, output_tokens=500, cache_read_input_tokens=2100, cache_creation_input_tokens=0)
+    return types.SimpleNamespace(stop_reason=stop_reason, model="claude-opus-5-5", usage=usage,
+                                 content=[types.SimpleNamespace(type="text", text=json.dumps(answer))])
+
+
+def test_claude_reads_a_picture_into_a_snapshot(monkeypatch):
+    import sys
+    answer = {"is_poker_table": True, "hero_cards": ["As", "Kd"], "board": [], "pot": 15, "pot_includes_bets": True,
+              "big_blind": 10, "hero_to_act": True, "seats": [
+                  {"name": "me", "x": 0.5, "y": 0.9, "stack": 990, "bet": 10, "in_hand": True, "is_hero": True, "has_button": False,
+                   "sitting_out": False, "all_in": False, "acting": False, "cards": []},
+                  {"name": "you", "x": 0.5, "y": 0.1, "stack": 995, "bet": 5, "in_hand": True, "is_hero": False, "has_button": True,
+                   "sitting_out": False, "all_in": False, "acting": False, "cards": ["Qh", "Qd"]}]}
+    sent, replies = [], [_claude_reply(answer)]
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic(replies, sent))
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "ANTHROPIC_API_KEY", "POKERLAB_VISION_PROVIDER", "POKERLAB_VISION_MODEL",
+                 "POKERLAB_VISION_REPLAY", "POKERLAB_ANTHROPIC_BASE_URL"):
+        monkeypatch.delenv(name, raising=False)
+    # which service reads: Claude only when only a Claude key is there, or when asked for
+    monkeypatch.setenv("POKER_ANTHROPIC_API_KEY", "k")
+    assert vision.provider() == "claude"
+    monkeypatch.setenv("GEMINI_API_KEY", "g")
+    assert vision.provider() == "gemini"
+    monkeypatch.setenv("POKERLAB_VISION_PROVIDER", "claude")
+    assert vision.provider() == "claude"
+    monkeypatch.setenv("POKERLAB_VISION_PROVIDER", "other")
+    with pytest.raises(vision.VisionError):
+        vision.provider()
+    monkeypatch.setenv("POKERLAB_VISION_PROVIDER", "claude")
+
+    snapshot = vision.recognize(b"\x89PNG...", "image/png", notes="stacks are in chips")
+    assert snapshot["hero"] == "AsKd" and snapshot["seats"][1]["cards"] == "QhQd" and snapshot["hero_to_act"]
+    (_, client), (kind, request) = sent
+    assert client["api_key"] == "k" and "base_url" not in client
+    assert kind == "beta" and request["model"] == vision.CLAUDE_MODEL and request["fallbacks"] == "default"   # declines are handed on
+    assert request["output_config"]["format"]["schema"] == vision.CLAUDE_SCHEMA and request["output_config"]["effort"] == "low"
+    image, text = request["messages"][0]["content"]
+    assert image["source"]["media_type"] == "image/png" and text["text"].endswith("stacks are in chips")
+    assert request["system"][0]["text"] == vision.PROMPT and "cache_control" in request["system"][0]
+    assert vision.LAST_CALL["cache_read_tokens"] == 2100
+
+    # a model without server-side fallbacks goes to the plain endpoint; a refusal or a cut answer is an error
+    monkeypatch.setenv("POKERLAB_VISION_MODEL", "claude-haiku-5-5")
+    monkeypatch.setenv("POKERLAB_ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+    fake = sys.modules["anthropic"]
+    replies += [_claude_reply(answer), _claude_reply({}, "refusal"), _claude_reply({}, "max_tokens"),
+                fake.AuthenticationError("bad key", 401), fake.RateLimitError("slow down", 429), fake.APIConnectionError("down")]
+    vision.recognize(b"x", "image/png")
+    assert sent[-1][0] == "messages" and "fallbacks" not in sent[-1][1] and sent[-2][1]["base_url"] == "https://api.anthropic.com"
+    for match in ("읽지 않겠다", "잘렸습니다", "키가 없거나 거부", "한도", "연결하지 못했습니다"):
+        with pytest.raises(vision.VisionError, match=match):
+            vision.recognize(b"x", "image/png")
+    with pytest.raises(vision.VisionError, match="형식"):
+        vision.recognize(b"x", "image/heic")
+
+
+def test_the_schema_claude_is_held_to():
+    def walk(node):
+        if isinstance(node, dict):
+            if node.get("type") == "object":
+                assert node["additionalProperties"] is False and set(node["required"]) == set(node["properties"])
+            assert not isinstance(node.get("type"), list)
+            for value in node.values():
+                walk(value)
+        elif isinstance(node, list):
+            for value in node:
+                walk(value)
+    walk(vision.CLAUDE_SCHEMA)
+    assert vision.CLAUDE_SCHEMA["properties"]["pot"] == {"anyOf": [{"type": "number"}, {"type": "null"}]}
+    assert set(vision.CLAUDE_SCHEMA["properties"]["seats"]["items"]["properties"]) == set(vision.SCHEMA["properties"]["seats"]["items"]["properties"])

@@ -117,6 +117,13 @@ def normalize(snapshot):
             "button": buttons[0], "actor": actor}
 
 
+def without_hero(snapshot):
+    """The same snapshot read as a spectator's view: no seat is the hero. For a frame that marks a
+    seat as the hero's (a reader takes the seat at the bottom for it) but shows no cards there."""
+    return dict(snapshot, hero="", hero_to_act=False,
+                seats=[dict(seat, hero=False) for seat in snapshot.get("seats") or []])
+
+
 def shown_cards(shot):
     """{seat: (card, card)} of the players other than the hero whose cards a normalized snapshot shows."""
     out = {}
