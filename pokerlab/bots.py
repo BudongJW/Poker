@@ -27,6 +27,12 @@ class Bot:
     def act(self, view):
         raise NotImplementedError
 
+    def reseed(self, seed):
+        """Start the bot's random choices again from ``seed`` (all of its generators)."""
+        self.rng = random.Random(seed)
+        if hasattr(self, "np_rng"):
+            self.np_rng = np.random.default_rng(seed)
+
     def _raise_to(self, view, pot_fraction):
         """Raise sized as a fraction of the pot after calling."""
         return view.current_bet + max(view.big_blind, round(pot_fraction * (view.pot + view.to_call)))

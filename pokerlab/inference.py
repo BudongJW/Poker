@@ -912,6 +912,21 @@ def score(db_path, model=None, hands=4000, trials=4000, seed=1, processes=None, 
     return score_hands(_load_hands(db_path, hands, seed, held_out), model, trials, seed, processes)
 
 
+def paired_difference(before, after, method="model"):
+    """How much ``after`` changed the error of ``method`` against ``before``, decision by decision.
+
+    Both are :func:`score_hands` rows of the same decisions (same hands and seed). Returns
+    (decisions, mean of |after - truth| - |before - truth|, 95% half-width of that mean):
+    negative is better.
+    """
+    if len(before) != len(after) or not np.allclose(before["truth"].to_numpy(), after["truth"].to_numpy()):
+        raise ValueError("the two sets of rows are not the same decisions")
+    change = (after[method] - after["truth"]).abs().to_numpy() - (before[method] - before["truth"]).abs().to_numpy()
+    n = len(change)
+    spread = float(change.std(ddof=1)) if n > 1 else 0.0
+    return n, float(change.mean()), 1.96 * spread / max(n, 1) ** 0.5
+
+
 def summarize(rows):
     """Per street and overall: decisions, then mean absolute error and bias (estimate - truth) per method."""
     import pandas as pd

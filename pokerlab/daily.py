@@ -4,12 +4,16 @@ or back to back (``--cycles 0``).
 Two things are learned, and each change must prove itself on fresh hands before it is kept:
 
 * **What opponents hold** - the action model (:mod:`pokerlab.inference`). The day's hands are
-  added to the counts learned so far (older counts fade by ``decay``). The merged model replaces
-  the current one unless it estimates equity worse on hands it was not fitted on.
+  added to the counts learned so far (older counts fade by ``decay``). Both models estimate equity
+  at the same decisions of hands neither was fitted on; the merged model replaces the current one
+  unless its error is larger with 95% confidence.
 * **How to bet** - the champion's parameters (how strong to bet, how much to demand for a call,
   how often to bluff, how much to respect raises). Each cycle a few mutated challengers play the
   champion at the same tables, next to four fixed opponents (two of them play like real online
-  players); a challenger takes over only if it wins more with 95% confidence.
+  players); a challenger takes over only if it wins more with 95% confidence. Every deal is played
+  twice, the second time with champion and challenger in each other's seats and every bot's random
+  choices tied to its seat (see :func:`pokerlab.selfplay.run`), so the luck of the cards and of the
+  other players largely cancels out of the comparison.
 
 With ``formats`` the day also plays tables of tournament formats (:mod:`pokerlab.formats`):
 blinds that rise, stacks that get short, players who sit down late. Those hands go into what the
@@ -70,15 +74,22 @@ def _spec(name, params, model_path=None):
     return f"equity:name={name};model={model};" + ";".join(f"{key}={value}" for key, value in sorted(params.items()))
 
 
-def _paired_difference(db_path, first_batch):
-    """Challenger minus champion over the hands of one match -> (hands, bb/100, 95% half-width)."""
+def _paired_difference(db_path, first_batch, group=2):
+    """Challenger minus champion over the hands of one match -> (hands, bb/100, 95% half-width).
+
+    group: hands that belong together (2 for a deal and its replay with the seats swapped): the
+    difference is taken over each group, so that whatever luck the two plays share cancels.
+    """
     with closing(sqlite3.connect(db_path)) as db:
-        n, mean, squares = db.execute("""
-            SELECT COUNT(*), AVG(d), AVG(d * d) FROM (
-                SELECT SUM(CASE bot WHEN 'challenger' THEN net_bb ELSE -net_bb END) AS d
+        n, mean, squares, hands = db.execute("""
+            SELECT COUNT(*), AVG(d), AVG(d * d), SUM(k) FROM (
+                SELECT SUM(CASE bot WHEN 'challenger' THEN net_bb ELSE -net_bb END) AS d, COUNT(DISTINCT hand_id) AS k
                 FROM players JOIN hands USING (hand_id)
-                WHERE bot IN ('challenger', 'champion') AND batch >= ? GROUP BY hand_id)""", (first_batch,)).fetchone()
-    return n, 100 * mean, 196 * (max(squares - mean * mean, 0.0) / n) ** 0.5
+                WHERE bot IN ('challenger', 'champion') AND batch >= ? GROUP BY hand_id / ?)""",
+                                             (first_batch, group)).fetchone()
+    spread = (max(squares - mean * mean, 0.0) * n / (n - 1)) ** 0.5 if n > 1 else 0.0
+    per_hand = n / hands                        # groups per hand: 1/2 when every deal was played twice
+    return hands, 100 * mean * per_hand, 196 * spread / n ** 0.5 * per_hand
 
 
 def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, score_hands=1500, decay=0.9,
@@ -92,6 +103,8 @@ def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, 
     """
     if len(references) != 4:
         raise ValueError("the table is six-handed: champion, challenger and exactly four fixed opponents")
+    if challengers < 1:
+        raise ValueError("a cycle needs at least one challenger")
     started = time.time()
     say = progress or (lambda message: None)
     os.makedirs(state_dir, exist_ok=True)
@@ -114,7 +127,7 @@ def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, 
             lineup = [_spec("champion", champion["params"], model_path),
                       _spec("challenger", candidate, model_path), *references]
             n, _ = selfplay.run(db_path, hands=hands, players=(6,), bots=lineup, batch_size=500, processes=processes,
-                                seed=rng.getrandbits(30), progress=None)
+                                seed=rng.getrandbits(30), progress=None, mirror=("champion", "challenger"))
             played += n
             _, diff, ci = _paired_difference(db_path, first_batch)
             promoted = diff - ci > 0
@@ -137,15 +150,20 @@ def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, 
         current = inference.ActionModel.load(model_path) if os.path.exists(model_path) else None
         merged = current.merged(today, decay) if current else today
 
-        def error(model):
-            rows = inference.score(db_path, model, score_hands, trials=3000, seed=cycle, processes=processes, held_out=True)
-            return inference.summarize(rows).loc["all"]
+        def rows_of(model):           # the same decisions for every model: same hands, same seed
+            return inference.score(db_path, model, score_hands, trials=3000, seed=cycle, processes=processes, held_out=True)
 
-        after = error(merged)
-        before = error(current) if current else None
-        keep_model = before is None or after["mae_model"] <= before["mae_model"] * 1.02
+        after_rows = rows_of(merged)
+        after, before, change, keep_model = inference.summarize(after_rows).loc["all"], None, None, True
+        if current:
+            before_rows = rows_of(current)
+            before = inference.summarize(before_rows).loc["all"]
+            _, diff, ci = inference.paired_difference(before_rows, after_rows)
+            change = (diff, ci)
+            keep_model = diff - ci <= 0         # turned down only when the merged model is worse beyond doubt
         say(f"레인지 모델: 평균 오차 {'-' if before is None else format(before['mae_model'], '.4f')} -> "
-            f"{after['mae_model']:.4f} (랜덤 가정 {after['mae_random']:.4f}) -> {'반영' if keep_model else '기각'}")
+            f"{after['mae_model']:.4f} (랜덤 가정 {after['mae_random']:.4f})"
+            + (f", 같은 결정에서 {change[0]:+.4f} ± {change[1]:.4f}" if change else "") + f" -> {'반영' if keep_model else '기각'}")
 
         # 4. keep what passed, 5. record
         if keep_model:
@@ -155,11 +173,14 @@ def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, 
             json.dump(champion, fh, indent=1)
         entry = {
             "cycle": cycle, "date": datetime.date.today().isoformat(), "hands": played,
+            "started": datetime.datetime.fromtimestamp(started, datetime.timezone.utc).isoformat(timespec="seconds"),
             "seconds": round(time.time() - started),
             "model": {"mae_random": round(float(after["mae_random"]), 4),
                       "mae_before": None if before is None else round(float(before["mae_model"]), 4),
                       "mae_after": round(float(after["mae_model"]), 4), "bias_after": round(float(after["bias_model"]), 4),
-                      "kept": bool(keep_model)},
+                      "kept": bool(keep_model),
+                      "change": None if change is None else round(change[0], 5),
+                      "change_ci95": None if change is None else round(change[1], 5)},
             "matches": matches, "champion": champion, "standings": standings, "opponents": list(references),
         }
         if formats:
@@ -173,6 +194,35 @@ def run_cycle(state_dir=STATE_DIR, hands=60_000, challengers=3, fit_hands=8000, 
                     os.remove(db_path + suffix)
     say(f"사이클 {cycle} 완료: {played:,}핸드, {entry['seconds']}초, 챔피언 {champion['generation']}세대 {champion['params']}")
     return entry
+
+
+def last_slot(at, now=None):
+    """The latest moment at the daily time ``at`` ('HH:MM', UTC) that is not after ``now``."""
+    now = now or datetime.datetime.now(datetime.timezone.utc)
+    hour, minute = (int(part) for part in at.split(":"))
+    slot = now.replace(hour=hour, minute=minute, second=0, microsecond=0)
+    return slot if slot <= now else slot - datetime.timedelta(days=1)
+
+
+def _started(entry):
+    """When a recorded cycle started (UTC). Entries from before that was recorded only have a date and
+    count as the end of that day: a run that may already have happened is not repeated."""
+    if entry.get("started"):
+        return datetime.datetime.fromisoformat(entry["started"])
+    day = datetime.datetime.fromisoformat(entry["date"]).replace(tzinfo=datetime.timezone.utc)
+    return day + datetime.timedelta(days=1, seconds=-1)
+
+
+def due(at, state_dir=STATE_DIR, now=None):
+    """Is a cycle owed for the latest daily slot at ``at`` (UTC)? -> (owed, slot, the last cycle or None).
+
+    A cycle is owed when none has started since that slot. A run that was scheduled but never
+    happened (the machine restarted, the session was asleep) is therefore made up by the next run
+    that asks, and a run that did happen is not repeated.
+    """
+    slot, history = last_slot(at, now), load_history(state_dir)
+    last = history[-1] if history else None
+    return last is None or _started(last) < slot, slot, last
 
 
 def run(cycles=1, **options):
@@ -192,13 +242,14 @@ def print_history(state_dir=STATE_DIR):
     if not history:
         print("아직 기록이 없습니다. python -m pokerlab daily 로 첫 사이클을 실행하세요.")
         return
-    print("사이클  날짜        핸드     오차(랜덤 가정 -> 모델 전 -> 후)   모델   챔피언 세대   도전자 결과(bb/100)")
+    print("사이클  날짜        핸드     오차(랜덤 가정 -> 모델 전 -> 후)  같은 결정에서의 변화   모델   챔피언 세대   도전자 결과(bb/100)")
     for e in history:
         m = e["model"]
         before = "   -  " if m["mae_before"] is None else f"{m['mae_before']:.4f}"
+        change = "        -        " if m.get("change") is None else f"{m['change']:+.4f}±{m['change_ci95']:.4f}"
         duels = ", ".join(f"{x['diff_bb100']:+.0f}±{x['ci95']:.0f}{'*' if x['promoted'] else ''}" for x in e["matches"])
         print(f"{e['cycle']:>4}   {e['date']}  {e['hands']:>7,}   {m['mae_random']:.4f} -> {before} -> {m['mae_after']:.4f}"
-              f"      {'반영' if m['kept'] else '기각'}   {e['champion']['generation']:>6}        {duels}"
+              f"   {change:<17}   {'반영' if m['kept'] else '기각'}   {e['champion']['generation']:>6}        {duels}"
               + (f"   [대회 형식 {e['formats']['names']} {e['formats']['hands']:,}핸드 포함]" if e.get("formats") else ""))
     last = history[-1]
     print(f"\n현재 챔피언({last['champion']['generation']}세대): {last['champion']['params']}   (* = 챔피언 교체)")

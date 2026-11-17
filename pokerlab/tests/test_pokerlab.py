@@ -1483,3 +1483,75 @@ def test_selfplay_and_the_learning_cycle_on_formats(tmp_path, capsys):
     assert entry["hands"] == 500 and entry["formats"] == {"names": "kr_mtt", "hands": 200} and entry["model"]["kept"]
     daily.print_history(str(tmp_path / "state"))
     assert "[대회 형식 kr_mtt 200핸드 포함]" in capsys.readouterr().out
+
+
+# ---- the daily cycle: fair duels, a model kept on evidence, runs that are made up ------------
+
+def test_mirrored_deals_cancel_the_luck(tmp_path):
+    same = daily._spec("champion", daily.START), daily._spec("challenger", daily.START)
+    path = str(tmp_path / "mirror.sqlite")
+    selfplay.run(path, hands=300, players=(6,), bots=(*same, "human", "nit", "tag", "maniac"), batch_size=100, processes=2,
+                 seed=3, progress=None, mirror=("champion", "challenger"))
+    hands, diff, ci = daily._paired_difference(path, 1)
+    assert (hands, diff, ci) == (300, 0.0, 0.0)             # the same player in both seats: every deal comes out even
+    with sqlite3.connect(path) as db:
+        rows = db.execute("SELECT hand_id, board, button FROM hands ORDER BY hand_id").fetchall()
+        assert all(a[0] // 2 == b[0] // 2 and a[1:] == b[1:] for a, b in zip(rows[::2], rows[1::2]))
+        seats = dict(((h, bot), s) for h, s, bot in db.execute("SELECT hand_id, seat, bot FROM players"))
+        first, second = rows[0][0], rows[1][0]
+        assert seats[first, "champion"] == seats[second, "challenger"] and seats[first, "challenger"] == seats[second, "champion"]
+        assert db.execute("SELECT DISTINCT mirror FROM batches").fetchall() == [("champion,challenger",)]
+    other = str(tmp_path / "other.sqlite")                  # a different player: now the replays part where it differs
+    selfplay.run(other, hands=300, players=(6,), bots=(same[0], daily._spec("challenger", dict(daily.START, bluff=0.3)),
+                                                       "human", "nit", "tag", "maniac"),
+                 batch_size=100, processes=2, seed=3, progress=None, mirror=("champion", "challenger"))
+    assert daily._paired_difference(other, 1)[2] > 0
+    for bad in (dict(mirror=("champion", "nobody")), dict(mirror=("champion", "challenger"), format="mtt_turbo")):
+        with pytest.raises(ValueError):
+            selfplay.run(str(tmp_path / "bad.sqlite"), hands=10, players=(6,), bots=(*same, "nit", "nit", "tag", "tag"),
+                         processes=1, progress=None, **bad)
+
+
+def test_paired_model_check_and_runs_that_are_made_up(tmp_path, capsys):
+    import datetime
+
+    import pandas as pd
+    before = pd.DataFrame({"truth": [0.5, 0.2, 0.9], "model": [0.6, 0.25, 0.8]})
+    after = pd.DataFrame({"truth": [0.5, 0.2, 0.9], "model": [0.55, 0.2, 0.85]})
+    n, diff, ci = inference.paired_difference(before, after)
+    assert n == 3 and diff == pytest.approx(-0.05) and ci > 0
+    with pytest.raises(ValueError):
+        inference.paired_difference(before, after.iloc[:2])
+
+    utc = datetime.timezone.utc
+    at = lambda text: datetime.datetime.fromisoformat(text).replace(tzinfo=utc)
+    assert daily.last_slot("19:38", at("2026-11-17T07:38:00")) == at("2026-11-16T19:38:00")
+    assert daily.last_slot("19:38", at("2026-11-17T19:38:00")) == at("2026-11-17T19:38:00")
+    state = tmp_path / "state"
+    state.mkdir()
+    assert daily.due("19:38", str(state), at("2026-11-17T07:38:00"))[0]           # nothing has run yet
+    with open(state / "history.jsonl", "w") as fh:
+        fh.write(json.dumps({"cycle": 1, "date": "2026-11-16"}) + "\n")            # an old entry: a date only
+    assert not daily.due("19:38", str(state), at("2026-11-17T07:38:00"))[0]       # counted as the end of that day
+    assert daily.due("19:38", str(state), at("2026-11-17T19:39:00"))[0]
+    with open(state / "history.jsonl", "a") as fh:
+        fh.write(json.dumps({"cycle": 2, "date": "2026-11-17", "started": "2026-11-17T19:39:10+00:00"}) + "\n")
+    owed, slot, last = daily.due("19:38", str(state), at("2026-11-18T07:38:00"))
+    assert not owed and last["cycle"] == 2 and slot == at("2026-11-17T19:38:00")
+    assert daily.due("19:38", str(state), at("2026-11-18T19:38:30"))[0]           # the next day's run is owed again
+    from pokerlab.__main__ import main
+    with open(state / "history.jsonl", "a") as fh:                                 # a cycle that has just started
+        fh.write(json.dumps({"cycle": 3, "date": "2026-11-18",
+                             "started": datetime.datetime.now(utc).isoformat(timespec="seconds")}) + "\n")
+    main(["daily", "--if-due", "00:00", "--state", str(state)])                    # nothing is owed: nothing runs
+    assert "할 일 없음" in capsys.readouterr().out and len(daily.load_history(str(state))) == 3
+
+    options = dict(state_dir=str(tmp_path / "cycle"), hands=200, challengers=1, fit_hands=100, score_hands=40, processes=2,
+                   work_dir=str(tmp_path), progress=None)
+    daily.run_cycle(**options)
+    entry = daily.run_cycle(**options)
+    assert entry["started"].endswith("+00:00") and entry["model"]["change_ci95"] >= 0
+    assert entry["model"]["kept"] == (entry["model"]["change"] - entry["model"]["change_ci95"] <= 0)
+    assert not daily.due("19:38", options["state_dir"], datetime.datetime.now(utc))[0]
+    with pytest.raises(ValueError):
+        daily.run_cycle(**dict(options, challengers=0))

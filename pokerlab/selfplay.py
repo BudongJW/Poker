@@ -5,6 +5,10 @@ worker processes and are fully determined by ``(seed, batch number)``, so a run 
 and resumed, and any batch can be replayed. Stacks are reset every hand and seats are
 reshuffled every hand, which makes hands independent samples.
 
+With ``mirror`` (two bot names) every deal is played twice with the same cards, the second time
+with those two bots in each other's seats: the hands are stored one after the other (hand ids 2k
+and 2k + 1), so a comparison of the two bots can take the luck of the cards out.
+
 With a tournament format (:mod:`pokerlab.formats`) a batch plays tables of that format instead:
 stacks carry over from hand to hand, the blinds rise, and players come and go as the format says.
 """
@@ -16,7 +20,7 @@ import time
 from multiprocessing import Pool
 
 from . import formats
-from .bots import make_bot
+from .bots import _BUCKETS, make_bot
 from .cards import card_str, hand_class
 from .engine import CALL, RAISE, play_hand, position_name
 
@@ -26,7 +30,7 @@ HANDS_PER_BATCH_ID = 10_000_000          # hand_id = batch * this + index within
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS batches (
     batch INTEGER PRIMARY KEY, seed INTEGER, n_players INTEGER, lineup TEXT, hands INTEGER,
-    seconds REAL, created TEXT DEFAULT CURRENT_TIMESTAMP, format TEXT);
+    seconds REAL, created TEXT DEFAULT CURRENT_TIMESTAMP, format TEXT, mirror TEXT);
 CREATE TABLE IF NOT EXISTS hands (
     hand_id INTEGER PRIMARY KEY, batch INTEGER, n_players INTEGER, button INTEGER, board TEXT,
     pot INTEGER, final_street INTEGER, showdown INTEGER, big_blind INTEGER, ante INTEGER, level INTEGER);
@@ -42,9 +46,35 @@ CREATE TABLE IF NOT EXISTS actions (
 """
 
 
-def _same_stacks(bots, n_hands, stack_bb, rng):
-    """Hands that all start with the same stacks, in new seats every time."""
+def _same_stacks(bots, n_hands, stack_bb, rng, mirror=None):
+    """Hands that all start with the same stacks, in new seats every time.
+
+    mirror: two bot names. Each deal is then played twice with the same cards, the second time with
+    those two bots in each other's seats, so that good and bad cards fall on both of them alike.
+    The random choices go with the seat as well: before each play every bot is reseeded from the
+    deal and its seat, so two bots that play alike produce the same hand twice and only where they
+    differ can the two plays part.
+    """
     stacks = [stack_bb * BIG_BLIND] * len(bots)
+    if mirror:
+        names = [bot.name for bot in bots]
+        if any(names.count(name) != 1 for name in mirror) or mirror[0] == mirror[1]:
+            raise ValueError(f"mirrored bots must be two different names that each sit once: {mirror}")
+        for index in range(0, n_hands, 2):
+            rng.shuffle(bots)
+            button, deal = (index // 2) % len(bots), rng.getrandbits(64)
+            first = list(bots)
+            names = [bot.name for bot in first]
+            a, b = names.index(mirror[0]), names.index(mirror[1])
+            second = list(first)
+            second[a], second[b] = second[b], second[a]
+            for seats in (first, second)[:n_hands - index]:      # the engine's generator only deals the cards
+                for seat, bot in enumerate(seats):
+                    bot.reseed((deal << 4) | seat)
+                _BUCKETS.clear()                                # a board read in the first play must not be skipped in the second
+                yield {"result": play_hand(seats, stacks, button, SMALL_BLIND, BIG_BLIND, random.Random(deal)),
+                       "bots": seats, "button": button, "big_blind": BIG_BLIND, "ante": 0, "level": None}
+        return
     for index in range(n_hands):
         rng.shuffle(bots)                                   # new seating every hand
         button = index % len(bots)
@@ -71,12 +101,12 @@ def _tables(bots, n_hands, names, rng):
 
 def run_batch(job):
     """Play one batch -> (job, hand rows, player rows, action rows, seconds)."""
-    batch, seed, n_hands, lineup, stack_bb, log_actions, format_names = job
+    batch, seed, n_hands, lineup, stack_bb, log_actions, format_names, mirror = job
     started = time.time()
     rng = random.Random(seed)
     bots = [make_bot(kind, seed=rng.getrandbits(32)) for kind in lineup]
     hand_rows, player_rows, action_rows = [], [], []
-    played = _tables(bots, n_hands, format_names, rng) if format_names else _same_stacks(bots, n_hands, stack_bb, rng)
+    played = _tables(bots, n_hands, format_names, rng) if format_names else _same_stacks(bots, n_hands, stack_bb, rng, mirror)
 
     for index, row in enumerate(played):
         result, seats, button, big_blind = row["result"], row["bots"], row["button"], row["big_blind"]
@@ -114,7 +144,8 @@ def connect(db_path):
     db.execute("PRAGMA synchronous=OFF")
     db.executescript(SCHEMA)
     for table, column, kind in (("actions", "behind", "INTEGER"), ("hands", "big_blind", "INTEGER"), ("hands", "ante", "INTEGER"),
-                                ("hands", "level", "INTEGER"), ("batches", "format", "TEXT")):
+                                ("hands", "level", "INTEGER"), ("batches", "format", "TEXT"),
+                                ("batches", "mirror", "TEXT")):
         if column not in [row[1] for row in db.execute(f"PRAGMA table_info({table})")]:
             db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {kind}")       # a database from before this was logged
     return db
@@ -128,14 +159,19 @@ def _lineup(pool, n_players, rng):
 
 
 def run(db_path, hands=None, seconds=None, players=(6,), bots=("tag", "lag", "nit", "station", "maniac", "random"),
-        batch_size=2000, processes=None, seed=0, stack_bb=100, log_actions=True, progress=print, format=None):
+        batch_size=2000, processes=None, seed=0, stack_bb=100, log_actions=True, progress=print, format=None, mirror=None):
     """Collect hands until ``hands`` or ``seconds`` is reached (both None = until interrupted).
 
     ``players`` may list several table sizes; batches cycle through them. ``format`` names
     tournament formats or a mix of them ('mtt_turbo', 'mtt_turbo,satellite', 'kr_mtt'): tables of
-    those are played instead, and ``players`` and ``stack_bb`` are not used.
+    those are played instead, and ``players`` and ``stack_bb`` are not used. ``mirror`` (two bot
+    names) replays every deal with those two in each other's seats (see the module notes).
     Returns (hands played, wall seconds).
     """
+    if format and mirror:
+        raise ValueError("deals are mirrored only at tables with the same stacks, not in tournament formats")
+    if mirror:
+        batch_size += batch_size % 2                    # keep the two plays of a deal in one batch
     if format:
         players = (max(fmt.seats for fmt, _ in formats.resolve(format)),)       # a line-up that can fill the largest table
     db = connect(db_path)
@@ -156,7 +192,7 @@ def run(db_path, hands=None, seconds=None, players=(6,), bots=("tag", "lag", "ni
             rng = random.Random(seed * 1_000_003 + batch)
             n_players = players[batch % len(players)]
             size = batch_size if remaining is None else min(batch_size, remaining)
-            out.append((batch, rng.getrandbits(48), size, _lineup(list(bots), n_players, rng), stack_bb, log_actions, format))
+            out.append((batch, rng.getrandbits(48), size, _lineup(list(bots), n_players, rng), stack_bb, log_actions, format, tuple(mirror) if mirror else None))
         return out
 
     processes = processes or os.cpu_count()
@@ -166,8 +202,9 @@ def run(db_path, hands=None, seconds=None, players=(6,), bots=("tag", "lag", "ni
             while (hands is None or played < hands) and (seconds is None or time.time() - started < seconds):
                 for job, hand_rows, player_rows, action_rows, secs in pool.imap_unordered(run_batch, jobs()):
                     with db:
-                        db.execute("INSERT INTO batches (batch, seed, n_players, lineup, hands, seconds, format) VALUES (?,?,?,?,?,?,?)",
-                                   (job[0], job[1], len(job[3]), ",".join(job[3]), len(hand_rows), secs, job[6]))
+                        db.execute("INSERT INTO batches (batch, seed, n_players, lineup, hands, seconds, format, mirror)"
+                                   " VALUES (?,?,?,?,?,?,?,?)", (job[0], job[1], len(job[3]), ",".join(job[3]), len(hand_rows),
+                                                                secs, job[6], ",".join(job[7]) if job[7] else None))
                         db.executemany("INSERT INTO hands (hand_id, batch, n_players, button, board, pot, final_street, showdown,"
                                        " big_blind, ante, level) VALUES (?,?,?,?,?,?,?,?,?,?,?)", hand_rows)
                         db.executemany("INSERT INTO players VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)", player_rows)

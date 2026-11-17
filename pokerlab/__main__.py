@@ -133,6 +133,9 @@ def main(argv=None):
     p.add_argument("--formats", metavar="NAMES",
                    help="also play tables of tournament formats for the range model to learn from, e.g. kr_mtt (see 'formats')")
     p.add_argument("--format-hands", type=int, help="hands of those formats per cycle (default: as many as one match)")
+    p.add_argument("--if-due", metavar="HH:MM",
+                   help="run only if no cycle has started since the latest daily slot at this time (UTC); "
+                        "a scheduler can then call it more than once a day and a missed run is made up")
 
     sub.add_parser("history", help="what the learning cycles have done so far").add_argument(
         "--state", default=daily.STATE_DIR)
@@ -219,6 +222,12 @@ def main(argv=None):
             print("실제 상대 핸드 기준 승률과의 평균 절대 오차(mae)와 편향(bias = 추정 - 실제)")
             print(inference.summarize(rows).to_string(float_format=lambda x: f"{x:.4f}"))
     elif args.command == "daily":
+        if args.if_due:
+            owed, slot, last = daily.due(args.if_due, args.state)
+            if not owed:
+                print(f"할 일 없음: {slot:%Y-%m-%d %H:%M} UTC 이후에 사이클 {last['cycle']}이 이미 실행됐습니다.")
+                return
+            print(f"{slot:%Y-%m-%d %H:%M} UTC 몫의 사이클을 실행합니다.", flush=True)
         daily.run(args.cycles, state_dir=args.state, hands=args.hands, challengers=args.challengers,
                   references=tuple(args.opponents.split(",")), processes=args.processes, keep_db=args.keep_db,
                   formats=args.formats, format_hands=args.format_hands)
