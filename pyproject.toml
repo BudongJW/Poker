@@ -20,4 +20,4 @@ pokerlab = "pokerlab.__main__:main"
 packages = ["pokerlab"]
 
 [tool.setuptools.package-data]
-pokerlab = ["data/*.json", "data/formats/*.json", "data/formats/source/*.csv", "static/*.html"]
+pokerlab = ["data/*.json", "data/*.jpg", "data/formats/*.json", "data/formats/source/*.csv", "static/*.html"]

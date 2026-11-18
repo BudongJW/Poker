@@ -1,0 +1,50 @@
+{
+ "about": "A table drawn for testing (not a real program): six players, the turn, the hero on the button.",
+ "hero": "Js6c",
+ "board": "4h3s7s9h",
+ "pot": 1056,
+ "seats": [
+  {
+   "stack": 804,
+   "bet": 0,
+   "in_hand": true,
+   "hero": true,
+   "button": true
+  },
+  {
+   "stack": 0,
+   "bet": 444,
+   "in_hand": true,
+   "hero": false,
+   "button": false
+  },
+  {
+   "stack": 1811,
+   "bet": 0,
+   "in_hand": false,
+   "hero": false,
+   "button": false
+  },
+  {
+   "stack": 420,
+   "bet": 0,
+   "in_hand": false,
+   "hero": false,
+   "button": false
+  },
+  {
+   "stack": 1004,
+   "bet": 0,
+   "in_hand": true,
+   "hero": false,
+   "button": false
+  },
+  {
+   "stack": 975,
+   "bet": 0,
+   "in_hand": false,
+   "hero": false,
+   "button": false
+  }
+ ]
+}

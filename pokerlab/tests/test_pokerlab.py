@@ -2164,3 +2164,28 @@ def test_doubted_frames_are_read_again_and_what_reading_costs(monkeypatch):
     web.capture_request({"source": "A", "image": "QUJD", "trials": 1000})
     assert asked == [None]
     web._SOURCES.clear()
+
+
+def test_the_self_check(monkeypatch):
+    from pokerlab import check
+    with open(check.ANSWERS, encoding="utf-8") as fh:
+        answers = json.load(fh)
+    right = {"hero": answers["hero"][2:] + answers["hero"][:2], "board": answers["board"], "pot": answers["pot"],
+             "seats": [dict(seat, bet=float(seat["bet"])) for seat in reversed(answers["seats"])]}
+    assert check.compare(right, answers) == []
+    wrong = dict(right, pot=1000, seats=[dict(seat, button=False) for seat in right["seats"]])
+    assert len(check.compare(wrong, answers)) == 2
+    for name in ("ANTHROPIC_API_KEY", "POKER_ANTHROPIC_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "POKERLAB_VISION_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("POKERLAB_VISION_PROVIDER", "claude")
+    lines = []
+    assert check.run(out=lines.append) == 1 and any("키: 없음" in line for line in lines)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "test")
+    sent = []
+    monkeypatch.setattr(vision, "recognize", lambda image, mime_type, model=None, call=None:
+                        sent.append((len(image), mime_type, model)) or call.update(seconds=5.0, cost=0.02, model=model) or right)
+    lines.clear()
+    assert check.run(read=False, out=lines.append) == 0 and not sent and "test" not in "".join(lines)
+    assert check.run(out=lines.append) == 0 and sent == [(os.path.getsize(check.SAMPLE), "image/jpeg", vision.CLAUDE_MODEL)]
+    monkeypatch.setattr(vision, "recognize", lambda image, mime_type, model=None, call=None: wrong)
+    assert check.run(out=lines.append) == 1

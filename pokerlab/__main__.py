@@ -148,6 +148,10 @@ def main(argv=None):
     p.add_argument("--learn-every", type=int, default=50, metavar="HANDS",
                    help="with --record: fit the 'live' model again after this many new hands (default 50; 0 = never)")
 
+    p = sub.add_parser("check", help="is this computer ready to read windows? (key, model, one sample picture read)")
+    p.add_argument("--no-read", action="store_true", help="only check the set-up: send nothing, spend nothing")
+    p.add_argument("--model", default=None, help="the model to read the sample with (default: the one serve uses)")
+
     p = sub.add_parser("quality", help="how well windows were read, from serve --record files (no right answers needed)")
     p.add_argument("records", nargs="+", metavar="FILE")
 
@@ -247,6 +251,9 @@ def main(argv=None):
     elif args.command == "serve":
         from . import web
         web.serve(args.host, args.port, args.record, args.learn_every)
+    elif args.command == "check":
+        from . import check
+        raise SystemExit(check.run(read=not args.no_read, model=args.model))
     elif args.command == "quality":
         from . import records
         rows = records.quality([line for path in args.records for line in records.read(path)])
