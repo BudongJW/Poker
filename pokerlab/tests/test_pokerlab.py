@@ -2189,3 +2189,83 @@ def test_the_self_check(monkeypatch):
     assert check.run(out=lines.append) == 0 and sent == [(os.path.getsize(check.SAMPLE), "image/jpeg", vision.CLAUDE_MODEL)]
     monkeypatch.setattr(vision, "recognize", lambda image, mime_type, model=None, call=None: wrong)
     assert check.run(out=lines.append) == 1
+
+
+def test_the_short_answer_form(monkeypatch):
+    answer = {"ok": True, "h": "AhKc", "bd": "Kd 4c 3c", "p": 31, "pib": True, "wh": None, "bb": None, "act": False,
+              "seats": [{"x": 0.4, "y": 0.1, "n": None, "s": None, "b": 13, "f": "IHD", "c": ""},
+                        {"x": 0.6, "y": 0.1, "n": "bob", "s": 0, "b": 13, "f": "ia", "c": "10h K♣"},
+                        {"x": 0.5, "y": 0.9, "n": "cy", "s": 200, "b": 0, "f": "OT", "c": ""}]}
+    snapshot = vision.to_snapshot(vision.from_compact(answer))
+    assert snapshot["hero"] == "AhKc" and snapshot["board"] == "Kd4c3c" and snapshot["pot"] == 31
+    hero, bob, cy = snapshot["seats"]
+    assert hero["hero"] and hero["button"] and hero["in_hand"] and not hero["acting"]
+    assert bob["in_hand"] and bob["cards"] == "ThKc" and bob["stack"] == 0 and not bob["hero"]
+    assert cy["sitting_out"] and cy["acting"] and not cy["in_hand"]
+    assert set(vision.COMPACT_SCHEMA["properties"]["seats"]["items"]["required"]) == {"x", "y", "n", "s", "b", "f", "c"}
+    monkeypatch.delenv("POKERLAB_VISION_COMPACT", raising=False)
+    assert not vision.compact()
+    monkeypatch.setenv("POKERLAB_VISION_COMPACT", "1")
+    assert vision.compact()
+
+
+def test_a_frame_whose_pot_runs_ahead_waits_for_the_next():
+    checked = 0
+    for result, chips in _engine_hands(30, stacks=(1000,)):
+        shots = table.frames(result, chips, 0, 5, every=True, to_end=True)
+        shots = [dict(shot, seats=[dict(seat, stack=None) for seat in shot["seats"]]) for shot in shots]   # no stacks shown
+        if len(shots) < 6:
+            continue
+        clean = follow.Follower("lab")
+        for shot in shots:
+            clean.push(shot)
+        # a program that moves the chips to the pot before it shows the bet: one frame with the pot ahead
+        k = next((i for i in range(2, len(shots) - 2) if not shots[i].get("hero_to_act")), None)
+        if k is None:
+            continue
+        ahead = dict(shots[k], pot=shots[k]["pot"] + 40)
+        follower = follow.Follower("lab")
+        for shot in shots[:k] + [ahead] + shots[k:]:
+            follower.push(shot)
+        assert _actions(follower.hand) == _actions(clean.hand) and follower.counts["passing"] == 1
+        # a pot that is always read 40 too high: frames are taken in after all, and then no longer held back
+        steady = follow.Follower("lab")
+        for shot in [shots[0]] + [dict(shot, pot=shot["pot"] + 40) for shot in shots[1:]]:
+            steady.push(shot)
+        assert steady.held is None or steady._kept < 3
+        checked += 1
+    assert checked > 10
+
+
+def test_the_heros_cards_are_read_again_when_frames_disagree(monkeypatch):
+    from pokerlab.cards import card_str
+    result, chips = next(r for r in _engine_hands(30, stacks=(1000,)) if len(r[0].actions) >= 10)
+    shots = table.frames(result, chips, 0, 5, every=True)
+    hero = shots[0]["hero"]
+    other = next(card_str(c) for c in range(52) if card_str(c) not in hero and c not in result.board)
+    wrong = hero[:2] + other
+    follower = follow.Follower("lab")
+    asked = []
+    for k, shot in enumerate(shots):
+        follower.push(dict(shot, hero=wrong) if k % 2 == 0 else shot)     # the frames split between two readings
+        place = follower.card_tie()
+        if place is not None:
+            asked.append(place)
+            follower.settle_cards(hero)
+    assert 1 <= len(asked) <= follow.Follower.MAX_CARD_CHECKS
+    assert asked[0] == pytest.approx((shots[0]["seats"][0]["x"], shots[0]["seats"][0]["y"]))
+    assert follower.hand["hero"] == parse_cards(hero) and not follower.restarted
+    # through the web page: the frame's picture is read again for the cards alone, and that call is counted
+    web._SOURCES.clear()
+    monkeypatch.setattr(vision, "provider", lambda: "claude")
+    frames = [dict(shot, hero=wrong) if k % 2 == 0 else shot for k, shot in enumerate(shots)]
+    monkeypatch.setattr(vision, "recognize", lambda image, mime_type, notes=None, model=None, call=None:
+                        call.update(seconds=1.0, cost=0.02) or frames.pop(0))
+    checks = []
+    monkeypatch.setattr(vision, "read_hero_cards", lambda image, mime_type, place=None, notes=None, call=None:
+                        checks.append(place) or call.update(seconds=0.5, cost=0.007) or hero)
+    for _ in range(len(shots)):
+        state = web.capture_request({"source": "A", "image": "QUJD", "trials": 1000})
+    assert checks and state["spending"]["card_checks"] == len(checks) and state["spending"]["frames"] == len(shots)
+    assert state["table"]["hero"] == [hero[:2], hero[2:]] or sorted(state["table"]["hero"]) == sorted([hero[:2], hero[2:]])
+    web._SOURCES.clear()

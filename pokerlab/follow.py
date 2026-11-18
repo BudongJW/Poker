@@ -64,11 +64,12 @@ class Follower:
         self._last = self._analysis = None
         # how well the window is being read, without knowing the right answers (see quality())
         self.counts = {"frames": 0, "unread": 0, "restarts": 0, "hands": 0, "restarted_hands": 0, "checked": 0, "mismatched": 0,
-                       "moved": 0}
+                       "moved": 0, "passing": 0}
+        self._kept = 0                          # frames set aside as passing moments that were taken in after all
         self.hero_places = []                   # where the latest frames that showed the hero's cards put the hero's seat
         # what reading the window has cost: frames read by a service, dollars (None once a call had no known
         # price), seconds, and frames read again by the main model after the cheaper one's reading was doubted
-        self.spending = {"frames": 0, "dollars": 0.0, "seconds": 0.0, "read_again": 0, "doubts": {}}
+        self.spending = {"frames": 0, "dollars": 0.0, "seconds": 0.0, "read_again": 0, "doubts": {}, "card_checks": 0}
         self._clear()
 
     def _clear(self):
@@ -78,19 +79,58 @@ class Follower:
         self.open = False                       # this program shows other players' cards all along
         self.waiting = []                       # frames as read while the hero's seat had no cards yet (see _dealt)
         self.moved = 0                          # frames of this hand whose hero mark was put back on the hero's seat
+        self.held = None                        # a frame set aside as perhaps a passing moment (see push)
+        self.card_checks = []                   # the hero's cards as read again on their own in this hand (see card_tie)
+        self._checked_at = None                 # how many frames the hand had at the last such reading
 
     def push(self, snapshot):
-        """Take the next snapshot. Returns True if anything changed."""
+        """Take the next snapshot. Returns True if anything changed.
+
+        A frame whose pot is ahead of what the chips put in add up to, taken while it is not the
+        hero's turn, may be a passing moment (a program that moves the pot before the bets): it
+        is set aside, and dropped if the next frame of the hand adds up; otherwise it is taken in
+        after all, before the next one. A source whose set-aside frames mostly turn out not to be
+        passing moments is not held back any more."""
         if snapshot == self._last:
             return False
         self._last = snapshot
+        self.counts["frames"] += 1
+        if self.held is not None:
+            held, self.held = self.held, None
+            trial = self._trial(snapshot)
+            passed = (trial.counts["hands"] == self.counts["hands"] and trial.counts["unread"] == self.counts["unread"]
+                      and "pot" not in self._doubts(trial, snapshot))
+            if passed:
+                self.counts["passing"] += 1
+            else:
+                self._kept += 1
+                self._take(held)
+        if self.hand is not None and not snapshot.get("hero_to_act") and not (self._kept >= 3 and self._kept > self.counts["passing"]):
+            trial = self._trial(snapshot)
+            if self._doubts(trial, snapshot) == ["pot"] and self._pot_shown(snapshot) > trial.hand["pot"]:
+                self.held = snapshot            # the pot ahead of the bets (one paid out to a winner goes down instead)
+                return True
+        return self._take(snapshot)
+
+    @staticmethod
+    def _pot_shown(snapshot):
+        """The pot a frame shows with the bets in front, or None."""
+        try:
+            shot = table.normalize(snapshot)
+        except ValueError:
+            return None
+        if shot["pot"] is None:
+            return None
+        return shot["pot"] + (0.0 if shot["pot_includes_bets"] else sum(seat["bet"] for seat in shot["seats"]))
+
+    def _take(self, snapshot):
+        """Take a frame in (see :meth:`push`)."""
         self.version += 1
         self._analysis = None
-        self.counts["frames"] += 1
         snapshot = self._place_hero(snapshot)
         read, outside = snapshot, False
         if self.waiting and self._dealt(snapshot):  # the hero's cards have come: the hand is the hero's after all
-            self.shots = [dict(frame, hero=snapshot["hero"]) for frame in self.waiting]
+            self.shots = [dict(frame, hero=snapshot["hero"], hero_copied=True) for frame in self.waiting]
             self.hand, self.waiting = None, []
         snapshot = self._with_hero_cards(snapshot)
         try:
@@ -179,11 +219,12 @@ class Follower:
             return snapshot                     # another hand has begun
         return filled
 
-    def spend(self, calls, doubts=()):
+    def spend(self, calls, doubts=(), card_check=False):
         """Count what reading one frame cost: ``calls`` as :func:`pokerlab.vision.recognize` describes
-        them (more than one when it was read again), ``doubts`` the reasons it was read again."""
+        them (more than one when it was read again), ``doubts`` the reasons it was read again.
+        card_check: the call read the hero's cards of a frame already counted again (see card_tie)."""
         spending = self.spending
-        spending["frames"] += 1
+        spending["card_checks" if card_check else "frames"] += 1
         spending["seconds"] += sum(call.get("seconds") or 0.0 for call in calls)
         costs = [call.get("cost") for call in calls]
         spending["dollars"] = None if spending["dollars"] is None or None in costs else spending["dollars"] + sum(costs)
@@ -199,11 +240,20 @@ class Follower:
         the same hand), 'pot' (the pot it shows is not the pot that the chips put in add up to). Empty
         when it fits. A frame from which no table can be read is not doubted:
         between hands there is none."""
+        return self._doubts(self._trial(snapshot), snapshot)
+
+    def _trial(self, snapshot):
+        """A copy of this follower that has taken ``snapshot`` in (this one is not changed)."""
         trial = copy.copy(self)
-        trial.record, trial._analysis, trial._last = None, None, None
+        trial.record, trial._analysis, trial._last, trial.held = None, None, None, None
         trial.shots, trial.counts, trial.shown = list(self.shots), dict(self.counts), dict(self.shown)
         trial.hero_places, trial.waiting, trial.spending = list(self.hero_places), list(self.waiting), dict(self.spending)
-        trial.push(snapshot)
+        trial.card_checks = list(self.card_checks)
+        trial._take(snapshot)
+        return trial
+
+    def _doubts(self, trial, snapshot):
+        """:meth:`doubts`, with the copy that took ``snapshot`` in."""
         out = []
         if trial.counts["restarts"] > self.counts["restarts"]:
             out.append("restart")
@@ -215,15 +265,10 @@ class Follower:
         cards = set(parse_cards(snapshot.get("hero") or ""))
         if same_hand and self.hand["hero_seat"] is not None and len(cards) == 2 and cards != set(self.hand["hero"]):
             out.append("cards")
-        if same_hand and trial.hand is not None and not trial.finished:
-            try:
-                shot = table.normalize(snapshot)
-            except ValueError:
-                shot = None
-            if shot is not None and shot["pot"] is not None:      # the pot it shows against the one its chips add up to
-                shown = shot["pot"] + (0.0 if shot["pot_includes_bets"] else sum(seat["bet"] for seat in shot["seats"]))
-                if abs(shown - trial.hand["pot"]) > 0.005 * max(shown, 1.0) + 1e-6:
-                    out.append("pot")
+        shown = self._pot_shown(snapshot)
+        if same_hand and trial.hand is not None and not trial.finished and shown is not None:
+            if abs(shown - trial.hand["pot"]) > 0.005 * max(shown, 1.0) + 1e-6:      # the pot it shows against its chips' sum
+                out.append("pot")
         return out
 
     def _hero_place(self):
@@ -276,12 +321,50 @@ class Follower:
         n = len(shot["seats"])
         return len(first["seats"]) == n and (shot["button"] - shot["hero_seat"]) % n == (first["button"] - first["hero_seat"]) % n
 
+    CHECK_VOTES = 3                             # a reading of the hero's cards on their own counts as this many frames
+    MAX_CARD_CHECKS = 2                         # such readings in one hand at most
+
+    def _readings(self):
+        """The hero's cards as the hand's frames read them, and as they were read again on their own (weighted)."""
+        reads = [frozenset(parse_cards(s["hero"])) for s in self.shots if s.get("hero") and not s.get("hero_copied")]
+        return reads + [frozenset(parse_cards(cards)) for cards in self.card_checks if cards for _ in range(self.CHECK_VOTES)]
+
+    def card_tie(self):
+        """Do the frames of the hand being followed disagree about the hero's cards (the second reading
+        in two frames at least, and in half as many as the first)? Then -> where the hero's seat is
+        (x, y), to read the cards again on their own; else None. At most :data:`MAX_CARD_CHECKS` times
+        a hand, and not again before another frame has been read."""
+        if self.hand is None or self.hand["hero_seat"] is None or len(self.card_checks) >= self.MAX_CARD_CHECKS:
+            return None
+        reads = self._readings()
+        counts = sorted((reads.count(cards) for cards in set(reads)), reverse=True)
+        if len(counts) < 2 or counts[1] < 2 or 2 * counts[1] < counts[0] or self._checked_at == len(self.shots):
+            return None
+        self._checked_at = len(self.shots)
+        hero = table.normalize(self.shots[-1])["seats"][table.normalize(self.shots[-1])["hero_seat"]]
+        return None if hero["x"] is None or hero["y"] is None else (hero["x"], hero["y"])
+
+    def settle_cards(self, cards):
+        """The hero's cards as read again on their own ('' if they could not be): weighed in with the frames."""
+        read = bool(cards) and len(parse_cards(cards)) == 2
+        self.card_checks.append(cards if read else "")     # an unread one still counts towards the most a hand gets
+        if read:
+            try:
+                self.hand = table.reconstruct(self._agreed(), finished=self.finished)
+            except ValueError:
+                pass
+            self.version += 1
+            self._analysis = None
+
     def _agreed(self):
-        """The hand's snapshots, each with the hero's cards that most of them show (the earliest on a tie)."""
-        reads = [frozenset(parse_cards(s["hero"])) for s in self.shots if s.get("hero")]
+        """The hand's snapshots, each with the hero's cards that most of them show (the earliest on a tie);
+        a reading of the cards on their own counts as :data:`CHECK_VOTES` frames."""
+        reads = self._readings()
         if len(set(reads)) <= 1:
             return self.shots
         common = max(reads, key=lambda cards: (reads.count(cards), -reads.index(cards)))
+        if not any(s.get("hero") and frozenset(parse_cards(s["hero"])) == common for s in self.shots):
+            return [dict(s, hero="".join(card_str(c) for c in sorted(common, reverse=True))) if s.get("hero") else s for s in self.shots]
         cards = next(s["hero"] for s in self.shots if s.get("hero") and frozenset(parse_cards(s["hero"])) == common)
         return [dict(s, hero=cards) if s.get("hero") else s for s in self.shots]
 
@@ -401,6 +484,7 @@ class Follower:
         mismatched: frames whose chips could be added up, and those that added up to another total
         than the rest of their hand. Within a hand the chips on the table do not change, so a
         mismatched frame had a stack or the pot misread; a misread bet alone does not show here.
+        passing: frames dropped as passing moments (their pot did not add up, the next frame's did).
         moved: frames that marked another seat as the hero's than the one where the hero sits (the
         mark was put back); many of them mean the reader needs to be told where the hero sits.
         """

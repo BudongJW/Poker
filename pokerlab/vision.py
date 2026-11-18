@@ -22,6 +22,7 @@ leaves this machine: it is sent to Anthropic or to Google (with ``store`` off).
 import base64
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -148,6 +149,95 @@ def _strict(node):
 
 CLAUDE_SCHEMA = _strict(SCHEMA)
 
+# The same answer in fewer tokens, for Claude, when asked for (see compact()): most of an answer is the names
+# of its fields, written again for every seat, and the output tokens are most of the cost and time of a call.
+COMPACT_PROMPT = """You are reading one frame of a program's window that shows a Texas Hold'em table. Report only what is visible in the picture. \
+Never guess a card or a number you cannot read: use null (or an empty string) instead. Answer with these short keys.
+
+seats: one entry for every seat that has a player (a name plate or avatar), including players who have folded and \
+players who are sitting out. Skip empty seats, and a dealer drawn at the table who deals but does not play.
+- x, y: the centre of the player's name plate as fractions of the image width and height (0 to 1, y measured from the top).
+- n: the name on the plate, or null.
+- s: the stack, the chips the player has left as shown on the plate; null if the table does not show it as a number; 0 \
+if the plate says the player is all-in.
+- b: the bet, the chips lying in front of the player for the current betting round (posted blinds count); 0 if there \
+are none. The pot in the middle is not a bet. Some programs show by each player what that player has put in during the \
+whole hand instead (the amount stays after a betting round ends, and a player who folded still shows what they paid): \
+then report that amount and answer wh true.
+- f: letters for what is true of the seat, in any order, "" for none:
+  I in the hand: card backs or face-up cards next to the plate (not when the player has folded or was not dealt in, \
+even if the folded cards are still shown greyed, dimmed or marked folded);
+  H the hero: the one seat the program is played from, normally the seat at the bottom centre, or the one the notes \
+about the program name. Keep marking it after its player folds. When several players' cards are face up (a program \
+that shows every hand, a replay), still mark only that one seat. A spectator's view with no seat of its own has no H;
+  D the dealer button (a disc marked D) is next to this player;
+  O the plate says the player is sitting out or away;
+  A the plate says the player is all-in;
+  T it is this player's turn, if the table shows it (a highlighted plate, a timer bar, a countdown).
+- c: for a player other than the hero whose two hole cards can be seen face up (at a showdown, or in a program that \
+shows every hand), those two cards written together ("AsKd"); otherwise "". Never card backs.
+
+h: the two hole cards of the hero's seat written together if they can be seen ("AhKc"); "" when there is no hero seat \
+or its cards are not shown. bd: the community cards in the middle, left to right, written together (0, 3, 4 or 5 \
+cards, "" before the flop). Each card is rank then suit: ranks 2 3 4 5 6 7 8 9 T J Q K A, suits s h d c (for example \
+As, Td, 9h). In four-colour decks blue is diamonds and green is clubs.
+
+p: the number the table shows for the pot (prefer the one labelled total pot). pib: true if that number already \
+includes the chips lying in front of the players, false if it only counts chips already gathered in the middle, null if \
+you cannot tell.
+wh: true if the amounts by the players count the whole hand (see b; the notes may say so), false if they are for the \
+current betting round, null if you cannot tell.
+bb: the big blind, from the stakes in the window title or table name if they are visible (for "$0.50/$1.00" answer \
+1.0), else null.
+
+Numbers: plain numbers in the unit the table uses, without currency signs or thousands separators ("1.2K" is 1200). \
+If the table shows amounts in big blinds ("98.5 BB"), report those numbers and answer 1 for bb.
+act: true if the hero's own action buttons (fold, check, call, bet, raise) are on screen and usable, false if they are \
+not, null if you cannot tell.
+ok: false if the picture does not show a hold'em table; then leave everything else empty."""
+
+COMPACT_SCHEMA = _strict({
+    "type": "object",
+    "properties": {
+        "ok": {"type": "boolean"}, "h": {"type": "string"}, "bd": {"type": "string"}, "p": _NUMBER,
+        "pib": {"type": ["boolean", "null"]}, "wh": {"type": ["boolean", "null"]}, "bb": _NUMBER,
+        "act": {"type": ["boolean", "null"]},
+        "seats": {"type": "array", "items": {"type": "object", "properties": {
+            "x": {"type": "number"}, "y": {"type": "number"}, "n": {"type": ["string", "null"]}, "s": _NUMBER, "b": _NUMBER,
+            "f": {"type": "string"}, "c": {"type": "string"}}}},
+    },
+})
+_CARD = re.compile(r"(10|[2-9TJQKA])\s*([shdc\u2660\u2665\u2666\u2663])", re.IGNORECASE)
+
+
+def _cards(text):
+    """'AhKc', 'Ah Kc', '10h K♣' -> ['Ah', 'Kc'] (the form :func:`to_snapshot` takes)."""
+    return [rank + suit for rank, suit in _CARD.findall(str(text or ""))]
+
+
+def from_compact(answer):
+    """An answer in the short form (:data:`COMPACT_SCHEMA`) -> the same answer in the long form (:data:`SCHEMA`)."""
+    if not isinstance(answer, dict) or not isinstance(answer.get("seats"), list):
+        raise VisionError("이미지 인식 결과의 형식이 올바르지 않습니다")
+    seats = []
+    for seat in answer["seats"]:
+        if not isinstance(seat, dict):
+            continue
+        flags = str(seat.get("f") or "").upper()
+        seats.append({"name": seat.get("n"), "x": seat.get("x"), "y": seat.get("y"), "stack": seat.get("s"), "bet": seat.get("b"),
+                      "in_hand": "I" in flags, "is_hero": "H" in flags, "has_button": "D" in flags,
+                      "sitting_out": "O" in flags, "all_in": "A" in flags, "acting": "T" in flags, "cards": _cards(seat.get("c"))})
+    return {"is_poker_table": answer.get("ok", True), "hero_cards": _cards(answer.get("h")), "board": _cards(answer.get("bd")),
+            "pot": answer.get("p"), "pot_includes_bets": answer.get("pib"), "bets_whole_hand": answer.get("wh"),
+            "big_blind": answer.get("bb"), "hero_to_act": answer.get("act"), "seats": seats}
+
+
+def compact():
+    """Ask Claude for the short form? Only with POKERLAB_VISION_COMPACT=1: on the frames of two games it took
+    half the output tokens, 1.2 to 2 seconds less and about a third less money a frame, but read 5 of 30 frames
+    wrong that the long form read right (and 2 right that it read wrong)."""
+    return os.environ.get("POKERLAB_VISION_COMPACT", "0") == "1"
+
 
 class VisionError(ValueError):
     """The picture could not be read: no key, the service refused, or the answer made no sense."""
@@ -243,15 +333,16 @@ def _recognize_claude(image, mime_type, model, key, timeout, notes, call):
         options["base_url"] = os.environ["POKERLAB_ANTHROPIC_BASE_URL"]
     client = anthropic.Anthropic(timeout=timeout, max_retries=1, **options)
     model = model or os.environ.get("POKERLAB_VISION_MODEL") or CLAUDE_MODEL
+    short = compact()
     request = {
         "model": model, "max_tokens": 4096,
         # the instructions never change between frames: the same prefix every call, cached where it is long enough
-        "system": [{"type": "text", "text": PROMPT, "cache_control": {"type": "ephemeral"}}],
+        "system": [{"type": "text", "text": COMPACT_PROMPT if short else PROMPT, "cache_control": {"type": "ephemeral"}}],
         "messages": [{"role": "user", "content": [
             {"type": "image", "source": {"type": "base64", "media_type": mime_type,
                                          "data": base64.standard_b64encode(image).decode()}},
             {"type": "text", "text": f"About the program in this picture: {notes}" if notes else "Read this table."}]}],
-        "output_config": {"format": {"type": "json_schema", "schema": CLAUDE_SCHEMA},
+        "output_config": {"format": {"type": "json_schema", "schema": COMPACT_SCHEMA if short else CLAUDE_SCHEMA},
                           "effort": os.environ.get("POKERLAB_VISION_EFFORT") or CLAUDE_EFFORT},
     }
     started = time.time()
@@ -287,9 +378,59 @@ def _recognize_claude(image, mime_type, model, key, timeout, notes, call):
         raise VisionError("인식 결과가 길이 제한에 걸려 잘렸습니다")
     text = next((block.text for block in reply.content if block.type == "text"), "")
     try:
-        return to_snapshot(json.loads(text))
+        answer = json.loads(text)
+        return to_snapshot(from_compact(answer) if short else answer)
     except json.JSONDecodeError:
         raise VisionError("이미지 인식 결과를 읽지 못했습니다 (JSON이 아닙니다)") from None
+
+
+CARDS_PROMPT = """This is one frame of a program's window that shows a Texas Hold'em table. Read only the two face-up \
+hole cards of the hero: the seat the program is played from{place}. The second card may be partly covered by the \
+first: read each card's rank and suit from its corner index, not from the picture in the middle. Write the two cards \
+together, each as rank then suit (ranks 2 3 4 5 6 7 8 9 T J Q K A, suits s h d c; for example "AhKc"); in four-colour \
+decks blue is diamonds and green is clubs. If you cannot read both, answer an empty string."""
+
+
+def read_hero_cards(image, mime_type="image/jpeg", place=None, notes=None, model=None, timeout=60, call=None):
+    """Read the hero's two cards again, and nothing else (when the frames of a hand disagree about them).
+    place: where the hero's seat is (x, y as fractions of the picture). -> 'AhKc', or '' if not read.
+    Claude only; raises :class:`VisionError`."""
+    try:
+        import anthropic
+    except ImportError:
+        raise VisionError("Claude로 읽으려면 anthropic 패키지가 필요합니다: pip install anthropic") from None
+    key = _claude_key()
+    options = {"api_key": key} if key else {}
+    if os.environ.get("POKERLAB_ANTHROPIC_BASE_URL"):
+        options["base_url"] = os.environ["POKERLAB_ANTHROPIC_BASE_URL"]
+    client = anthropic.Anthropic(timeout=timeout, max_retries=1, **options)
+    where = f" (its name plate is at about x={place[0]:.2f}, y={place[1]:.2f} as fractions of the picture)" if place else \
+        " (normally the seat at the bottom centre)"
+    text = CARDS_PROMPT.format(place=where) + (f"\nAbout the program in this picture: {notes}" if notes else "")
+    model = model or os.environ.get("POKERLAB_VISION_MODEL") or CLAUDE_MODEL
+    started = time.time()
+    try:
+        reply = client.messages.create(model=model, max_tokens=1024, messages=[{"role": "user", "content": [
+            {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": base64.standard_b64encode(image).decode()}},
+            {"type": "text", "text": text}]}],
+            output_config={"format": {"type": "json_schema", "schema": {
+                "type": "object", "properties": {"h": {"type": "string"}}, "required": ["h"], "additionalProperties": False}},
+                "effort": os.environ.get("POKERLAB_VISION_EFFORT") or CLAUDE_EFFORT})
+    except anthropic.APIError as error:
+        raise VisionError(f"Claude API 오류: {error}"[:300]) from None
+    usage = reply.usage
+    info = dict(service="claude", model=reply.model, seconds=time.time() - started, input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens, cache_read_tokens=usage.cache_read_input_tokens or 0,
+                cache_write_tokens=usage.cache_creation_input_tokens or 0)
+    info["cost"] = cost(info)
+    if call is not None:
+        call.update(info)
+    answer = next((block.text for block in reply.content if block.type == "text"), "")
+    try:
+        cards = _cards(json.loads(answer).get("h"))
+    except (json.JSONDecodeError, AttributeError):
+        return ""
+    return "".join(cards) if len(cards) == 2 else ""
 
 
 def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, notes=None, call=None):

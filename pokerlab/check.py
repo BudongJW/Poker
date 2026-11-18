@@ -57,6 +57,11 @@ def compare(read, answers):
 def run(read=True, model=None, out=print):
     """Check and report (through ``out``) -> 0 when ready (and, with ``read``, the sample was read right), else 1."""
     out(f"Python {platform.python_version()} · {sys.platform}")
+    key = _key_name()
+    if key is None:
+        out("API 키: 없음. 창을 읽으려면 Claude API 키를 환경 변수 ANTHROPIC_API_KEY에 넣어 주세요 "
+            "(Gemini를 쓰려면 GEMINI_API_KEY). 넣는 방법은 README의 '설치와 실행'에 있습니다.")
+        return 1
     try:
         service = vision.provider()
     except vision.VisionError as error:
@@ -77,9 +82,6 @@ def run(read=True, model=None, out=print):
     else:
         main = model or os.environ.get("POKERLAB_VISION_MODEL") or vision.DEFAULT_MODEL
         out(f"인식 서비스: Gemini · 모델 {main}")
-    if key is None:
-        out("API 키: 없음. 환경 변수 ANTHROPIC_API_KEY(Claude) 또는 GEMINI_API_KEY(Gemini)에 키를 넣어 주세요.")
-        return 1
     out(f"API 키: 환경 변수 {key}에 있음 (키 값은 표시하지 않습니다)")
     if not read:
         out("그림은 읽지 않았습니다 (--no-read). 아무것도 보내지 않았고 비용도 없습니다.")
