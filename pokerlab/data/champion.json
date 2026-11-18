@@ -1,8 +1,8 @@
 {
- "generation": 0,
+ "generation": 1,
  "params": {
-  "value": 0.15,
-  "margin": 0.06,
+  "value": 0.097,
+  "margin": 0.058,
   "bluff": 0.05,
   "respect": 0.2
  }
