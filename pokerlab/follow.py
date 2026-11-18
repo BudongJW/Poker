@@ -86,11 +86,11 @@ class Follower:
     def push(self, snapshot):
         """Take the next snapshot. Returns True if anything changed.
 
-        A frame whose pot is ahead of what the chips put in add up to, taken while it is not the
-        hero's turn, may be a passing moment (a program that moves the pot before the bets): it
-        is set aside, and dropped if the next frame of the hand adds up; otherwise it is taken in
-        after all, before the next one. A source whose set-aside frames mostly turn out not to be
-        passing moments is not held back any more."""
+        A frame taken while it is not the hero's turn, whose pot is ahead of what the chips put in
+        add up to (a passing moment: a program that moves the pot before the bets), or that does not
+        follow from the hand at all (one frame read wrong), is set aside: dropped if the next frame
+        of the hand fits without it, otherwise taken in after all, before the next one. A source
+        whose set-aside frames mostly turn out to be needed is not held back any more."""
         if snapshot == self._last:
             return False
         self._last = snapshot
@@ -98,8 +98,9 @@ class Follower:
         if self.held is not None:
             held, self.held = self.held, None
             trial = self._trial(snapshot)
+            doubts = self._doubts(trial, snapshot)
             passed = (trial.counts["hands"] == self.counts["hands"] and trial.counts["unread"] == self.counts["unread"]
-                      and "pot" not in self._doubts(trial, snapshot))
+                      and "pot" not in doubts and "restart" not in doubts)
             if passed:
                 self.counts["passing"] += 1
             else:
@@ -107,8 +108,10 @@ class Follower:
                 self._take(held)
         if self.hand is not None and not snapshot.get("hero_to_act") and not (self._kept >= 3 and self._kept > self.counts["passing"]):
             trial = self._trial(snapshot)
-            if self._doubts(trial, snapshot) == ["pot"] and self._pot_shown(snapshot) > trial.hand["pot"]:
-                self.held = snapshot            # the pot ahead of the bets (one paid out to a winner goes down instead)
+            doubts = self._doubts(trial, snapshot)
+            ahead = doubts == ["pot"] and self._pot_shown(snapshot) > trial.hand["pot"]   # (a pot paid out goes down instead)
+            if ahead or "restart" in doubts:
+                self.held = snapshot            # a passing moment, or one frame read wrong: the next frame tells
                 return True
         return self._take(snapshot)
 
@@ -271,11 +274,11 @@ class Follower:
                 out.append("pot")
         return out
 
-    def _hero_place(self):
+    def _hero_place(self, votes=2):
         """Where the hero sits in this window: the place most of the latest frames that showed the hero's
-        cards marked (two of them at least, and two thirds of them), or None."""
+        cards marked (``votes`` of them at least, and two thirds of them), or None."""
         places = self.hero_places
-        if len(places) < 2:
+        if len(places) < votes:
             return None
         best = max(places, key=lambda p: sum(_apart(p, q) <= SEAT_NEAR for q in places))
         group = [q for q in places if _apart(best, q) <= SEAT_NEAR]
@@ -294,9 +297,10 @@ class Follower:
         if not seats or None in places:
             return snapshot
         marked = [i for i, seat in enumerate(seats) if seat.get("hero")]
-        if len(marked) == 1 and len(parse_cards(snapshot.get("hero") or "")) == 2:
+        cards = len(parse_cards(snapshot.get("hero") or "")) == 2
+        if len(marked) == 1 and cards:
             self.hero_places = (self.hero_places + [places[marked[0]]])[-HERO_VOTES:]
-        where = self._hero_place()
+        where = self._hero_place(2 if cards else 1)     # a mark with no cards under it gives way to one frame that had them
         if where is None:
             return snapshot
         near = min(range(len(seats)), key=lambda i: _apart(places[i], where))
@@ -484,7 +488,8 @@ class Follower:
         mismatched: frames whose chips could be added up, and those that added up to another total
         than the rest of their hand. Within a hand the chips on the table do not change, so a
         mismatched frame had a stack or the pot misread; a misread bet alone does not show here.
-        passing: frames dropped as passing moments (their pot did not add up, the next frame's did).
+        passing: frames set aside and dropped: a passing moment (the pot ahead of the bets) or a frame
+        that did not follow from the hand, when the next frame fitted without it.
         moved: frames that marked another seat as the hero's than the one where the hero sits (the
         mark was put back); many of them mean the reader needs to be told where the hero sits.
         """

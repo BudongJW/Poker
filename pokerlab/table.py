@@ -219,19 +219,73 @@ def counts_whole_hand(shot):
             and abs(shot["pot"] - shown) <= 0.005 * shown + 1e-9)
 
 
-def _steady(frames):
-    """Who is in the hand, read again with what all the frames say (in place). Nobody comes back after a
-    fold: a player read in or out of the hand in one frame only, against the frames on either side,
-    was misread there; and a player still in the hand in a later frame was in it all along."""
+def _steady(frames, shots=None):
+    """Who is in the hand and what is in front of them, read again with what all the frames say (in place).
+
+    Nobody comes back after a fold: a player read in or out of the hand in one frame only, against
+    the frames on either side, was misread there (unless it was that player's turn just before:
+    then the fold is real and the frame after it is the misread one); and a player still in the
+    hand in a later frame was in it all along. Chips in front never go down during a betting round:
+    an amount that later frames of the round contradict was misread (see :func:`_rising`)."""
     for before, now, after in zip(frames, frames[1:], frames[2:]):
         for a, b, c in zip(before, now, after):
             if a is not None and b is not None and c is not None and a["in_hand"] == c["in_hand"] != b["in_hand"]:
-                b["in_hand"] = a["in_hand"]
+                if a["in_hand"] and a.get("acting"):        # out right after its turn: a fold, so the next frame is wrong
+                    c["in_hand"] = False
+                else:
+                    b["in_hand"] = a["in_hand"]
+    if shots is not None:
+        start = 0
+        for k in range(1, len(frames) + 1):
+            if k == len(frames) or shots[k]["street"] != shots[start]["street"]:
+                run, bet = [], False                # the round's frames, without those after its bets were swept into the pot
+                for frame in frames[start:k]:
+                    shown = any(seat is not None and seat["bet"] > 0 for seat in frame)
+                    if shown or not bet:
+                        run.append(frame)
+                    bet = bet or shown
+                for i in range(len(frames[0])):
+                    _rising([frame[i] for frame in run])
+                start = k
     for i in range(len(frames[0])):
         last = max((k for k, frame in enumerate(frames) if frame[i] is not None and frame[i]["in_hand"]), default=0)
         for frame in frames[:last]:
             if frame[i] is not None:
                 frame[i]["in_hand"] = True
+
+
+def _rising(seats):
+    """One player's seat in the frames of one betting round: amounts in front that do not fit the longest
+    run that never goes down (the latest one kept on a tie) are taken for misreads and replaced by the
+    amount before them (in place)."""
+    seen = [(k, seat["bet"]) for k, seat in enumerate(seats) if seat is not None]
+    if len(seen) < 3:
+        return
+    best, before = [], [None] * len(seen)       # longest non-decreasing run, the smallest last amount at each length
+    tails = []
+    for j, (_, bet) in enumerate(seen):
+        lo, hi = 0, len(tails)
+        while lo < hi:
+            mid = (lo + hi) // 2
+            if seen[tails[mid]][1] <= bet + 1e-9:
+                lo = mid + 1
+            else:
+                hi = mid
+        before[j] = tails[lo - 1] if lo else None
+        if lo == len(tails):
+            tails.append(j)
+        else:
+            tails[lo] = j
+    keep, j = set(), tails[-1]
+    while j is not None:
+        keep.add(j)
+        j = before[j]
+    last = None
+    for j, (k, bet) in enumerate(seen):
+        if j in keep:
+            last = bet
+        else:
+            seats[k]["bet"] = last if last is not None else 0.0
 
 
 def _street_bets(shots, frames):
@@ -416,6 +470,7 @@ def reconstruct(snapshots, finished=False, folded=()):
     _steady(frames)
     if any(counts_whole_hand(shot) for shot in shots):
         _street_bets(shots, frames)
+    _steady(frames, shots)
     for a, b in zip(shots, shots[1:]):
         if b["street"] < a["street"] or b["board"][:len(a["board"])] != a["board"] or b["hero"] != a["hero"]:
             raise ValueError("이미지들이 같은 핸드의 순서대로가 아닙니다 (내 카드나 보드가 맞지 않습니다)")

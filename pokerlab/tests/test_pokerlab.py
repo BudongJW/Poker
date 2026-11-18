@@ -1,3 +1,4 @@
+import copy
 import itertools
 import json
 import os
@@ -2269,3 +2270,30 @@ def test_the_heros_cards_are_read_again_when_frames_disagree(monkeypatch):
     assert checks and state["spending"]["card_checks"] == len(checks) and state["spending"]["frames"] == len(shots)
     assert state["table"]["hero"] == [hero[:2], hero[2:]] or sorted(state["table"]["hero"]) == sorted([hero[:2], hero[2:]])
     web._SOURCES.clear()
+
+
+def test_one_frame_misreads_of_bets_and_folds():
+    rng = random.Random(4)
+    exact = total = restarted = 0
+    for result, chips in _engine_hands(80, stacks=(60, 150, 300, 1000)):
+        shots = table.frames(result, chips, 0, 5, every=True, to_end=True)
+        if len(shots) < 5:
+            continue
+        clean = follow.Follower("lab")
+        for shot in shots:
+            clean.push(shot)
+        k = rng.randrange(1, len(shots) - 2)
+        seat = rng.randrange(6)
+        bad = copy.deepcopy(shots[k])
+        if rng.random() < 0.5:
+            bad["seats"][seat]["bet"] = bad["seats"][seat]["bet"] * 10 + 5           # a digit too many
+        else:
+            bad["seats"][seat]["in_hand"] = not bad["seats"][seat]["in_hand"]       # in or out for one frame
+        follower = follow.Follower("lab")
+        for shot in shots[:k] + [bad] + shots[k + 1:]:
+            follower.push(shot)
+        total += 1
+        exact += _actions(follower.hand) == _actions(clean.hand)
+        restarted += follower.restarted
+    # what is left: an empty spot read as a small bet that later amounts do not contradict, a fold at the hero's turn
+    assert total > 40 and exact >= 0.85 * total and restarted <= 0.05 * total
