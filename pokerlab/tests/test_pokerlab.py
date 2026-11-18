@@ -1320,7 +1320,8 @@ def test_capture_sources_through_the_web_api(tmp_path, monkeypatch):
     assert set(web._SOURCES) == {"A", "B"}
     # a picture is read first: here by a stand-in that says what it was given
     seen = {}
-    monkeypatch.setattr(vision, "recognize", lambda image, mime_type, notes=None: seen.update(n=len(image), m=mime_type, notes=notes) or shots[0])
+    monkeypatch.setattr(vision, "recognize", lambda image, mime_type, notes=None, model=None, call=None:
+                        seen.update(n=len(image), m=mime_type, notes=notes) or shots[0])
     web.capture_request({"source": "C", "image": "data:image/png;base64,QUJD", "notes": "stacks are in chips"})
     assert seen == {"n": 3, "m": "image/png", "notes": "stacks are in chips"}
     assert web.capture_request({"do": "reset", "source": "A"})["phase"] == "waiting"
@@ -2081,3 +2082,85 @@ def test_one_frame_misreads_of_a_fold_the_button_and_blinds_still_posting():
         assert follower.hand["posted"] == clean.hand["posted"] and _actions(follower.hand) == _actions(clean.hand)
         checked += 1
     assert checked > 10
+
+
+def test_a_hero_mark_on_the_wrong_seat_is_put_back(tmp_path):
+    path = str(tmp_path / "rec.jsonl")
+    follower, clean, moved, checked = follow.Follower("lab", path), follow.Follower("lab"), 0, 0
+    for result, chips in _engine_hands(30, stacks=(1000,)):
+        shots = table.frames(result, chips, 0, 5, every=True, to_end=True)
+        if len(shots) < 5:
+            continue
+        for shot in shots:
+            clean.push(shot)
+        wrong = []
+        for k, shot in enumerate(shots):
+            if k % 3 == 2:      # the reader takes another seat for the hero's and sees no cards there (a dealer drawn at it)
+                other = 3 if k % 2 else 4
+                shot = dict(shot, hero="", seats=[dict(seat, hero=i == other) for i, seat in enumerate(shot["seats"])])
+                moved += 1                              # two frames before it showed where the hero sits
+            elif k == 4:        # or marks two seats
+                shot = dict(shot, seats=[dict(seat, hero=seat["hero"] or i == 2) for i, seat in enumerate(shot["seats"])])
+                moved += 1
+            wrong.append(shot)
+        for shot in wrong:
+            follower.push(shot)
+        assert not follower.restarted and _actions(follower.hand) == _actions(clean.hand)
+        follower.close(), clean.close()
+        checked += 1
+    assert checked > 10 and follower.quality()["moved"] == moved
+    assert records.quality(records.read(path))[0]["moved"] == moved
+    # a view from outside: no seat shows the hero's cards, so no mark is ever put on one
+    spectator = follow.Follower("watch")
+    result, chips = next(_engine_hands(1, stacks=(1000,)))
+    for shot in table.frames(result, chips, None, 5, every=True, to_end=True):
+        spectator.push(shot)
+    assert spectator.hand["hero_seat"] is None and spectator.quality()["moved"] == 0
+
+
+
+def test_doubted_frames_are_read_again_and_what_reading_costs(monkeypatch):
+    assert vision.cost({"model": "claude-opus-5-5", "input_tokens": 1_000_000}) == pytest.approx(4.0)
+    assert vision.cost({"model": "claude-sonnet-5-5-20261101", "output_tokens": 1_000_000, "cache_read_tokens": 1_000_000}) == \
+        pytest.approx(10.1)
+    assert vision.cost({"model": "gemini-4-hydrogen", "input_tokens": 10}) is None
+    result, chips = next(r for r in _engine_hands(30, stacks=(1000,)) if len(r[0].actions) >= 8)
+    shots = table.frames(result, chips, 0, 5, every=True)
+    # the follower's doubts: none about the frames as they were, and asking changes nothing
+    follower = follow.Follower("lab")
+    for shot in shots[:4]:
+        assert follower.doubts(shot) == []
+        follower.push(shot)
+    before = (follower.version, list(follower.shots), dict(follower.counts))
+    bad_pot = dict(shots[4], pot=shots[4]["pot"] + 300)
+    bad_stack = dict(shots[4], seats=[dict(s, stack=s["stack"] + 300) if i == 2 else s for i, s in enumerate(shots[4]["seats"])])
+    bad_cards = dict(shots[4], hero=shots[4]["hero"][:2] + next(c for c in ("2c", "2d", "2h", "2s") if c not in shots[4]["hero"] + shots[4]["board"]))
+    assert "pot" in follower.doubts(bad_pot) and "chips" in follower.doubts(bad_stack) and follower.doubts(bad_cards) == ["cards"]
+    assert (follower.version, follower.shots, follower.counts) == before
+    # the saving reader: the cheaper model first, the main one again when the follower doubts its reading
+    web._SOURCES.clear()
+    monkeypatch.setattr(vision, "provider", lambda: "claude")
+    asked = []
+
+    def reader(image, mime_type, notes=None, model=None, call=None):
+        asked.append(model)
+        cheap = model == vision.saving_model()
+        call.update(model=model or "claude-opus-5-5", seconds=1.0 if cheap else 2.0, cost=0.01 if cheap else 0.02)
+        shot = frames.pop(0)
+        return dict(shot, pot=shot["pot"] + 300) if cheap and shot is shots[4] else shot
+
+    for k in range(6):
+        frames = [shots[k], shots[k]]
+        monkeypatch.setattr(vision, "recognize", reader)
+        state = web.capture_request({"source": "A", "image": "QUJD", "reader": "saving", "trials": 1000})
+    assert asked.count(None) == 1 and asked.count(vision.saving_model()) == 6          # only frame 4 was read again
+    spending = state["spending"]
+    assert spending["frames"] == 6 and spending["read_again"] == 1 and spending["doubts"] == {"pot": 1, "chips": 1}
+    assert spending["dollars"] == pytest.approx(6 * 0.01 + 0.02) and spending["seconds"] == pytest.approx(8.0)
+    assert state["quality"]["restarts"] == 0
+    # the main model alone unless asked
+    asked.clear()
+    frames = [shots[6]]
+    web.capture_request({"source": "A", "image": "QUJD", "trials": 1000})
+    assert asked == [None]
+    web._SOURCES.clear()

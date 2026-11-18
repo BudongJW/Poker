@@ -479,15 +479,23 @@ function capDescribe(source) {
   return (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]} · ${t.n_players}명 중 ${t.live}명 · ${
       st.observer ? "관전 화면" : st.hero_folded ? "내가 폴드함" : st.hero_to_act ? "내 차례" : "진행 중"}`
     : st.error || "핸드를 기다리는 중") + ` · 끝난 핸드 ${st.hands}개` +
-    (st.profile && st.profile !== "all" ? " · 이 프로그램의 기록으로 읽는 중" : "") + qualityText(st.quality) +
+    (st.profile && st.profile !== "all" ? " · 이 프로그램의 기록으로 읽는 중" : "") + qualityText(st.quality) + spendingText(st.spending) +
     (source.label.value.trim() ? "" : " · 이름 없음: 이 소스의 핸드는 학습에 쓰지 않습니다") + ` · ${source.readAt || ""}`;
 }
-function qualityText(q) {          // read from the frames themselves: chips that do not add up, hands started again
-  if (!q || !q.checked) return "";
+function spendingText(sp) {         // what reading this window has cost so far
+  if (!sp || !sp.frames) return "";
+  return ` · 읽은 화면 ${sp.frames}장` + (sp.dollars === null ? "" : `, 약 $${sp.dollars.toFixed(2)}`) +
+    `, 평균 ${(sp.seconds / sp.frames).toFixed(1)}초` + (sp.read_again ? `, 다시 읽은 화면 ${sp.read_again}장` : "");
+}
+function qualityText(q) {          // read from the frames themselves: chips that do not add up, hands started again, a hero mark that moved
+  if (!q || !q.frames) return "";
   const parts = [];
   if (q.mismatched) parts.push(`칩 합계가 안 맞은 화면 ${q.mismatched}/${q.checked}`);
+  else if (q.checked) parts.push(`칩 합계 일치 ${q.checked}화면`);
   if (q.restarts) parts.push(`다시 읽음 ${q.restarts}번`);
-  return parts.length ? " · " + parts.join(" · ") : ` · 칩 합계 일치 ${q.checked}화면`;
+  if (q.moved) parts.push(`내 자리를 다른 곳으로 읽은 화면 ${q.moved}/${q.frames}` +
+    (q.moved >= 3 && q.moved >= 0.1 * q.frames ? ": 소스 메모에 내 자리를 적어 주세요 (예: 내 자리는 위 가운데)" : ""));
+  return parts.length ? " · " + parts.join(" · ") : "";
 }
 function capRefresh(source) {
   source.line.textContent = capDescribe(source);
@@ -527,15 +535,16 @@ function renderPlayers(d) {         // watched from outside, or after the hero's
   $("result").replaceChildren(box, ...(d.table ? [tableCard(d.table)] : []));
 }
 async function capSend(source) {
-  // long edge at most 1280 px: what the accuracy was measured at, and a third fewer image tokens than 1600
+  // long edge at most 1280 px: what the accuracy was measured at, and a third fewer image tokens than 1600;
+  // JPEG: read the same as PNG in the frames measured, a quarter of the bytes to send
   const video = source.video, scale = Math.min(1, 1280 / Math.max(video.videoWidth, video.videoHeight));
   cap.shot.width = Math.round(video.videoWidth * scale); cap.shot.height = Math.round(video.videoHeight * scale);
   cap.shot.getContext("2d").drawImage(video, 0, 0, cap.shot.width, cap.shot.height);
   const [model, profile] = $("capModel").value.split(":");
   source.busy = true; source.changed = false; source.sentAt = performance.now(); capRefresh(source);
   try {
-    const data = await post("/api/capture", {source: source.id, label: source.label.value, image: cap.shot.toDataURL("image/png"),
-      notes: source.notes.value, model, profile, trials: 100000});
+    const data = await post("/api/capture", {source: source.id, label: source.label.value, image: cap.shot.toDataURL("image/jpeg", 0.92),
+      notes: source.notes.value, reader: source.reader.value, model, profile, trials: 100000});
     if (data.error) source.error = data.error; else { source.error = null; source.state = data; source.readAt = new Date().toLocaleTimeString(); }
   } catch (e) { source.error = "서버에 연결할 수 없습니다: " + e.message; }
   source.busy = false;
@@ -589,8 +598,13 @@ async function capAdd() {
   every.value = "3";
   const notes = source.notes = el("input"); notes.type = "text"; notes.placeholder = "이 프로그램의 화면에 대한 메모 (예: 내 자리는 위 가운데, 아래 가운데 인물은 딜러, 앞의 숫자는 핸드 누적 금액)";
   notes.setAttribute("aria-label", "인식 메모");
-  options.append(every, notes);
-  for (const control of [every, notes]) control.onclick = e => e.stopPropagation();
+  const reader = source.reader = el("select"); reader.setAttribute("aria-label", "읽는 방식");
+  for (const [v, t] of [["best", "정확하게 (Opus 5.5)"], ["saving", "아껴서 (Sonnet 5.5, 의심스러운 화면만 Opus로 다시)"]]) {
+    const o = el("option", null, t); o.value = v; reader.append(o);
+  }
+  reader.title = "아껴서: 스택이 숫자로 보이는 프로그램에서 비용이 약 40% 줄었습니다. 스택이 보이지 않는 화면에서는 잘못 읽은 것을 알아채기 어려워 권하지 않습니다.";
+  options.append(every, reader, notes);
+  for (const control of [every, reader, notes]) control.onclick = e => e.stopPropagation();
   source.line = el("div", "state");
   node.append(head, video, options, source.line);
   node.onclick = () => { cap.active = source; for (const other of cap.sources) capRefresh(other); capShow(); };

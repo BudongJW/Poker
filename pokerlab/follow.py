@@ -18,6 +18,9 @@ What different programs show is taken as it comes:
 * a table with no hero (a spectator's view, a replay) is followed hand by hand by its button; a
   hand that began that way only because the hero's cards were not dealt yet becomes the hero's
   as soon as they are (the frames before them are kept);
+* the hero's seat is where the frames that show the hero's cards put it: a frame that marks
+  another seat (a reader may take the seat at the bottom, or a dealer drawn there, for the
+  hero's) has the mark moved back, and such frames are counted (see :meth:`Follower.quality`);
 * a hero's card read wrong in some frames (half hidden under the other card, say) does not start a
   new hand: a new hand needs the button to move or the pot to go down as well, and the hand
   goes by the cards most of its frames show.
@@ -26,6 +29,7 @@ The record of a hand says whether the follower had to start again from a single 
 learning can leave such hands out.
 """
 
+import copy
 import datetime
 import json
 
@@ -33,6 +37,17 @@ from . import advisor, table
 from .cards import card_str, parse_cards
 
 MAX_FRAMES = 80             # snapshots kept per hand
+SEAT_NEAR = 0.08            # two readings of one seat's place are no further apart than this (fractions of the picture)
+HERO_VOTES = 15             # the latest frames that showed the hero's cards decide where the hero sits
+
+
+def _place(seat):
+    x, y = seat.get("x"), seat.get("y")
+    return None if x is None or y is None else (float(x), float(y))
+
+
+def _apart(a, b):
+    return ((a[0] - b[0]) ** 2 + (a[1] - b[1]) ** 2) ** 0.5
 
 
 class Follower:
@@ -48,7 +63,12 @@ class Follower:
         self.version = self.hands = 0           # version: counts every change; hands: hands that have ended
         self._last = self._analysis = None
         # how well the window is being read, without knowing the right answers (see quality())
-        self.counts = {"frames": 0, "unread": 0, "restarts": 0, "hands": 0, "restarted_hands": 0, "checked": 0, "mismatched": 0}
+        self.counts = {"frames": 0, "unread": 0, "restarts": 0, "hands": 0, "restarted_hands": 0, "checked": 0, "mismatched": 0,
+                       "moved": 0}
+        self.hero_places = []                   # where the latest frames that showed the hero's cards put the hero's seat
+        # what reading the window has cost: frames read by a service, dollars (None once a call had no known
+        # price), seconds, and frames read again by the main model after the cheaper one's reading was doubted
+        self.spending = {"frames": 0, "dollars": 0.0, "seconds": 0.0, "read_again": 0, "doubts": {}}
         self._clear()
 
     def _clear(self):
@@ -57,6 +77,7 @@ class Follower:
         self.finished = False                   # the betting of this hand is over: no more chips to read
         self.open = False                       # this program shows other players' cards all along
         self.waiting = []                       # frames as read while the hero's seat had no cards yet (see _dealt)
+        self.moved = 0                          # frames of this hand whose hero mark was put back on the hero's seat
 
     def push(self, snapshot):
         """Take the next snapshot. Returns True if anything changed."""
@@ -66,6 +87,7 @@ class Follower:
         self.version += 1
         self._analysis = None
         self.counts["frames"] += 1
+        snapshot = self._place_hero(snapshot)
         read, outside = snapshot, False
         if self.waiting and self._dealt(snapshot):  # the hero's cards have come: the hand is the hero's after all
             self.shots = [dict(frame, hero=snapshot["hero"]) for frame in self.waiting]
@@ -156,6 +178,90 @@ class Follower:
         if len(shot["seats"]) != len(before["seats"]) or shot["button"] != before["button"]:
             return snapshot                     # another hand has begun
         return filled
+
+    def spend(self, calls, doubts=()):
+        """Count what reading one frame cost: ``calls`` as :func:`pokerlab.vision.recognize` describes
+        them (more than one when it was read again), ``doubts`` the reasons it was read again."""
+        spending = self.spending
+        spending["frames"] += 1
+        spending["seconds"] += sum(call.get("seconds") or 0.0 for call in calls)
+        costs = [call.get("cost") for call in calls]
+        spending["dollars"] = None if spending["dollars"] is None or None in costs else spending["dollars"] + sum(costs)
+        if doubts:
+            spending["read_again"] += 1
+            for why in doubts:
+                spending["doubts"][why] = spending["doubts"].get(why, 0) + 1
+
+    def doubts(self, snapshot):
+        """What would make one doubt a frame, were it taken in now (nothing is changed): a list of
+        'restart' (it does not follow from the hand), 'chips' (its chips add up to another total than
+        the hand's), 'seat' (it marks another seat as the hero's), 'cards' (other cards for the hero in
+        the same hand), 'pot' (the pot it shows is not the pot that the chips put in add up to). Empty
+        when it fits. A frame from which no table can be read is not doubted:
+        between hands there is none."""
+        trial = copy.copy(self)
+        trial.record, trial._analysis, trial._last = None, None, None
+        trial.shots, trial.counts, trial.shown = list(self.shots), dict(self.counts), dict(self.shown)
+        trial.hero_places, trial.waiting, trial.spending = list(self.hero_places), list(self.waiting), dict(self.spending)
+        trial.push(snapshot)
+        out = []
+        if trial.counts["restarts"] > self.counts["restarts"]:
+            out.append("restart")
+        same_hand = self.hand is not None and trial.counts["hands"] == self.counts["hands"] and not out
+        if same_hand and table.mismatched_totals(trial.shots)[0] > table.mismatched_totals(self.shots)[0]:
+            out.append("chips")
+        if trial.counts["moved"] > self.counts["moved"]:
+            out.append("seat")
+        cards = set(parse_cards(snapshot.get("hero") or ""))
+        if same_hand and self.hand["hero_seat"] is not None and len(cards) == 2 and cards != set(self.hand["hero"]):
+            out.append("cards")
+        if same_hand and trial.hand is not None and not trial.finished:
+            try:
+                shot = table.normalize(snapshot)
+            except ValueError:
+                shot = None
+            if shot is not None and shot["pot"] is not None:      # the pot it shows against the one its chips add up to
+                shown = shot["pot"] + (0.0 if shot["pot_includes_bets"] else sum(seat["bet"] for seat in shot["seats"]))
+                if abs(shown - trial.hand["pot"]) > 0.005 * max(shown, 1.0) + 1e-6:
+                    out.append("pot")
+        return out
+
+    def _hero_place(self):
+        """Where the hero sits in this window: the place most of the latest frames that showed the hero's
+        cards marked (two of them at least, and two thirds of them), or None."""
+        places = self.hero_places
+        if len(places) < 2:
+            return None
+        best = max(places, key=lambda p: sum(_apart(p, q) <= SEAT_NEAR for q in places))
+        group = [q for q in places if _apart(best, q) <= SEAT_NEAR]
+        if 3 * len(group) < 2 * len(places):
+            return None
+        return sum(q[0] for q in group) / len(group), sum(q[1] for q in group) / len(group)
+
+    def _place_hero(self, snapshot):
+        """The frame with the hero's mark on the seat where the hero sits in this window.
+
+        A frame whose marked seat shows the hero's cards is a vote for where that is. A frame that
+        marks another seat, or two, has the mark moved there; so has one that marks none while the
+        hero's hand is being followed. A view from outside (no mark, no hero's hand) stays one."""
+        seats = snapshot.get("seats") or []
+        places = [_place(seat) for seat in seats]
+        if not seats or None in places:
+            return snapshot
+        marked = [i for i, seat in enumerate(seats) if seat.get("hero")]
+        if len(marked) == 1 and len(parse_cards(snapshot.get("hero") or "")) == 2:
+            self.hero_places = (self.hero_places + [places[marked[0]]])[-HERO_VOTES:]
+        where = self._hero_place()
+        if where is None:
+            return snapshot
+        near = min(range(len(seats)), key=lambda i: _apart(places[i], where))
+        if _apart(places[near], where) > SEAT_NEAR or marked == [near]:
+            return snapshot
+        if not marked and (self.hand is None or self.hand["hero_seat"] is None):
+            return snapshot
+        self.counts["moved"] += 1
+        self.moved += 1
+        return dict(snapshot, seats=[dict(seat, hero=i == near) for i, seat in enumerate(seats)])
 
     def _dealt(self, snapshot):
         """Does a frame of a hand followed from outside show the hero's cards dealt (still before the
@@ -281,7 +387,7 @@ class Follower:
                         **{key: self.hand[key] for key in ("n_players", "button", "hero_seat", "names", "big_blind", "actions",
                                                            "absent", "notes")},
                         "shown": {str(seat): cards for seat, cards in sorted(self.shown.items())},
-                        "restarted": self.restarted, "snapshots": self.shots}
+                        "restarted": self.restarted, "moved": self.moved, "snapshots": self.shots}
                 with open(self.record, "a", encoding="utf-8") as fh:
                     fh.write(json.dumps(line, ensure_ascii=False) + "\n")
         self.shots, self.hand, self.note = [], None, None
@@ -295,6 +401,8 @@ class Follower:
         mismatched: frames whose chips could be added up, and those that added up to another total
         than the rest of their hand. Within a hand the chips on the table do not change, so a
         mismatched frame had a stack or the pot misread; a misread bet alone does not show here.
+        moved: frames that marked another seat as the hero's than the one where the hero sits (the
+        mark was put back); many of them mean the reader needs to be told where the hero sits.
         """
         mismatched, checked = table.mismatched_totals(self.shots)        # the hand going on now as well
         out = dict(self.counts, checked=self.counts["checked"] + checked, mismatched=self.counts["mismatched"] + mismatched)
@@ -305,7 +413,8 @@ class Follower:
     def state(self):
         """What the source shows now, JSON-ready."""
         out = {"name": self.name, "version": self.version, "hands": self.hands, "frames": len(self.shots),
-               "error": self.error, "note": self.note, "phase": "hand" if self.hand else "waiting", "quality": self.quality()}
+               "error": self.error, "note": self.note, "phase": "hand" if self.hand else "waiting", "quality": self.quality(),
+               "spending": dict(self.spending, doubts=dict(self.spending["doubts"]))}
         if self.hand:
             hand = self.hand
             hero = hand["hero_seat"]

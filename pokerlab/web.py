@@ -87,30 +87,57 @@ def _picture(body):
         raise ValueError("이미지 데이터를 읽지 못했습니다") from None
 
 
+def _follower(name):
+    """The follower of a source, made when the source is new (call while holding the lock)."""
+    if name not in _SOURCES:
+        if len(_SOURCES) >= MAX_SOURCES:
+            raise ValueError(f"소스는 {MAX_SOURCES}개까지 둘 수 있습니다")
+        _SOURCES[name] = follow.Follower(name, RECORD, named=False)
+    return _SOURCES[name]
+
+
+def _read(body, name):
+    """The frame in a request, read -> (snapshot, [what each call to the service cost], doubts that made it read again).
+
+    reader 'saving' (with Claude): read by the cheaper model first, and again by the main one
+    when the follower doubts what it read (see :meth:`pokerlab.follow.Follower.doubts`)."""
+    picture, notes = _picture(body), str(body.get("notes") or "")[:2000] or None
+    saving = body.get("reader") == "saving" and vision.provider() == "claude"
+    calls = [{}]
+    snapshot = vision.recognize(*picture, notes=notes, model=vision.saving_model() if saving else None, call=calls[0])
+    doubts = []
+    if saving:
+        with _SOURCES_LOCK:
+            doubts = _follower(name).doubts(snapshot)
+        if doubts:
+            calls.append({})
+            snapshot = vision.recognize(*picture, notes=notes, call=calls[1])
+    return snapshot, calls, doubts
+
+
 def capture_request(body):
     """One frame of a captured window -> what that source shows now, with the analysis of the hand.
 
     {'source': a name, 'image': a frame (or 'snapshot': values already read), 'notes': what is
-    particular about the program, 'model', 'profile', 'precision', 'trials'}. {'do': 'state'} asks
-    without a frame, 'reset' forgets the hand being followed, 'remove' drops the source.
+    particular about the program, 'reader': 'best' (the main model) or 'saving' (see :func:`_read`),
+    'model', 'profile', 'precision', 'trials'}. {'do': 'state'} asks without a frame, 'reset'
+    forgets the hand being followed, 'remove' drops the source.
     """
     do, name = body.get("do", "frame"), str(body.get("source") or "1")[:60]
-    snapshot = None
+    snapshot, calls, doubts = None, [], []
     if do == "frame":                                   # reading takes seconds: not while holding the lock
         snapshot = body.get("snapshot")
         if snapshot is None:
-            snapshot = vision.recognize(*_picture(body), notes=str(body.get("notes") or "")[:2000] or None)
+            snapshot, calls, doubts = _read(body, name)
     with _SOURCES_LOCK:
         if do == "remove":
             follower = _SOURCES.pop(name, None)
             if follower:
                 follower.close()
             return {"removed": name}
-        if name not in _SOURCES:
-            if len(_SOURCES) >= MAX_SOURCES:
-                raise ValueError(f"소스는 {MAX_SOURCES}개까지 둘 수 있습니다")
-            _SOURCES[name] = follow.Follower(name, RECORD, named=False)
-        follower = _SOURCES[name]
+        follower = _follower(name)
+        if calls:
+            follower.spend(calls, doubts)
         if "label" in body:                     # what the visitor calls the program: the record and the profile go by it
             label = str(body.get("label") or "").strip()[:60]
             follower.name, follower.named = (label, True) if label else (name, False)

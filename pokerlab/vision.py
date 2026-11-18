@@ -37,6 +37,27 @@ CLAUDE_EFFORT = "low"           # reading a picture needs little thinking; POKER
 # models that can hand a declined request on to another model inside the same call (server-side fallbacks)
 _FALLBACK_MODELS = {"claude-opus-5-5", "claude-sonnet-5-5", "claude-fable-5-2", "claude-fable-5-1", "claude-opus-5"}
 LAST_CALL = {}                  # model, seconds and tokens of the latest call to a service (for measuring)
+# dollars per million tokens: input, output, cache read, cache write (5 minutes), as listed when this was written
+PRICES = {"claude-opus-5-5": (4.0, 20.0, 0.20, 5.0), "claude-sonnet-5-5": (2.0, 10.0, 0.10, 2.5),
+          "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125)}
+
+
+SAVING_MODEL = "claude-sonnet-5-5"   # the cheaper reader of the 'saving' way (POKERLAB_VISION_SAVING_MODEL changes it)
+
+
+def saving_model():
+    return os.environ.get("POKERLAB_VISION_SAVING_MODEL") or SAVING_MODEL
+
+
+def cost(call):
+    """What a call (as :data:`LAST_CALL` describes it) cost in dollars, about; None for a model without a known price."""
+    model = str(call.get("model") or "")
+    price = next((value for name, value in PRICES.items() if model.startswith(name)), None)
+    if price is None:
+        return None
+    tokens = (call.get("input_tokens", 0), call.get("output_tokens", 0), call.get("cache_read_tokens", 0),
+              call.get("cache_write_tokens", 0))
+    return sum(count * each for count, each in zip(tokens, price)) / 1e6
 
 PROMPT = """You are reading one frame of a program's window that shows a Texas Hold'em table. Report only what is visible in the picture. \
 Never guess a card or a number you cannot read: use null (or leave the list short) instead.
@@ -208,7 +229,7 @@ def provider():
     return "claude" if _claude_key() and not gemini else "gemini"
 
 
-def _recognize_claude(image, mime_type, model, key, timeout, notes):
+def _recognize_claude(image, mime_type, model, key, timeout, notes, call):
     """One picture -> snapshot, read by Claude."""
     try:
         import anthropic
@@ -252,10 +273,14 @@ def _recognize_claude(image, mime_type, model, key, timeout, notes):
     except anthropic.APIConnectionError as error:
         raise VisionError(f"Claude API에 연결하지 못했습니다: {error}") from None
     usage = reply.usage
+    info = dict(service="claude", model=reply.model, seconds=time.time() - started, input_tokens=usage.input_tokens,
+                output_tokens=usage.output_tokens, cache_read_tokens=usage.cache_read_input_tokens or 0,
+                cache_write_tokens=usage.cache_creation_input_tokens or 0)
+    info["cost"] = cost(info)
     LAST_CALL.clear()
-    LAST_CALL.update(service="claude", model=reply.model, seconds=time.time() - started, input_tokens=usage.input_tokens,
-                     output_tokens=usage.output_tokens, cache_read_tokens=usage.cache_read_input_tokens or 0,
-                     cache_write_tokens=usage.cache_creation_input_tokens or 0)
+    LAST_CALL.update(info)
+    if call is not None:
+        call.update(info)
     if reply.stop_reason == "refusal":
         raise VisionError("Claude가 이 화면을 읽지 않겠다고 했습니다")
     if reply.stop_reason == "max_tokens":
@@ -267,11 +292,12 @@ def _recognize_claude(image, mime_type, model, key, timeout, notes):
         raise VisionError("이미지 인식 결과를 읽지 못했습니다 (JSON이 아닙니다)") from None
 
 
-def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, notes=None):
+def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, notes=None, call=None):
     """One picture of a table (bytes) -> snapshot dict. Raises :class:`VisionError`.
 
     notes: what is particular about the program the picture comes from ("stacks are in chips,
-    the hero sits bottom left"), added to the instructions. With ``POKERLAB_VISION_REPLAY`` set to
+    the hero sits bottom left"), added to the instructions. call: a dict that gets the model,
+    seconds, tokens and cost of the call (as :data:`LAST_CALL`, which all threads share). With ``POKERLAB_VISION_REPLAY`` set to
     a file of snapshots nothing is sent anywhere: the snapshots are handed out one per call.
     Which service reads the picture: :func:`provider`.
     """
@@ -280,7 +306,7 @@ def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, no
     if not image or len(image) > MAX_IMAGE_BYTES:
         raise VisionError("이미지가 비어 있거나 너무 큽니다 (12MB 이하)")
     if provider() == "claude":
-        return _recognize_claude(image, mime_type, model, key, timeout, notes)
+        return _recognize_claude(image, mime_type, model, key, timeout, notes, call)
     if mime_type not in MIME_TYPES:
         raise VisionError(f"지원하지 않는 이미지 형식입니다 ({mime_type}). PNG, JPEG, WebP를 쓸 수 있습니다")
     key = key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
@@ -295,6 +321,7 @@ def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, no
         "Content-Type": "application/json", "Api-Revision": API_REVISION,
         # without a key of our own a placeholder goes out: a proxy that holds the real one swaps it in
         "x-goog-api-key": key or "missing"})
+    started = time.time()
     try:
         with urllib.request.urlopen(request, timeout=timeout) as response:
             reply = json.load(response)
@@ -309,6 +336,11 @@ def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, no
         raise VisionError(f"이미지 인식 서비스 오류 {error.code}: {detail}") from None
     except (urllib.error.URLError, TimeoutError, OSError) as error:
         raise VisionError(f"이미지 인식 서비스에 연결하지 못했습니다: {error}") from None
+    info = dict(service="gemini", model=body["model"], seconds=time.time() - started, cost=None)   # no price kept here
+    LAST_CALL.clear()
+    LAST_CALL.update(info)
+    if call is not None:
+        call.update(info)
     try:
         return to_snapshot(json.loads(_output_text(reply)))
     except json.JSONDecodeError:

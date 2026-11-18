@@ -164,27 +164,40 @@ def shown_cards(shot):
     return out
 
 
+def _matched(first, later, near):
+    """The seats of ``later`` matched one to one with those of ``first`` by place, the closest pairs
+    first (None where no seat of ``later`` is nearer than ``near``)."""
+    pairs = sorted((math.hypot(a["x"] - b["x"], a["y"] - b["y"]), i, j) for i, a in enumerate(first) for j, b in enumerate(later))
+    out, used = [None] * len(first), set()
+    for apart, i, j in pairs:
+        if apart >= near:
+            break
+        if out[i] is None and j not in used:
+            out[i] = later[j]
+            used.add(j)
+    return out
+
+
 def _aligned(base, shot):
     """The seats of a later snapshot in the seat order of the first one (None where a player is missing).
 
-    The same table shows the same seats in the same places, so with as many players as before
-    the order round the table from the hero is taken (from the button when nobody is the hero).
-    Only when a player is missing are places (or, failing those, names) compared: names are read
-    less reliably than where a seat is.
+    The same table shows the same seats in the same places, so seats are matched by place. Without
+    places, or when a seat is not near where it was, the order round the table from the hero is
+    taken with as many players as before (from the button when nobody is the hero); with a player
+    missing as well, names are compared (they are read less reliably than where a seat is).
     """
     first, later = base["seats"], shot["seats"]
     if (base["hero_seat"] is None) != (shot["hero_seat"] is None):
         raise ValueError("한 핸드 안에서 내 자리가 있는 화면과 없는 화면이 섞였습니다")
+    placed = all(s["x"] is not None and s["y"] is not None for s in first + later)
     if len(later) == len(first):
-        anchor = "button" if base["hero_seat"] is None else "hero_seat"
-        shift = shot[anchor] - base[anchor]
-        return [later[(i + shift) % len(later)] for i in range(len(first))]
-    if all(s["x"] is not None for s in first + later):
-        out = []
-        for seat in first:
-            nearest = min(later, key=lambda other: math.hypot(other["x"] - seat["x"], other["y"] - seat["y"]))
-            close = math.hypot(nearest["x"] - seat["x"], nearest["y"] - seat["y"]) < 0.08
-            out.append(nearest if close else None)
+        out = _matched(first, later, 0.12) if placed else []
+        if not out or None in out:              # no places, or a seat that is not where it was: the order round the table
+            anchor = "button" if base["hero_seat"] is None else "hero_seat"
+            shift = shot[anchor] - base[anchor]
+            return [later[(i + shift) % len(later)] for i in range(len(first))]
+    elif placed:
+        out = _matched(first, later, 0.08)
     else:
         by_name = {s["name"]: s for s in later if s["name"]}
         out = [by_name.get(seat["name"]) for seat in first]

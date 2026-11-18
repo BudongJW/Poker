@@ -252,13 +252,15 @@ def main(argv=None):
         rows = records.quality([line for path in args.records for line in records.read(path)])
         if not rows:
             print("기록에 핸드가 없습니다.")
-        print("프로그램            핸드  화면  칩 합계 불일치   다시 읽은 핸드   학습에 쓰는 핸드   공개된 카드")
+        print("프로그램            핸드  화면  칩 합계 불일치   다시 읽은 핸드   내 자리 흔들림   학습에 쓰는 핸드   공개된 카드")
         for row in rows:
             rate = f"{row['mismatched']}/{row['checked']} ({row['mismatch_rate']:.1%})" if row["checked"] else "-"
+            moved = f"{row['moved']} ({row['moved'] / row['frames']:.1%})" if row["frames"] else "-"
             print(f"{row['source'][:18]:<18} {row['hands']:>5} {row['frames']:>5}  {rate:<15}  "
-                  f"{row['restarted']:>4} ({row['restarted_rate']:.1%})   {row['usable']:>6}            {row['shown']:>6}")
+                  f"{row['restarted']:>4} ({row['restarted_rate']:.1%})   {moved:<14}   {row['usable']:>6}            {row['shown']:>6}")
         print("칩 합계 불일치: 한 핸드 안에서는 테이블 위 칩 합계가 변하지 않으므로, 합계가 다른 화면은 스택이나 팟을 잘못 읽은 것입니다."
-              "\n시뮬레이션에서 이 비율은 실제로 잘못 읽은 화면 비율의 약 0.55~0.75배였습니다(앞에 놓인 칩만 잘못 읽은 경우는 드러나지 않음).")
+              "\n시뮬레이션에서 이 비율은 실제로 잘못 읽은 화면 비율의 약 0.55~0.75배였습니다(앞에 놓인 칩만 잘못 읽은 경우는 드러나지 않음)."
+              "\n내 자리 흔들림: 내 카드가 보이는 자리와 다른 자리를 내 자리로 읽은 화면(바로잡아 씀). 많으면 소스 메모에 내 자리를 적어 주세요.")
     elif args.command == "learn":
         from . import records
         lines = [line for path in args.records for line in records.read(path)]

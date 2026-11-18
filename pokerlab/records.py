@@ -73,17 +73,18 @@ def to_hand(record, label=None):
 def quality(records):
     """Record lines -> how well each program's window was read, per source name:
     [{'source', 'hands', 'frames', 'checked', 'mismatched', 'mismatch_rate', 'restarted', 'restarted_rate',
-    'usable', 'shown'}] (see :meth:`pokerlab.follow.Follower.quality`)."""
+    'moved', 'usable', 'shown'}] (see :meth:`pokerlab.follow.Follower.quality`)."""
     from . import table
     out = {}
     for record in records:
         row = out.setdefault(record.get("source") or "?", {"hands": 0, "frames": 0, "checked": 0, "mismatched": 0,
-                                                            "restarted": 0, "usable": 0, "shown": 0})
+                                                            "restarted": 0, "moved": 0, "usable": 0, "shown": 0})
         shots = record.get("snapshots") or []
         mismatched, checked = table.mismatched_totals(shots)
         hand = to_hand(record)
         row.update(hands=row["hands"] + 1, frames=row["frames"] + len(shots), checked=row["checked"] + checked,
                    mismatched=row["mismatched"] + mismatched, restarted=row["restarted"] + bool(record.get("restarted")),
+                   moved=row["moved"] + int(record.get("moved") or 0),
                    usable=row["usable"] + (hand is not None), shown=row["shown"] + len(record.get("shown") or {}))
     rows = []
     for source, row in sorted(out.items()):
