@@ -67,6 +67,7 @@ class Follower:
                        "moved": 0, "passing": 0}
         self._kept = 0                          # frames set aside as passing moments that were taken in after all
         self.hero_places = []                   # where the latest frames that showed the hero's cards put the hero's seat
+        self.unread_run = 0                     # frames in a row from which no hand could be read (between hands, a few)
         # what reading the window has cost: frames read by a service, dollars (None once a call had no known
         # price), seconds, and frames read again by the main model after the cheaper one's reading was doubted
         self.spending = {"frames": 0, "dollars": 0.0, "seconds": 0.0, "read_again": 0, "doubts": {}, "card_checks": 0}
@@ -113,7 +114,9 @@ class Follower:
             if ahead or "restart" in doubts:
                 self.held = snapshot            # a passing moment, or one frame read wrong: the next frame tells
                 return True
-        return self._take(snapshot)
+        taken = self._take(snapshot)
+        self.unread_run = self.unread_run + 1 if self.error else 0
+        return taken
 
     @staticmethod
     def _pot_shown(snapshot):
@@ -472,7 +475,7 @@ class Follower:
                         "hero": "".join(card_str(c) for c in self.hand["hero"]),
                         "board": "".join(card_str(c) for c in self.hand["board"]),
                         **{key: self.hand[key] for key in ("n_players", "button", "hero_seat", "names", "big_blind", "actions",
-                                                           "absent", "notes")},
+                                                           "absent", "notes", "guessed")},
                         "shown": {str(seat): cards for seat, cards in sorted(self.shown.items())},
                         "restarted": self.restarted, "moved": self.moved, "snapshots": self.shots}
                 with open(self.record, "a", encoding="utf-8") as fh:
@@ -503,6 +506,7 @@ class Follower:
         """What the source shows now, JSON-ready."""
         out = {"name": self.name, "version": self.version, "hands": self.hands, "frames": len(self.shots),
                "error": self.error, "note": self.note, "phase": "hand" if self.hand else "waiting", "quality": self.quality(),
+               "unread_run": self.unread_run,
                "spending": dict(self.spending, doubts=dict(self.spending["doubts"]))}
         if self.hand:
             hand = self.hand

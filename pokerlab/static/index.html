@@ -479,10 +479,15 @@ function capDescribe(source) {
   const t = st.table;
   return (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]}, ${t.n_players}명 중 ${t.live}명, ${
       st.observer ? "관전 화면" : st.hero_folded ? "내가 폴드함" : st.hero_to_act ? "내 차례" : "진행 중"}`
-    : st.error || "핸드를 기다리는 중") + `, 끝난 핸드 ${st.hands}개` +
+    : capWaiting(st)) + `, 끝난 핸드 ${st.hands}개` +
     (st.profile && st.profile !== "all" ? ", 이 프로그램의 기록으로 읽는 중" : "") + qualityText(st.quality) + spendingText(st.spending) +
     (source.label.value.trim() ? "" : ". 이름 없음: 이 소스의 핸드는 학습에 쓰지 않습니다") + (source.readAt ? `. ${source.readAt}에 읽음` : "");
 }
+function capWaiting(st) {           // between hands a few frames cannot be read (cards being dealt, chips gathered): that is no error
+  if (st.error && st.unread_run >= UNREAD_ALARM) return `화면을 계속 읽지 못합니다 (${st.unread_run}장째): ${st.error}`;
+  return st.hands ? "다음 핸드를 기다리는 중" : "핸드를 기다리는 중";
+}
+const UNREAD_ALARM = 8;
 function spendingText(sp) {         // what reading this window has cost so far
   if (!sp || !sp.frames) return "";
   return `, 읽은 화면 ${sp.frames}장` + (sp.dollars === null || !sp.seconds ? "" : `, 약 $${sp.dollars.toFixed(2)}`) +
@@ -515,7 +520,7 @@ function capShow() {
     const box = el("div", "card-box"); box.append(el("p", "hint", st.hero_folded ? "내가 폴드한 핸드입니다. 나머지 진행을 따라가며 기록합니다." : "남은 플레이어가 한 명입니다."));
     $("result").replaceChildren(box, tableCard(st.table));
   }
-  else renderMessage(st && st.error ? st.error : "이 창에서 아직 핸드를 읽지 못했습니다.");
+  else renderMessage(st ? capWaiting(st) : "이 창에서 아직 핸드를 읽지 못했습니다.", !!(st && st.error && st.unread_run >= UNREAD_ALARM));
 }
 function renderPlayers(d) {         // watched from outside, or after the hero's fold: everyone's equity against everyone
   const box = section(d.table && d.table.observer ? "모든 플레이어의 승률 (관전 화면)" : "남은 플레이어의 승률 (내가 폴드한 핸드)",

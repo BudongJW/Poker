@@ -419,7 +419,18 @@ class _Street:
 
     def play(self, target, gone, start, first_acts=False, stop_at=None, complete=False):
         """Replay the betting from ``start`` so that everybody ends with ``target`` chips in front and
-        the players in ``gone`` have folded.
+        the players in ``gone`` have folded. When more than one player put chips in between the two
+        pictures and one of them raised, the pictures do not show who raised first: the raises are
+        noted in ``hand['guessed']`` (by their place in the action log).
+"""
+        first = len(self.hand["actions"])
+        self._play(target, gone, start, first_acts, stop_at, complete)
+        made = self.hand["actions"][first:]
+        if len({action[1] for action in made if action[3] > 0}) > 1 and any(action[2] == RAISE for action in made):
+            self.hand["guessed"].update(first + k for k, action in enumerate(made) if action[2] == RAISE)
+
+    def _play(self, target, gone, start, first_acts, stop_at, complete):
+        """:meth:`play` itself.
 
         Each player in turn does the least that their final chips require: fold when they put in
         nothing more and face a bet, call when they end level, raise when they end higher. A
@@ -533,7 +544,7 @@ def reconstruct(snapshots, finished=False, folded=()):
             raise ValueError("이미지들이 같은 핸드의 순서대로가 아닙니다 (내 카드나 보드가 맞지 않습니다)")
     hand = {"n_players": n, "button": button, "hero_seat": hero, "hero": base["hero"], "board": shots[-1]["board"],
             "big_blind": next((s["big_blind"] for s in shots if s["big_blind"]), None), "actions": [], "notes": [],
-            "absent": [], "posted": {}, "names": [s["name"] for s in base["seats"]]}
+            "absent": [], "posted": {}, "names": [s["name"] for s in base["seats"]], "guessed": set()}
     unknown_stacks = any(s is not None and s["stack"] is None for frame in frames for s in frame)
     if unknown_stacks:
         hand["notes"].append("일부 스택을 읽지 못해 스택 깊이와 올인 여부를 쓰지 않았습니다")
@@ -658,6 +669,9 @@ def reconstruct(snapshots, finished=False, folded=()):
     if hero in table.live and others:
         cover = max(table.cur[j] + table.stack[j] for j in others)
         to_call = min(max(0.0, min(table.level, cover) - table.cur[hero]), table.stack[hero])
+    hand["guessed"] = sorted(hand["guessed"])
+    if hand["guessed"]:
+        hand["notes"].append("두 화면 사이에 여러 사람이 칩을 낸 곳은 누가 먼저 벳했는지 보이지 않아, 차례 순서로 추정했습니다 (추정 표시)")
     hand["notes"] = list(dict.fromkeys(hand["notes"]))         # each said once, in the order first said
     hand.update(pot=table.pot(), live=sorted(table.live), bets=[table.cur[i] for i in range(n)], actor=actor,
                 stacks=[None if table.stack[i] == _INF else table.stack[i] for i in range(n)], to_call=to_call)
@@ -764,7 +778,8 @@ def describe(hand):
     """Every seat in words: position, chips, and what the player did street by street."""
     n, button = hand["n_players"], hand["button"]
     did, front = {}, {(0, seat): blind for seat, blind in hand["posted"].items()}
-    for street, seat, action, added, pot, owed, _, _, behind in hand["actions"]:
+    guessed = set(hand.get("guessed") or ())
+    for index, (street, seat, action, added, pot, owed, _, _, behind) in enumerate(hand["actions"]):
         front[street, seat] = front.get((street, seat), 0.0) + added
         if action == FOLD:
             word = "폴드"
@@ -777,6 +792,7 @@ def describe(hand):
             size = "올인" if bet_class(added, pot, owed, behind) == ALL_IN else f"팟의 {share:.0%}" if share is not None else ""
             word = f"{'레이즈' if owed > 0 or street == 0 else '벳'} {_amount(hand, front[street, seat])}"
             word += f" ({size})" if size else ""
+            word += " (추정)" if index in guessed else ""
         did.setdefault(seat, {}).setdefault(street, []).append(word)
     out = []
     for seat in range(n):

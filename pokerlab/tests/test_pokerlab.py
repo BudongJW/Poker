@@ -1030,7 +1030,8 @@ def test_a_single_picture_reads_the_street_being_played():
                        inference.observed(hand["actions"], 6, hand["button"], hand["absent"]) if st == street]
                 total += 1
                 exact += got == [(seat, code) for seat, _, _, code in truth]
-                assert bool(hand["notes"]) == (street > 0)      # it says so when earlier streets are missing
+                missing = [note for note in hand["notes"] if "차례 순서로 추정" not in note]   # (who raised first: a guess)
+                assert bool(missing) == (street > 0)            # it says so when earlier streets are missing
                 assert all(a[0] == street for a in hand["actions"])
     assert total > 150 and exact / total > 0.97
 
@@ -2301,3 +2302,32 @@ def test_one_frame_misreads_of_bets_and_folds():
         exact += _actions(follower.hand) == _actions(clean.hand)
         restarted += follower.restarted
     assert total > 40 and exact >= 0.95 * total and restarted <= 0.02 * total
+
+
+def test_raises_whose_order_the_frames_do_not_show_are_marked():
+    marked = dense = 0
+    for result, chips in _engine_hands(40, stacks=(1000,)):
+        shots = table.frames(result, chips, 0, 5, every=True, to_end=True)
+        if len(shots) < 6:
+            continue
+        hand = table.reconstruct(shots)                      # a frame before every action: every order is seen
+        dense += len(hand["guessed"])
+        sparse = table.reconstruct(shots[::3] + shots[-1:])  # most frames missed: several players act in between
+        for index in sparse["guessed"]:
+            assert sparse["actions"][index][2] == RAISE
+        if sparse["guessed"]:
+            marked += 1
+            assert any("(추정)" in seat["actions"] for seat in table.describe(sparse))
+            assert any("차례 순서로 추정" in note for note in sparse["notes"])
+    assert dense == 0 and marked > 5
+
+
+def test_frames_between_hands_are_not_errors():
+    follower = follow.Follower("lab")
+    for k in range(3):                  # the table being cleared and dealt again: nothing to read yet
+        follower.push({"hero": "", "board": "", "pot": k, "seats": [{"x": 0.5, "y": 0.9, "hero": True}, {"x": 0.5, "y": 0.1}]})
+    state = follower.state()
+    assert state["phase"] == "waiting" and state["error"] and state["unread_run"] == 3
+    result, chips = next(_engine_hands(1, stacks=(1000,)))
+    follower.push(table.frames(result, chips, 0, 5, every=True)[0])
+    assert follower.state()["unread_run"] == 0
