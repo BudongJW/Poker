@@ -162,6 +162,8 @@ class Follower:
                 if turned and not self.open:
                     if self.hand is not None and not self.hand["actions"]:
                         self.open = True        # shown before anyone acted: a program that shows them all
+                    elif self._revealed(shot):
+                        self.open = True        # shown to a hero who is out while the betting goes on
                     else:                       # cards turned up: a showdown
                         self._finish(self._stayed_out(shot, out_of_hand=True))
                         return True
@@ -209,6 +211,8 @@ class Follower:
             return dict(table.without_hero(snapshot), seats=[
                 dict(seat, hero=False, cards=seat.get("cards") or snapshot.get("hero") or "") if seat.get("hero")
                 else dict(seat) for seat in seats])
+        if self._folded_hero_misread(snapshot):   # the folded hero's cards, dimmed, read as cards that cannot be
+            snapshot = dict(snapshot, hero="".join(card_str(c) for c in self.hand["hero"]))
         if self.hand is None or self.hand["hero_seat"] is None or snapshot.get("hero"):
             return snapshot
         seats = snapshot.get("seats") or []
@@ -224,6 +228,35 @@ class Follower:
         if len(shot["seats"]) != len(before["seats"]) or shot["button"] != before["button"]:
             return snapshot                     # another hand has begun
         return filled
+
+    def _revealed(self, shot):
+        """Are other players' cards that turn up in ``shot`` shown to a hero who is out of the hand (folded,
+        or watching), while the betting goes on? Before the river, with two players or more who still
+        have chips, it cannot be a showdown: some programs show the hands to a player who has folded."""
+        if self.hand is None or len(shot["board"]) >= 5:
+            return False
+        hero = shot["hero_seat"]
+        if hero is not None and shot["seats"][hero]["in_hand"]:
+            return False
+        still = [seat for seat in shot["seats"] if seat["in_hand"] and not seat["hero"]]
+        return sum(seat["stack"] is None or seat["stack"] > 1e-9 for seat in still) >= 2
+
+    def _folded_hero_misread(self, snapshot):
+        """Does a frame of a hand the hero has folded show the hero's cards so that no table can be read
+        from it (a card that is also on the board, one card only), when the hand's own cards would do?"""
+        hand = self.hand
+        if hand is None or hand["hero_seat"] is None or hand["hero_seat"] in hand["live"] or not snapshot.get("hero"):
+            return False
+        try:
+            table.normalize(snapshot)
+            return False
+        except ValueError:
+            pass
+        try:
+            table.normalize(dict(snapshot, hero="".join(card_str(c) for c in hand["hero"])))
+            return True
+        except ValueError:
+            return False
 
     def spend(self, calls, doubts=(), card_check=False):
         """Count what reading one frame cost: ``calls`` as :func:`pokerlab.vision.recognize` describes

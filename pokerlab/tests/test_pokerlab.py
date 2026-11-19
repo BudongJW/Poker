@@ -2331,3 +2331,26 @@ def test_frames_between_hands_are_not_errors():
     result, chips = next(_engine_hands(1, stacks=(1000,)))
     follower.push(table.frames(result, chips, 0, 5, every=True)[0])
     assert follower.state()["unread_run"] == 0
+
+
+def test_cards_shown_to_a_hero_who_folded_while_the_betting_goes_on():
+    from pokerlab.cards import card_str
+    checked = 0
+    for result, chips in _engine_hands(120, stacks=(1000,), kinds=("tag", "station", "maniac", "station", "lag", "human")):
+        folds = [i for i, a in enumerate(result.actions) if a[1] == 0 and a[2] == FOLD]
+        if not folds or len(result.board) < 5 or result.actions[folds[0]][0] > 1 or not result.showdown:
+            continue
+        shots = table.frames(result, chips, 0, 5, every=True, to_end=True, keep_hero=True, payout=True)
+        shown = []
+        for k, shot in enumerate(shots):        # once the hero is out, the program turns the others' cards up
+            if not shot["seats"][0]["in_hand"]:
+                shot = dict(shot, seats=[dict(seat, cards="".join(card_str(c) for c in result.hole[i])) if i and seat["in_hand"] else seat
+                                         for i, seat in enumerate(shot["seats"])])
+            shown.append(shot)
+        follower = follow.Follower("lab")
+        for shot in shown:
+            follower.push(shot)
+        engine = [int(name[1:]) for name in follower.hand["names"]]
+        assert [(a[0], engine[a[1]], a[2], round(a[3])) for a in follower.hand["actions"]] == [tuple(a[:4]) for a in result.actions]
+        checked += 1
+    assert checked > 3
