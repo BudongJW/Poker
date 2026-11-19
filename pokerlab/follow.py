@@ -383,7 +383,8 @@ class Follower:
         """Do the frames of the hand being followed disagree about the hero's cards (the second reading
         in two frames at least, and in half as many as the first)? Then -> where the hero's seat is
         (x, y), to read the cards again on their own; else None. At most :data:`MAX_CARD_CHECKS` times
-        a hand, and not again before another frame has been read."""
+        a hand, and not again before another frame has been read. The reading counts as asked for
+        from now on (see :meth:`settle_cards`), so that it is not asked for twice while it is under way."""
         if self.hand is None or self.hand["hero_seat"] is None or len(self.card_checks) >= self.MAX_CARD_CHECKS:
             return None
         reads = self._readings()
@@ -392,12 +393,23 @@ class Follower:
             return None
         self._checked_at = len(self.shots)
         hero = table.normalize(self.shots[-1])["seats"][table.normalize(self.shots[-1])["hero_seat"]]
-        return None if hero["x"] is None or hero["y"] is None else (hero["x"], hero["y"])
+        if hero["x"] is None or hero["y"] is None:
+            return None
+        self.card_checks.append(None)           # asked for: the reading is on its way
+        return hero["x"], hero["y"]
 
-    def settle_cards(self, cards):
-        """The hero's cards as read again on their own ('' if they could not be): weighed in with the frames."""
-        read = bool(cards) and len(parse_cards(cards)) == 2
-        self.card_checks.append(cards if read else "")     # an unread one still counts towards the most a hand gets
+    def settle_cards(self, cards, hand=None):
+        """The hero's cards as read again on their own ('' if they could not be): weighed in with the frames.
+        hand: :attr:`hands` when the reading was asked for (one that comes back after that hand has
+        ended is dropped)."""
+        if hand is not None and hand != self.hands:
+            return
+        try:
+            read = bool(cards) and len(parse_cards(cards)) == 2
+        except ValueError:
+            read = False
+        place = self.card_checks.index(None) if None in self.card_checks else len(self.card_checks)
+        self.card_checks[place:place + 1] = [cards if read else ""]     # an unread one still counts towards the most
         if read:
             try:
                 self.hand = table.reconstruct(self._agreed(), finished=self.finished)
@@ -471,20 +483,32 @@ class Follower:
             return None
         if len(seats) < 2:
             return None
+        self.board_checks.append((len(board), None))   # asked for: the reading is on its way (see settle_board)
         xs, ys = [seat["x"] for seat in seats], [seat["y"] for seat in seats]
         middle = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
         wide, high = max(max(xs) - min(xs) + 0.1, 0.5), max(max(ys) - min(ys) + 0.1, 0.4)
         return (max(0.0, middle[0] - wide / 2), max(0.0, middle[1] - high / 2),
                 min(1.0, middle[0] + wide / 2), min(1.0, middle[1] + high / 2))
 
-    def settle_board(self, cards):
-        """The board as read again on its own ('' if it could not be): weighed in with the frames."""
-        size = len(self.hand["board"]) if self.hand is not None else 0
+    def checking(self):
+        """Is a reading of the hero's cards or of the board on its own under way for this hand?"""
+        return None in self.card_checks or any(cards is None for _, cards in self.board_checks)
+
+    def settle_board(self, cards, size=None, hand=None):
+        """The board as read again on its own ('' if it could not be): weighed in with the frames.
+        size: how many cards the board had when it was asked for (by default the latest asked for);
+        hand: :attr:`hands` then (a reading that comes back after that hand has ended is dropped)."""
+        if hand is not None and hand != self.hands:
+            return
+        asked = [k for k, (n, cards_read) in enumerate(self.board_checks) if cards_read is None and (size is None or n == size)]
+        if size is None:
+            size = self.board_checks[asked[-1]][0] if asked else len(self.hand["board"]) if self.hand is not None else 0
         try:
             read = len(parse_cards(cards or "")) == size > 0
         except ValueError:
             read = False
-        self.board_checks.append((size, cards if read else ""))   # an unread one still uses up the street's reading
+        place = asked[-1] if asked else len(self.board_checks)
+        self.board_checks[place:place + 1] = [(size, cards if read else "")]   # an unread one still uses up the street's
         if read:
             try:
                 self.hand = table.reconstruct(self._agreed(), finished=self.finished)
@@ -594,7 +618,7 @@ class Follower:
                         "hero": "".join(card_str(c) for c in self.hand["hero"]),
                         "board": "".join(card_str(c) for c in self.hand["board"]),
                         **{key: self.hand[key] for key in ("n_players", "button", "hero_seat", "names", "big_blind", "actions",
-                                                           "absent", "notes", "guessed")},
+                                                           "absent", "notes", "guessed", "guessed_from")},
                         "shown": {str(seat): cards for seat, cards in sorted(self.shown.items())},
                         "restarted": self.restarted, "moved": self.moved, "snapshots": self.shots}
                 with open(self.record, "a", encoding="utf-8") as fh:

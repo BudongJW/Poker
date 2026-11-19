@@ -71,6 +71,21 @@ def analyze_request(body):
 
 _SOURCES = {}       # captured windows by the name the page gives them -> the follower of each
 _SOURCES_LOCK = threading.Lock()
+_CHECKS = []        # cards or a board being read again on their own, after the answer to a frame went out (threads)
+
+
+def _check_later(work):
+    """Run ``work`` (a reading again on its own) after the answer: it would hold the analysis up by about two seconds."""
+    thread = threading.Thread(target=work, daemon=True)
+    thread.start()
+    _CHECKS[:] = [t for t in _CHECKS if t.is_alive()] + [thread]
+
+
+def wait_for_checks(timeout=60):
+    """Wait until the readings again that are under way have come back (for tests and tools)."""
+    for thread in list(_CHECKS):
+        thread.join(timeout)
+    _CHECKS[:] = [t for t in _CHECKS if t.is_alive()]
 MAX_SOURCES = 8
 RECORD = None       # a file to which every hand that was followed is appended (set by ``serve``)
 
@@ -100,11 +115,16 @@ def _read(body, name):
     """The frame in a request, read -> (snapshot, [what each call to the service cost], doubts that made it read again).
 
     reader 'saving' (with Claude): read by the cheaper model first, and again by the main one
-    when the follower doubts what it read (see :meth:`pokerlab.follow.Follower.doubts`)."""
+    when the follower doubts what it read (see :meth:`pokerlab.follow.Follower.doubts`); 'fast': the
+    main model in fast mode (about 2.5 times as fast, twice the price); 'best' or none: as
+    ``POKERLAB_VISION_SPEED`` says."""
     picture, notes = _picture(body), str(body.get("notes") or "")[:2000] or None
-    saving = body.get("reader") == "saving" and vision.provider() == "claude"
+    claude = vision.provider() == "claude"
+    saving = body.get("reader") == "saving" and claude
+    fast = True if body.get("reader") == "fast" and claude else None
     calls = [{}]
-    snapshot = vision.recognize(*picture, notes=notes, model=vision.saving_model() if saving else None, call=calls[0])
+    snapshot = vision.recognize(*picture, notes=notes, model=vision.saving_model() if saving else None, call=calls[0],
+                                **({"fast": True} if fast else {}))
     doubts = []
     if saving:
         with _SOURCES_LOCK:
@@ -119,7 +139,7 @@ def capture_request(body):
     """One frame of a captured window -> what that source shows now, with the analysis of the hand.
 
     {'source': a name, 'image': a frame (or 'snapshot': values already read), 'notes': what is
-    particular about the program, 'reader': 'best' (the main model) or 'saving' (see :func:`_read`),
+    particular about the program, 'reader': 'best' (the main model), 'fast' or 'saving' (see :func:`_read`),
     'model', 'profile', 'precision', 'trials'}. {'do': 'state'} asks without a frame, 'reset'
     forgets the hand being followed, 'remove' drops the source.
     """
@@ -150,32 +170,33 @@ def capture_request(body):
         claude = bool(calls) and vision.provider() == "claude"
         tie = follower.card_tie() if claude else None
         area = follower.board_check() if claude else None
+        hand, size = follower.hands, (len(follower.hand["board"]) if area is not None else 0)
     notes = str(body.get("notes") or "")[:2000] or None
+
+    def settle(reading, settled, **kinds):
+        call = {}
+        try:
+            found = reading(call)
+        except vision.VisionError:
+            found = ""
+        with _SOURCES_LOCK:
+            follower = _SOURCES.get(name)
+            if follower is not None:
+                settled(follower, found)
+                if call:
+                    follower.spend([call], **kinds)
+
+    picture = _picture(body) if tie is not None or area is not None else None
     if tie is not None:                     # the frames disagree about the hero's cards: read them again on their own
-        call = {}
-        try:
-            cards = vision.read_hero_cards(*_picture(body), place=tie, notes=notes, call=call)
-        except vision.VisionError:
-            cards = ""
-        with _SOURCES_LOCK:
-            follower = _follower(name)
-            follower.settle_cards(cards)
-            if call:
-                follower.spend([call], card_check=True)
+        _check_later(lambda: settle(lambda call: vision.read_hero_cards(*picture, place=tie, notes=notes, call=call),
+                                    lambda follower, cards: follower.settle_cards(cards, hand=hand), card_check=True))
     if area is not None:                    # a street's cards have come: read the board again, enlarged
-        call = {}
-        try:
-            board = vision.read_board(*_picture(body), area=area, notes=notes, call=call)
-        except vision.VisionError:
-            board = ""
-        with _SOURCES_LOCK:
-            follower = _follower(name)
-            follower.settle_board(board)
-            if call:
-                follower.spend([call], board_check=True)
+        _check_later(lambda: settle(lambda call: vision.read_board(*picture, area=area, notes=notes, call=call),
+                                    lambda follower, board: follower.settle_board(board, size=size, hand=hand), board_check=True))
     with _SOURCES_LOCK:
         follower = _follower(name)
         out = follower.state()
+        out["checking"] = follower.checking()   # a reading again is under way and may change this: ask again soon
         if follower.hand is not None:
             model = str(body.get("model") or advisor.DEFAULT_MODEL)
             if model not in MODELS:

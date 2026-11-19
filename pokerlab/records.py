@@ -14,7 +14,10 @@ model's, untouched by any program's records.
 
 Only hands that were followed from the start are used: the follower did not have to start again
 from a single frame (a frame that did not fit, perhaps misread), and the action log begins
-before the flop. The hero's own actions are left out: the model is for reading opponents (a table
+before the flop. Where the order of the actions had to be guessed (several players put chips in
+between two frames, one of them a raise), the log is used only up to that point: in the
+follower's own test such guessed orders were wrong in about half the hands, while what came
+before them was always right. The hero's own actions are left out: the model is for reading opponents (a table
 watched from outside has no hero, and everyone at it is learned from). Cards that a program shows
 all along are used like cards shown at a showdown, so such programs teach the most. Hands
 of a source that was never given a name are left out too: an unnamed source could be any
@@ -49,6 +52,15 @@ def read(path):
 def to_hand(record, label=None):
     """A record line -> a hand as :func:`pokerlab.inference.prepare` takes it, or None if it cannot be learned from."""
     actions = [tuple(action) for action in record.get("actions") or []]
+    cut = record.get("guessed_from")
+    if cut is None and record.get("guessed") and actions:  # lines from before the start was kept: from the street's start
+        try:
+            street = actions[min(int(k) for k in record["guessed"])][0]
+            cut = next(k for k, action in enumerate(actions) if action[0] == street)
+        except (IndexError, TypeError, ValueError):
+            cut = 0
+    if cut is not None:
+        actions = actions[:max(0, int(cut))]
     if record.get("named") is False or record.get("restarted") or record.get("absent") or not actions or actions[0][0] != 0:
         return None
     try:

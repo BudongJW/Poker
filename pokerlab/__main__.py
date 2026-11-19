@@ -1,6 +1,7 @@
 """Command line: ``python -m pokerlab <command> ...`` (see ``--help`` of each command)."""
 
 import argparse
+import datetime
 import json
 
 from . import advisor, daily, inference, phh, preflop, report, selfplay
@@ -136,6 +137,8 @@ def main(argv=None):
     p.add_argument("--if-due", metavar="HH:MM",
                    help="run only if no cycle has started since the latest daily slot at this time (UTC); "
                         "a scheduler can then call it more than once a day and a missed run is made up")
+    p.add_argument("--every", type=int, default=1, metavar="DAYS",
+                   help="with --if-due: days between cycles (7: once a week; default 1)")
 
     sub.add_parser("history", help="what the learning cycles have done so far").add_argument(
         "--state", default=daily.STATE_DIR)
@@ -238,9 +241,10 @@ def main(argv=None):
             print(inference.summarize(rows).to_string(float_format=lambda x: f"{x:.4f}"))
     elif args.command == "daily":
         if args.if_due:
-            owed, slot, last = daily.due(args.if_due, args.state)
+            owed, slot, last = daily.due(args.if_due, args.state, every=args.every)
             if not owed:
-                print(f"할 일 없음: {slot:%Y-%m-%d %H:%M} UTC 이후에 사이클 {last['cycle']}이 이미 실행됐습니다.")
+                since = slot - datetime.timedelta(days=max(1, args.every) - 1)
+                print(f"할 일 없음: {since:%Y-%m-%d %H:%M} UTC 이후에 사이클 {last['cycle']}이 이미 실행됐습니다.")
                 return
             print(f"{slot:%Y-%m-%d %H:%M} UTC 몫의 사이클을 실행합니다.", flush=True)
         daily.run(args.cycles, state_dir=args.state, hands=args.hands, challengers=args.challengers,

@@ -421,13 +421,17 @@ class _Street:
         """Replay the betting from ``start`` so that everybody ends with ``target`` chips in front and
         the players in ``gone`` have folded. When more than one player put chips in between the two
         pictures and one of them raised, the pictures do not show who raised first: the raises are
-        noted in ``hand['guessed']`` (by their place in the action log).
+        noted in ``hand['guessed']`` (by their place in the action log), and where the first such
+        stretch of the log begins in ``hand['guessed_from']`` (the order of everything from there on
+        is a guess, the calls and folds too).
 """
         first = len(self.hand["actions"])
         self._play(target, gone, start, first_acts, stop_at, complete)
         made = self.hand["actions"][first:]
         if len({action[1] for action in made if action[3] > 0}) > 1 and any(action[2] == RAISE for action in made):
             self.hand["guessed"].update(first + k for k, action in enumerate(made) if action[2] == RAISE)
+            if self.hand.get("guessed_from") is None or first < self.hand["guessed_from"]:
+                self.hand["guessed_from"] = first
 
     def _play(self, target, gone, start, first_acts, stop_at, complete):
         """:meth:`play` itself.
@@ -544,7 +548,8 @@ def reconstruct(snapshots, finished=False, folded=()):
             raise ValueError("이미지들이 같은 핸드의 순서대로가 아닙니다 (내 카드나 보드가 맞지 않습니다)")
     hand = {"n_players": n, "button": button, "hero_seat": hero, "hero": base["hero"], "board": shots[-1]["board"],
             "big_blind": next((s["big_blind"] for s in shots if s["big_blind"]), None), "actions": [], "notes": [],
-            "absent": [], "posted": {}, "names": [s["name"] for s in base["seats"]], "guessed": set()}
+            "absent": [], "posted": {}, "names": [s["name"] for s in base["seats"]], "guessed": set(),
+            "guessed_from": None}
     unknown_stacks = any(s is not None and s["stack"] is None for frame in frames for s in frame)
     if unknown_stacks:
         hand["notes"].append("일부 스택을 읽지 못해 스택 깊이와 올인 여부를 쓰지 않았습니다")
@@ -650,11 +655,17 @@ def reconstruct(snapshots, finished=False, folded=()):
         pot = table.pot()
         shown = start_of_street(shot, frame)
         shown = None if shown is None else shown - moved
+        quiet = shown is not None and abs(shown - pot) <= 0.005 * max(pot, 1.0) + 1e-6     # no chips went in since
         if shown is not None and abs(shown - pot) > 0.1 * max(pot, 1e-9) + 1e-9:
             hand["notes"].append(f"{STREET_KO[shot['street']]}의 팟이 앞선 이미지에서 이어 계산한 값과 달라, 화면의 팟을 썼습니다")
             pot = max(shown, 0.0)
-        if shot["street"] > table.street + 1:
-            hand["notes"].append("이미지가 없는 스트리트의 액션은 반영하지 않았습니다")
+        for skipped in range(table.street + 1, shot["street"]):    # a street no picture showed
+            if not quiet:
+                hand["notes"].append("이미지가 없는 스트리트의 액션은 반영하지 않았습니다")
+                break
+            # the pot is what it was when the street before closed: everybody still in checked
+            table = _Street(hand, skipped, pot, table.live, table.stack)
+            table.play({i: 0.0 for i in range(n)}, set(), first_to_act(skipped), complete=True)
         dealt = table.live
         table = _Street(hand, shot["street"], pot, dealt, table.stack)
         table.play(dict(enumerate(bets)), dealt - live_now, first_to_act(shot["street"]), stop_at=actor)

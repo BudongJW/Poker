@@ -43,6 +43,8 @@ PRICES = {"claude-opus-5-5": (4.0, 20.0, 0.20, 5.0), "claude-sonnet-5-5": (2.0, 
           "claude-haiku-5-5": (0.10, 0.50, 0.01, 0.125)}
 
 
+FAST_MODELS = ("claude-opus-5-5", "claude-fable-5-2")   # fast mode: the same model, output up to 2.5 times as fast
+FAST_PRICE = 2.0                # ... at twice the price of every token (Opus 5.5: $8 / $40 per million)
 SAVING_MODEL = "claude-sonnet-5-5"   # the cheaper reader of the 'saving' way (POKERLAB_VISION_SAVING_MODEL changes it)
 
 
@@ -58,7 +60,12 @@ def cost(call):
         return None
     tokens = (call.get("input_tokens", 0), call.get("output_tokens", 0), call.get("cache_read_tokens", 0),
               call.get("cache_write_tokens", 0))
-    return sum(count * each for count, each in zip(tokens, price)) / 1e6
+    return sum(count * each for count, each in zip(tokens, price)) / 1e6 * (FAST_PRICE if call.get("speed") == "fast" else 1.0)
+
+
+def speed():
+    """'fast' when ``POKERLAB_VISION_SPEED`` asks for fast mode, else 'standard'."""
+    return "fast" if (os.environ.get("POKERLAB_VISION_SPEED") or "").strip().lower() == "fast" else "standard"
 
 PROMPT = """You are reading one frame of a program's window that shows a Texas Hold'em table. Report only what is visible in the picture. \
 Never guess a card or a number you cannot read: use null (or leave the list short) instead.
@@ -319,8 +326,9 @@ def provider():
     return "claude" if _claude_key() and not gemini else "gemini"
 
 
-def _recognize_claude(image, mime_type, model, key, timeout, notes, call):
-    """One picture -> snapshot, read by Claude."""
+def _recognize_claude(image, mime_type, model, key, timeout, notes, call, fast=False):
+    """One picture -> snapshot, read by Claude. fast: in fast mode, where the model has it (at its price);
+    when fast mode's own rate limit is reached the same request goes at standard speed at once."""
     try:
         import anthropic
     except ImportError:
@@ -346,11 +354,21 @@ def _recognize_claude(image, mime_type, model, key, timeout, notes, call):
                           "effort": os.environ.get("POKERLAB_VISION_EFFORT") or CLAUDE_EFFORT},
     }
     started = time.time()
-    try:
+
+    def send(**more):
+        sender = client.with_options(max_retries=0) if more else client     # fast: no waiting for its capacity
         if model in _FALLBACK_MODELS:       # a declined request is handed on to the model the API picks, in the same call
-            reply = client.beta.messages.create(betas=["server-side-fallback-2026-07-01"], fallbacks="default", **request)
+            return sender.beta.messages.create(betas=["server-side-fallback-2026-07-01"], fallbacks="default", **request, **more)
+        return sender.messages.create(**request, **more)
+
+    try:
+        if fast and model in FAST_MODELS:
+            try:
+                reply = send(speed="fast")
+            except (anthropic.RateLimitError, anthropic.InternalServerError):
+                reply = send()              # fast mode is busy: standard speed (and a cold cache) this once
         else:
-            reply = client.messages.create(**request)
+            reply = send()
     except anthropic.AuthenticationError:
         raise VisionError("Claude API 키가 없거나 거부됐습니다. 환경 변수 ANTHROPIC_API_KEY를 확인해 주세요") from None
     except anthropic.PermissionDeniedError:
@@ -366,7 +384,7 @@ def _recognize_claude(image, mime_type, model, key, timeout, notes, call):
     usage = reply.usage
     info = dict(service="claude", model=reply.model, seconds=time.time() - started, input_tokens=usage.input_tokens,
                 output_tokens=usage.output_tokens, cache_read_tokens=usage.cache_read_input_tokens or 0,
-                cache_write_tokens=usage.cache_creation_input_tokens or 0)
+                cache_write_tokens=usage.cache_creation_input_tokens or 0, speed=getattr(usage, "speed", None) or "standard")
     info["cost"] = cost(info)
     LAST_CALL.clear()
     LAST_CALL.update(info)
@@ -488,12 +506,14 @@ def read_board(image, mime_type="image/jpeg", area=None, notes=None, model=None,
     return cards if len(cards) in (6, 8, 10) else ""
 
 
-def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, notes=None, call=None):
+def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, notes=None, call=None, fast=None):
     """One picture of a table (bytes) -> snapshot dict. Raises :class:`VisionError`.
 
     notes: what is particular about the program the picture comes from ("stacks are in chips,
     the hero sits bottom left"), added to the instructions. call: a dict that gets the model,
-    seconds, tokens and cost of the call (as :data:`LAST_CALL`, which all threads share). With ``POKERLAB_VISION_REPLAY`` set to
+    seconds, tokens, speed and cost of the call (as :data:`LAST_CALL`, which all threads share). fast:
+    Claude's fast mode (the same model, about twice as fast, twice the price); None: as
+    ``POKERLAB_VISION_SPEED`` says (see :func:`speed`). With ``POKERLAB_VISION_REPLAY`` set to
     a file of snapshots nothing is sent anywhere: the snapshots are handed out one per call.
     Which service reads the picture: :func:`provider`.
     """
@@ -502,7 +522,8 @@ def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, no
     if not image or len(image) > MAX_IMAGE_BYTES:
         raise VisionError("이미지가 비어 있거나 너무 큽니다 (12MB 이하)")
     if provider() == "claude":
-        return _recognize_claude(image, mime_type, model, key, timeout, notes, call)
+        return _recognize_claude(image, mime_type, model, key, timeout, notes, call,
+                                 fast=speed() == "fast" if fast is None else fast)
     if mime_type not in MIME_TYPES:
         raise VisionError(f"지원하지 않는 이미지 형식입니다 ({mime_type}). PNG, JPEG, WebP를 쓸 수 있습니다")
     key = key or os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")

@@ -213,16 +213,18 @@ def _started(entry):
     return day + datetime.timedelta(days=1, seconds=-1)
 
 
-def due(at, state_dir=STATE_DIR, now=None):
+def due(at, state_dir=STATE_DIR, now=None, every=1):
     """Is a cycle owed for the latest daily slot at ``at`` (UTC)? -> (owed, slot, the last cycle or None).
 
     A cycle is owed when none has started since that slot. A run that was scheduled but never
     happened (the machine restarted, the session was asleep) is therefore made up by the next run
-    that asks, and a run that did happen is not repeated.
+    that asks, and a run that did happen is not repeated. every: days between cycles; with 7 a
+    cycle is owed when none has started in the six days before that slot either (once a week, with
+    a scheduler that asks on two days in a row, so that a missed run is made up the next day).
     """
     slot, history = last_slot(at, now), load_history(state_dir)
     last = history[-1] if history else None
-    return last is None or _started(last) < slot, slot, last
+    return last is None or _started(last) < slot - datetime.timedelta(days=max(1, every) - 1), slot, last
 
 
 def run(cycles=1, **options):

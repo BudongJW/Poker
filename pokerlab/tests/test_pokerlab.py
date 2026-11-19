@@ -1545,6 +1545,17 @@ def test_paired_model_check_and_runs_that_are_made_up(tmp_path, capsys):
     owed, slot, last = daily.due("19:38", str(state), at("2026-11-18T07:38:00"))
     assert not owed and last["cycle"] == 2 and slot == at("2026-11-17T19:38:00")
     assert daily.due("19:38", str(state), at("2026-11-18T19:38:30"))[0]           # the next day's run is owed again
+    # once a week, asked on two days in a row (Monday and Tuesday): one run, and a missed Monday made up on Tuesday
+    assert not daily.due("19:38", str(state), at("2026-11-23T19:38:30"), every=7)[0]   # cycle 2 was 6 days before
+    assert daily.due("19:38", str(state), at("2026-11-24T19:38:30"), every=7)[0]
+    with open(state / "history.jsonl", "a") as fh:
+        fh.write(json.dumps({"cycle": 3, "date": "2026-11-23", "started": "2026-11-23T19:38:40+00:00"}) + "\n")
+    assert not daily.due("19:38", str(state), at("2026-11-24T19:38:30"), every=7)[0]
+    assert daily.due("19:38", str(state), at("2026-11-30T19:38:30"), every=7)[0]
+    with open(state / "history.jsonl") as fh:
+        lines = fh.readlines()
+    with open(state / "history.jsonl", "w") as fh:
+        fh.writelines(lines[:-1])
     from pokerlab.__main__ import main
     with open(state / "history.jsonl", "a") as fh:                                 # a cycle that has just started
         fh.write(json.dumps({"cycle": 3, "date": "2026-11-18",
@@ -1606,6 +1617,38 @@ def test_records_hold_the_whole_hand_and_the_shown_cards(tmp_path):
     assert (records.to_hand(old) is None) == (records.to_hand(lines[0]) is None)
     late = dict(lines[0], actions=[a for a in lines[0]["actions"] if a[0] > 0])
     assert records.to_hand(late) is None                                    # followed from the flop only
+    # a guessed order: only what came before it is learned from
+    line = next(line for line in lines if records.to_hand(line) and sum(a[0] == 1 for a in line["actions"]) >= 2)
+    flop = next(k for k, a in enumerate(line["actions"]) if a[0] == 1)
+    assert records.to_hand(line)["actions"] == [tuple(a) for a in line["actions"]]
+    cut = records.to_hand(dict(line, guessed=[flop + 1], guessed_from=flop + 1))
+    assert cut["actions"] == [tuple(a) for a in line["actions"][:flop + 1]]
+    older = records.to_hand(dict(line, guessed=[flop + 1]))                 # no start kept: from the start of that street
+    assert older["actions"] == [tuple(a) for a in line["actions"][:flop]]
+    assert records.to_hand(dict(line, guessed=[1], guessed_from=0)) is None
+
+
+def test_where_a_guessed_order_begins_is_kept_and_what_came_before_is_right():
+    rng, guessed, kept = random.Random(11), 0, 0
+    for result, chips in _engine_hands(120, stacks=(1000,)):     # (frames that show whose turn it is: see turns)
+        shots = table.frames(result, chips, 0, 5, every=True, to_end=True, turns=True)
+        clean = follow.Follower("lab")
+        for shot in shots:
+            clean.push(shot)
+        sparse = [shot for k, shot in enumerate(shots) if k in (0, len(shots) - 1) or rng.random() < 0.3]
+        if len(sparse) < 3:
+            continue
+        follower = follow.Follower("lab")
+        for shot in sparse:
+            follower.push(shot)
+        hand = follower.hand
+        assert (hand["guessed_from"] is None) == (not hand["guessed"])
+        if hand["guessed"]:
+            guessed += 1
+            assert hand["guessed_from"] <= min(hand["guessed"])
+            assert _actions(hand)[:hand["guessed_from"]] == _actions(clean.hand)[:hand["guessed_from"]]
+            kept += hand["guessed_from"] > 0
+    assert guessed > 10 and kept > 5
 
 
 def test_the_live_model_learns_each_programs_players(tmp_path, monkeypatch, capsys):
@@ -1803,7 +1846,7 @@ def _fake_anthropic(replies, sent):
             self.message, self.status_code = message, status_code
 
     errors = {name: type(name, (APIStatusError,), {}) for name in
-              ("AuthenticationError", "PermissionDeniedError", "RateLimitError", "BadRequestError")}
+              ("AuthenticationError", "PermissionDeniedError", "RateLimitError", "BadRequestError", "InternalServerError")}
 
     class APIConnectionError(Exception):
         pass
@@ -1823,12 +1866,17 @@ def _fake_anthropic(replies, sent):
             self.messages = types.SimpleNamespace(create=create("messages"))
             self.beta = types.SimpleNamespace(messages=types.SimpleNamespace(create=create("beta")))
 
+        def with_options(self, **options):
+            sent.append(("options", options))
+            return self
+
     return types.SimpleNamespace(Anthropic=Anthropic, APIStatusError=APIStatusError, APIConnectionError=APIConnectionError, **errors)
 
 
-def _claude_reply(answer, stop_reason="end_turn"):
+def _claude_reply(answer, stop_reason="end_turn", speed="standard"):
     import types
-    usage = types.SimpleNamespace(input_tokens=1300, output_tokens=500, cache_read_input_tokens=2100, cache_creation_input_tokens=0)
+    usage = types.SimpleNamespace(input_tokens=1300, output_tokens=500, cache_read_input_tokens=2100, cache_creation_input_tokens=0,
+                                  speed=speed)
     return types.SimpleNamespace(stop_reason=stop_reason, model="claude-opus-5-5", usage=usage,
                                  content=[types.SimpleNamespace(type="text", text=json.dumps(answer))])
 
@@ -1882,6 +1930,49 @@ def test_claude_reads_a_picture_into_a_snapshot(monkeypatch):
             vision.recognize(b"x", "image/png")
     with pytest.raises(vision.VisionError, match="형식"):
         vision.recognize(b"x", "image/heic")
+
+
+def test_fast_mode_is_asked_for_priced_and_given_up_when_busy(monkeypatch):
+    import sys
+    answer = {"is_poker_table": True, "hero_cards": ["As", "Kd"], "board": [], "pot": 15, "pot_includes_bets": True,
+              "big_blind": 10, "hero_to_act": True, "seats": []}
+    sent, replies = [], []
+    monkeypatch.setitem(sys.modules, "anthropic", _fake_anthropic(replies, sent))
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "POKERLAB_VISION_MODEL", "POKERLAB_VISION_REPLAY", "POKERLAB_VISION_SPEED"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("POKERLAB_VISION_PROVIDER", "claude")
+    monkeypatch.setenv("POKER_ANTHROPIC_API_KEY", "k")
+    fake = sys.modules["anthropic"]
+    replies += [_claude_reply(answer, speed="fast")]
+    call = {}
+    vision.recognize(b"x", "image/png", call=call, fast=True)
+    assert sent[-1][1]["speed"] == "fast" and sent[-2] == ("options", {"max_retries": 0})   # no waiting for its capacity
+    standard = vision.cost(dict(call, speed="standard"))
+    assert call["speed"] == "fast" and call["cost"] == pytest.approx(2 * standard)
+    replies += [fake.RateLimitError("fast mode is busy", 429), _claude_reply(answer)]
+    vision.recognize(b"x", "image/png", call=call, fast=True)                      # busy: at standard speed at once
+    assert "speed" in sent[-2][1] and "speed" not in sent[-1][1] and call["speed"] == "standard"
+    replies += [_claude_reply(answer)]
+    monkeypatch.setenv("POKERLAB_VISION_MODEL", "claude-sonnet-5-5")                 # a model without fast mode: as it is
+    vision.recognize(b"x", "image/png", fast=True)
+    assert "speed" not in sent[-1][1]
+    monkeypatch.delenv("POKERLAB_VISION_MODEL")
+    replies += [_claude_reply(answer)]
+    vision.recognize(b"x", "image/png")                                            # standard unless asked for
+    assert "speed" not in sent[-1][1]
+    monkeypatch.setenv("POKERLAB_VISION_SPEED", "fast")
+    replies += [_claude_reply(answer, speed="fast")]
+    vision.recognize(b"x", "image/png")
+    assert sent[-1][1]["speed"] == "fast"
+    # the page's reader 'fast' asks for it
+    monkeypatch.delenv("POKERLAB_VISION_SPEED")
+    asked = []
+    monkeypatch.setattr(vision, "recognize", lambda image, mime_type, notes=None, model=None, call=None, fast=None:
+                        asked.append(fast) or answer)
+    web._read({"image": "QUJD", "reader": "fast"}, "F")
+    web._read({"image": "QUJD", "reader": "best"}, "F")
+    assert asked == [True, None]
+    web._SOURCES.clear()
 
 
 def test_the_schema_claude_is_held_to():
@@ -2273,6 +2364,9 @@ def test_the_heros_cards_are_read_again_when_frames_disagree(monkeypatch):
                         checks.append(place) or call.update(seconds=0.5, cost=0.007) or hero)
     for _ in range(len(shots)):
         state = web.capture_request({"source": "A", "image": "QUJD", "trials": 1000})
+        web.wait_for_checks()                   # (they run after the answer has gone out)
+    state = web.capture_request({"source": "A", "do": "state", "trials": 1000})
+    assert not state["checking"]
     assert checks and state["spending"]["card_checks"] == len(checks) and state["spending"]["frames"] == len(shots)
     assert state["table"]["hero"] == [hero[:2], hero[2:]] or sorted(state["table"]["hero"]) == sorted([hero[:2], hero[2:]])
     web._SOURCES.clear()
@@ -2330,7 +2424,11 @@ def test_the_board_is_read_again_once_a_street_and_settles_a_tie(monkeypatch):
         if area is not None:
             asked.append((k, len(follower.hand["board"])))
             assert all(0 <= v <= 1 for v in area) and area[0] < area[2] and area[1] < area[3]
+            assert follower.checking() and follower.board_check() is None      # asked for once, while under way
+            follower.settle_board("", hand=follower.hands + 1)                  # a reading of a hand gone by: dropped
+            assert follower.checking()
             follower.settle_board(shot["board"])
+            assert not follower.checking()
             assert follower.board_check() is None
             assert follower.hand["board"] == parse_cards(shot["board"])     # its reading outweighs the frame read wrong
     assert [n for _, n in asked] == [3, 4, 5] and asked[0][0] == first
@@ -2351,6 +2449,9 @@ def test_the_board_is_read_again_once_a_street_and_settles_a_tie(monkeypatch):
     for shot in shots:
         truth = next(boards)
         state = web.capture_request({"source": "B", "image": "QUJD", "trials": 1000})
+        web.wait_for_checks()                   # (they run after the answer has gone out)
+    state = web.capture_request({"source": "B", "do": "state", "trials": 1000})
+    assert not state["checking"]
     assert len(seen) == 3 and state["spending"]["board_checks"] == 3 and state["spending"]["frames"] == len(shots)
     assert state["table"]["board"] == [card_str(c) for c in result.board]
     web._SOURCES.clear()

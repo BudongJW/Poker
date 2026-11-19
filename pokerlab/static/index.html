@@ -553,11 +553,21 @@ async function capSend(source) {
     const data = await post("/api/capture", {source: source.id, label: source.label.value, image: cap.shot.toDataURL("image/jpeg", 0.92),
       notes: source.notes.value, reader: source.reader.value, model, profile, trials: 100000});
     if (data.error) source.error = data.error; else { source.error = null; source.state = data; source.readAt = new Date().toLocaleTimeString(); }
+    if (data.checking) setTimeout(() => capRecheck(source, 3), 2000);
   } catch (e) { source.error = "서버에 연결할 수 없습니다: " + e.message; }
   source.busy = false;
   if (!cap.sources.includes(source)) return;
   capRefresh(source);
   if (cap.active === source && !$("capture").hidden) capShow();
+}
+async function capRecheck(source, tries) {   // the board or my cards are being read again on their own: show what that changed
+  if (!cap.sources.includes(source) || source.busy) return;    // (a frame on its way brings it anyway)
+  const [model, profile] = $("capModel").value.split(":");
+  const data = await post("/api/capture", {do: "state", source: source.id, model, profile, trials: 100000});
+  if (data.error || source.busy || !cap.sources.includes(source)) return;
+  source.state = data; capRefresh(source);
+  if (cap.active === source && !$("capture").hidden) capShow();
+  if (data.checking && tries > 1) setTimeout(() => capRecheck(source, tries - 1), 1500);
 }
 function capTick() {                  // read a window again when its picture has changed and then held still
   const now = performance.now();
@@ -606,10 +616,12 @@ async function capAdd() {
   const notes = source.notes = el("input"); notes.type = "text"; notes.placeholder = "이 프로그램의 화면에 대한 메모 (예: 내 자리는 위 가운데, 아래 가운데 인물은 딜러, 앞의 숫자는 핸드 누적 금액)";
   notes.setAttribute("aria-label", "인식 메모");
   const reader = source.reader = el("select"); reader.setAttribute("aria-label", "읽는 방식");
-  for (const [v, t] of [["best", "정확하게 (Opus 5.5)"], ["saving", "아껴서 (Sonnet 5.5, 의심스러운 화면만 Opus로 다시)"]]) {
+  for (const [v, t] of [["best", "정확하게 (Opus 5.5)"], ["fast", "빠르게 (Opus 5.5 빠른 모드, 비용 2배)"],
+                        ["saving", "아껴서 (Sonnet 5.5, 의심스러운 화면만 Opus로 다시)"]]) {
     const o = el("option", null, t); o.value = v; reader.append(o);
   }
-  reader.title = "아껴서: 스택이 숫자로 보이는 프로그램에서 비용이 약 40% 줄었습니다. 스택이 보이지 않는 화면에서는 잘못 읽은 것을 알아채기 어려워 권하지 않습니다.";
+  reader.title = "빠르게: 같은 모델이라 정확도는 같고, 한 장에 약 5.5초 걸리던 것이 약 2.2초가 되며 비용은 한 장에 약 0.02달러에서 0.04달러가 됩니다. " +
+    "아껴서: 스택이 숫자로 보이는 프로그램에서 비용이 약 40% 줄었습니다. 스택이 보이지 않는 화면에서는 잘못 읽은 것을 알아채기 어려워 권하지 않습니다.";
   options.append(every, reader, notes);
   for (const control of [every, reader, notes]) control.onclick = e => e.stopPropagation();
   source.line = el("div", "state");

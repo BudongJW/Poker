@@ -77,6 +77,8 @@ def run(read=True, model=None, out=print):
             return 1
         main = model or os.environ.get("POKERLAB_VISION_MODEL") or vision.CLAUDE_MODEL
         out(f"인식 서비스: Claude ({package}), 기본 모델 {main}, 아껴 읽기 모델 {vision.saving_model()}")
+        out("읽는 속도: " + ("빠른 모드 (POKERLAB_VISION_SPEED=fast, 약 2.5배 빠르고 비용 2배)" if vision.speed() == "fast"
+                            else "보통 (웹 화면에서 소스마다 '빠르게'를 고를 수 있습니다)"))
         try:
             import PIL
             out(f"보드 크게 다시 읽기: 켜짐 (Pillow {PIL.__version__})")
