@@ -2053,9 +2053,14 @@ def test_chips_a_player_did_not_have_are_a_misread():
     result, chips = next(_engine_hands(1, stacks=(1000,)))
     shots = table.frames(result, chips, 0, 5, every=True)
     later = shots[1]
+    # a digit too many in front while the stack stays as it was: put back
     broken = dict(later, seats=[dict(seat, bet=seat["bet"] + 5000) if i == 3 else seat for i, seat in enumerate(later["seats"])])
+    assert _actions(table.reconstruct([shots[0], broken])) == _actions(table.reconstruct(shots[:2]))
+    # more in front than the player had at all, the stack gone: no reading of it holds
+    gone = dict(later, seats=[dict(seat, bet=seat["bet"] + seat["stack"] + 500, stack=0) if i == 3 else seat
+                              for i, seat in enumerate(later["seats"])])
     with pytest.raises(ValueError, match="칩이 맞지"):
-        table.reconstruct([shots[0], broken])
+        table.reconstruct([shots[0], gone])
 
 
 def test_one_frame_misreads_of_a_fold_the_button_and_blinds_still_posting():
@@ -2295,5 +2300,4 @@ def test_one_frame_misreads_of_bets_and_folds():
         total += 1
         exact += _actions(follower.hand) == _actions(clean.hand)
         restarted += follower.restarted
-    # what is left: an empty spot read as a small bet that later amounts do not contradict, a fold at the hero's turn
-    assert total > 40 and exact >= 0.85 * total and restarted <= 0.05 * total
+    assert total > 40 and exact >= 0.95 * total and restarted <= 0.02 * total

@@ -116,7 +116,8 @@ def normalize(snapshot):
     return {"hero": hero, "board": board, "street": _STREET_OF[len(board)], "pot": _number(snapshot.get("pot")),
             "pot_includes_bets": bool(snapshot.get("pot_includes_bets", True)),
             "bets_whole_hand": bool(snapshot.get("bets_whole_hand")), "big_blind": _number(snapshot.get("big_blind")),
-            "seats": seats, "hero_seat": hero_seat, "button": buttons[0], "actor": actor}
+            "seats": seats, "hero_seat": hero_seat, "button": buttons[0], "actor": actor,
+            "to_act": bool(snapshot.get("hero_to_act"))}
 
 
 def without_hero(snapshot):
@@ -219,22 +220,37 @@ def counts_whole_hand(shot):
             and abs(shot["pot"] - shown) <= 0.005 * shown + 1e-9)
 
 
-def _steady(frames, shots=None):
+def _steady(frames, shots, bets=False):
     """Who is in the hand and what is in front of them, read again with what all the frames say (in place).
 
     Nobody comes back after a fold: a player read in or out of the hand in one frame only, against
-    the frames on either side, was misread there (unless it was that player's turn just before:
-    then the fold is real and the frame after it is the misread one); and a player still in the
-    hand in a later frame was in it all along. Chips in front never go down during a betting round:
-    an amount that later frames of the round contradict was misread (see :func:`_rising`)."""
-    for before, now, after in zip(frames, frames[1:], frames[2:]):
-        for a, b, c in zip(before, now, after):
-            if a is not None and b is not None and c is not None and a["in_hand"] == c["in_hand"] != b["in_hand"]:
-                if a["in_hand"] and a.get("acting"):        # out right after its turn: a fold, so the next frame is wrong
+    the frames on either side, was misread there (unless that player faced a bet on their turn just
+    before and put nothing in: then the fold is real and the frame after it is the misread one);
+    and a player still in the hand in a later frame was in it all along. The player whose turn it
+    is (the hero, when the hero's buttons are up) is in the hand.
+
+    bets: also the chips in front (once they are amounts of this betting round). They never go down
+    during a round: an amount that later frames of the round contradict was misread (see
+    :func:`_rising`), and so is one that :func:`_answered` rules out. And a player whose turn has
+    passed, who faced a bet on that turn and put nothing in, folded, whatever a frame says."""
+    owed = lambda frame, i: frame[i]["bet"] < max((o["bet"] for j, o in enumerate(frame) if j != i and o is not None), default=0.0) - 1e-9
+    same = lambda k: shots[k]["street"] == shots[k - 1]["street"]
+    if not bets:
+        for k, frame in enumerate(frames):
+            for i, seat in enumerate(frame):
+                if seat is not None and not seat["in_hand"] and _to_act(shots, k, i, seat):
+                    seat["in_hand"] = True
+        for k in range(1, len(frames) - 1):
+            for i, (a, b, c) in enumerate(zip(frames[k - 1], frames[k], frames[k + 1])):
+                if a is None or b is None or c is None or a["in_hand"] != c["in_hand"] or a["in_hand"] == b["in_hand"]:
+                    continue
+                folded = (a["in_hand"] and _to_act(shots, k - 1, i, a) and same(k) and owed(frames[k - 1], i)
+                          and b["bet"] <= a["bet"] + 1e-9)
+                if folded:                          # out right after facing a bet on its turn: so the next frame is wrong
                     c["in_hand"] = False
                 else:
                     b["in_hand"] = a["in_hand"]
-    if shots is not None:
+    else:
         start = 0
         for k in range(1, len(frames) + 1):
             if k == len(frames) or shots[k]["street"] != shots[start]["street"]:
@@ -245,13 +261,54 @@ def _steady(frames, shots=None):
                         run.append(frame)
                     bet = bet or shown
                 for i in range(len(frames[0])):
+                    _answered(shots, frames, start, k, i)
                     _rising([frame[i] for frame in run])
                 start = k
+        for k in range(1, len(frames)):
+            if not same(k):
+                continue
+            moved_on = any(seat is not None and _to_act(shots, k, j, seat) for j, seat in enumerate(frames[k]))
+            for i, (a, b) in enumerate(zip(frames[k - 1], frames[k])):
+                if (a is not None and b is not None and b["in_hand"] and moved_on and _to_act(shots, k - 1, i, a)
+                        and not _to_act(shots, k, i, b) and owed(frames[k - 1], i) and owed(frames[k], i) and b["bet"] <= a["bet"] + 1e-9
+                        and (b["stack"] is None or b["stack"] > 1e-9)):
+                    b["in_hand"] = False            # its turn passed while it faced a bet, and it put nothing in
     for i in range(len(frames[0])):
         last = max((k for k, frame in enumerate(frames) if frame[i] is not None and frame[i]["in_hand"]), default=0)
         for frame in frames[:last]:
             if frame[i] is not None:
                 frame[i]["in_hand"] = True
+
+
+def _to_act(shots, k, i, seat):
+    """Is it seat ``i``'s turn in frame ``k``, as the frame shows it (a marked turn, or the hero's buttons up)?"""
+    if seat.get("acting"):
+        return True
+    return shots is not None and shots[k]["to_act"] and seat.get("hero", False)
+
+
+def _answered(shots, frames, start, stop, i):
+    """Seat ``i`` in the frames ``start``-``stop`` of one betting round, against whose turn it is (in place).
+
+    The player whose turn it is has not answered the last bet yet, so cannot be the only one with
+    that much in front; and with a stack shown in two frames running, more in front needs that
+    much less behind (when the rise is too big for a stack shown rounded to hide). An amount that
+    breaks either is a misread: the amount before it is kept."""
+    before = 0.0
+    for k in range(start, stop):
+        seat = frames[k][i]
+        if seat is None:
+            continue
+        others = max((other["bet"] for j, other in enumerate(frames[k]) if j != i and other is not None), default=0.0)
+        if seat["bet"] > before + 1e-9:
+            turn = _to_act(shots, k, i, seat) and seat["bet"] > others + 1e-9
+            last = frames[k - 1][i] if k > start else None
+            rise = seat["bet"] - before             # too big for a rounded stack ('2.5K') to hide, and not out of the stack
+            behind = (last is not None and last["stack"] is not None and seat["stack"] is not None and seat["stack"] > 0
+                      and rise > 0.02 * last["stack"] and abs(last["stack"] - seat["stack"]) < 0.5 * rise)
+            if turn or behind:
+                seat["bet"] = before
+        before = seat["bet"]
 
 
 def _rising(seats):
@@ -467,10 +524,10 @@ def reconstruct(snapshots, finished=False, folded=()):
         marks = [next((i for i, s in enumerate(frame) if s is not None and s["button"]), None) for frame in frames]
         marks = [mark for mark in marks if mark is not None]
         button = max(marks, key=lambda mark: (marks.count(mark), -marks.index(mark)))
-    _steady(frames)
+    _steady(frames, shots)
     if any(counts_whole_hand(shot) for shot in shots):
         _street_bets(shots, frames)
-    _steady(frames, shots)
+    _steady(frames, shots, bets=True)
     for a, b in zip(shots, shots[1:]):
         if b["street"] < a["street"] or b["board"][:len(a["board"])] != a["board"] or b["hero"] != a["hero"]:
             raise ValueError("이미지들이 같은 핸드의 순서대로가 아닙니다 (내 카드나 보드가 맞지 않습니다)")
