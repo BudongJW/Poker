@@ -12,6 +12,7 @@ dependencies = ["numpy", "pandas"]
 
 [project.optional-dependencies]
 claude = ["anthropic>=2"]      # reading windows with Claude instead of Gemini
+dev = ["pytest", "pillow"]     # the tests, and the tools in pokerlab/tools
 
 [project.scripts]
 pokerlab = "pokerlab.__main__:main"

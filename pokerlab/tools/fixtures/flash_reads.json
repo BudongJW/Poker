@@ -1,0 +1,3964 @@
+{
+ "rows": [
+  {
+   "k": 0,
+   "read": {
+    "hero": "AhKc",
+    "board": "",
+    "pot": 3,
+    "pot_includes_bets": true,
+    "big_blind": 2,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.33,
+      "y": 0.13,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.41,
+      "y": 0.09,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.11,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.42,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 6.38860559463501,
+    "input_tokens": 1583,
+    "output_tokens": 510,
+    "cache_read_tokens": 0,
+    "cache_write_tokens": 2350
+   }
+  },
+  {
+   "k": 1,
+   "read": {
+    "hero": "AhKc",
+    "board": "",
+    "pot": 3,
+    "pot_includes_bets": true,
+    "big_blind": 2,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.415,
+      "y": 0.1,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.1,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.15,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.42,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.68,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.614681959152222,
+    "input_tokens": 1583,
+    "output_tokens": 510,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 2,
+   "read": {
+    "hero": "AhKc",
+    "board": "",
+    "pot": 5,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.415,
+      "y": 0.11,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.11,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.16,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.42,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.522873401641846,
+    "input_tokens": 1583,
+    "output_tokens": 510,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 3,
+   "read": {
+    "hero": "AhKc",
+    "board": "",
+    "pot": 7,
+    "pot_includes_bets": true,
+    "big_blind": 2,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.411,
+      "y": 0.12,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.16,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.57,
+      "y": 0.16,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.68,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 5.001465082168579,
+    "input_tokens": 1583,
+    "output_tokens": 510,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 4,
+   "read": {
+    "hero": "AhKc",
+    "board": "",
+    "pot": 9,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.418,
+      "y": 0.1,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.15,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.6,
+      "y": 0.1,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.969359874725342,
+    "input_tokens": 1583,
+    "output_tokens": 510,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 5,
+   "read": {
+    "hero": "AhKc",
+    "board": "",
+    "pot": 9,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.315,
+      "y": 0.13,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.43,
+      "y": 0.1,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.59,
+      "y": 0.1,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.235,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.098711252212524,
+    "input_tokens": 1583,
+    "output_tokens": 510,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 6,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c",
+    "pot": 9,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.41,
+      "y": 0.1,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.59,
+      "y": 0.1,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.15,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.68,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 5.396947622299194,
+    "input_tokens": 1583,
+    "output_tokens": 520,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 7,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c",
+    "pot": 9,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.41,
+      "y": 0.09,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.59,
+      "y": 0.09,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.26,
+      "y": 0.14,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.68,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.155485153198242,
+    "input_tokens": 1583,
+    "output_tokens": 520,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 8,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c",
+    "pot": 20,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.413,
+      "y": 0.1,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.585,
+      "y": 0.16,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.17,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.235,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.953364372253418,
+    "input_tokens": 1583,
+    "output_tokens": 520,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 9,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c",
+    "pot": 20,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.41,
+      "y": 0.08,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.59,
+      "y": 0.08,
+      "stack": null,
+      "bet": 13,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.15,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.8499462604522705,
+    "input_tokens": 1583,
+    "output_tokens": 520,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 10,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c",
+    "pot": 31,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.41,
+      "y": 0.09,
+      "stack": null,
+      "bet": 13,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.59,
+      "y": 0.1,
+      "stack": null,
+      "bet": 13,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.16,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.42,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.40388822555542,
+    "input_tokens": 1583,
+    "output_tokens": 520,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 11,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c6d",
+    "pot": 31,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.41,
+      "y": 0.09,
+      "stack": null,
+      "bet": 13,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.585,
+      "y": 0.09,
+      "stack": null,
+      "bet": 13,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.26,
+      "y": 0.16,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.42,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.1776275634765625,
+    "input_tokens": 1583,
+    "output_tokens": 523,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 12,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c6d",
+    "pot": 41,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.42,
+      "y": 0.09,
+      "stack": null,
+      "bet": 13,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.15,
+      "stack": null,
+      "bet": 13,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.17,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.42,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 3.986034393310547,
+    "input_tokens": 1583,
+    "output_tokens": 523,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 13,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c6d",
+    "pot": 41,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.43,
+      "y": 0.09,
+      "stack": null,
+      "bet": 13,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.59,
+      "y": 0.09,
+      "stack": null,
+      "bet": 23,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.16,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 5.176054954528809,
+    "input_tokens": 1583,
+    "output_tokens": 523,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 14,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c6d",
+    "pot": 51,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.43,
+      "y": 0.09,
+      "stack": null,
+      "bet": 23,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.59,
+      "y": 0.09,
+      "stack": null,
+      "bet": 23,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.26,
+      "y": 0.15,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.71,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.051217317581177,
+    "input_tokens": 1583,
+    "output_tokens": 523,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 15,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c6d4h",
+    "pot": 51,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.42,
+      "y": 0.1,
+      "stack": null,
+      "bet": 23,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.59,
+      "y": 0.1,
+      "stack": null,
+      "bet": 23,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.15,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.6673643589019775,
+    "input_tokens": 1583,
+    "output_tokens": 526,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 16,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c6d4h",
+    "pot": 73,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.42,
+      "y": 0.1,
+      "stack": null,
+      "bet": 23,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.14,
+      "stack": null,
+      "bet": 23,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.16,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.41,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 5.165169715881348,
+    "input_tokens": 1583,
+    "output_tokens": 526,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 17,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c6d4h",
+    "pot": 73,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.42,
+      "y": 0.1,
+      "stack": null,
+      "bet": 23,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.585,
+      "y": 0.1,
+      "stack": null,
+      "bet": 45,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.16,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.175,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.235,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.97957968711853,
+    "input_tokens": 1583,
+    "output_tokens": 526,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 18,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c6d4h",
+    "pot": 95,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.42,
+      "y": 0.09,
+      "stack": null,
+      "bet": 45,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.585,
+      "y": 0.11,
+      "stack": null,
+      "bet": 45,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.16,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.16663384437561,
+    "input_tokens": 1583,
+    "output_tokens": 526,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 19,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c6d4h",
+    "pot": 95,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.42,
+      "y": 0.09,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.585,
+      "y": 0.09,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": "Kh7d"
+     },
+     {
+      "name": null,
+      "x": 0.255,
+      "y": 0.15,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.175,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.235,
+      "y": 0.69,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 5.0491673946380615,
+    "input_tokens": 1583,
+    "output_tokens": 533,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 20,
+   "read": {
+    "hero": "AhKc",
+    "board": "Kd4c3c6d4h",
+    "pot": 95,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.418,
+      "y": 0.1,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.586,
+      "y": 0.1,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": "Kh7d"
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.16,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.175,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.237,
+      "y": 0.69,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.339643955230713,
+    "input_tokens": 1583,
+    "output_tokens": 533,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 21,
+   "read": {
+    "hero": "Kh7d",
+    "board": "Kh4s4h",
+    "pot": 95,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.42,
+      "y": 0.17,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.11,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.26,
+      "y": 0.16,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.42,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.88047981262207,
+    "input_tokens": 1583,
+    "output_tokens": 519,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 22,
+   "read": {
+    "hero": "",
+    "board": "",
+    "pot": 0,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.235,
+      "y": 0.16,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.415,
+      "y": 0.1,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.578,
+      "y": 0.1,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.69,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.8084142208099365,
+    "input_tokens": 1583,
+    "output_tokens": 502,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 23,
+   "read": {
+    "hero": "",
+    "board": "",
+    "pot": 0,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.415,
+      "y": 0.1,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.27,
+      "y": 0.18,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.575,
+      "y": 0.1,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.69,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.552564382553101,
+    "input_tokens": 1583,
+    "output_tokens": 502,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 24,
+   "read": {
+    "hero": "Jh4d",
+    "board": "",
+    "pot": 3,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.415,
+      "y": 0.15,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.27,
+      "y": 0.17,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.12,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.43,
+      "stack": null,
+      "bet": 1,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.68,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.973933935165405,
+    "input_tokens": 1583,
+    "output_tokens": 509,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 25,
+   "read": {
+    "hero": "Jh4d",
+    "board": "",
+    "pot": 3,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.43,
+      "y": 0.13,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.14,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.16,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.69,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.835684776306152,
+    "input_tokens": 1583,
+    "output_tokens": 509,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 26,
+   "read": {
+    "hero": "Jh4d",
+    "board": "",
+    "pot": 5,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.27,
+      "y": 0.12,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.41,
+      "y": 0.08,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.09,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.42,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.67,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.000375032424927,
+    "input_tokens": 1583,
+    "output_tokens": 509,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 27,
+   "read": {
+    "hero": "Jh4d",
+    "board": "",
+    "pot": 7,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.4,
+      "y": 0.13,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.12,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.26,
+      "y": 0.15,
+      "stack": null,
+      "bet": 1,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.42,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.68,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 3.868330717086792,
+    "input_tokens": 1583,
+    "output_tokens": 509,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 28,
+   "read": {
+    "hero": "Jh4d",
+    "board": "",
+    "pot": 17,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.413,
+      "y": 0.1,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.11,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.255,
+      "y": 0.15,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.68,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.2074878215789795,
+    "input_tokens": 1583,
+    "output_tokens": 509,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 29,
+   "read": {
+    "hero": "Jh4d",
+    "board": "",
+    "pot": 17,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.413,
+      "y": 0.1,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.11,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.255,
+      "y": 0.15,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.68,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.727604866027832,
+    "input_tokens": 1583,
+    "output_tokens": 509,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 30,
+   "read": {
+    "hero": "Jh4d",
+    "board": "",
+    "pot": 35,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.415,
+      "y": 0.1,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.13,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.6,
+      "y": 0.12,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.175,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.26,
+      "y": 0.65,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.34189510345459,
+    "input_tokens": 1583,
+    "output_tokens": 509,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 31,
+   "read": {
+    "hero": "Jh4d",
+    "board": "",
+    "pot": 35,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.328,
+      "y": 0.14,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.413,
+      "y": 0.11,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.588,
+      "y": 0.11,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.68,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.0032641887664795,
+    "input_tokens": 1583,
+    "output_tokens": 509,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 32,
+   "read": {
+    "hero": "Jh4d",
+    "board": "Th9d8h",
+    "pot": 45,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.413,
+      "y": 0.11,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.588,
+      "y": 0.11,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.27,
+      "y": 0.2,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.68,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.428405523300171,
+    "input_tokens": 1583,
+    "output_tokens": 518,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 33,
+   "read": {
+    "hero": "Jh4d",
+    "board": "Th9d8h",
+    "pot": 45,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.33,
+      "y": 0.15,
+      "stack": null,
+      "bet": 21,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.52,
+      "y": 0.12,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.59,
+      "y": 0.12,
+      "stack": null,
+      "bet": 11,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.68,
+      "stack": null,
+      "bet": 2,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.186059474945068,
+    "input_tokens": 1583,
+    "output_tokens": 518,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 34,
+   "read": {
+    "hero": "Jh4d",
+    "board": "Th9d8h",
+    "pot": 55,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.413,
+      "y": 0.1,
+      "stack": null,
+      "bet": 21,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.578,
+      "y": 0.15,
+      "stack": null,
+      "bet": 11,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.16,
+      "stack": null,
+      "bet": 21,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.68,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.130359888076782,
+    "input_tokens": 1583,
+    "output_tokens": 518,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 35,
+   "read": {
+    "hero": "Jh4d",
+    "board": "Th9d8h7d",
+    "pot": 55,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.413,
+      "y": 0.1,
+      "stack": null,
+      "bet": 21,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.588,
+      "y": 0.1,
+      "stack": null,
+      "bet": 11,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.15,
+      "stack": null,
+      "bet": 21,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.165,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.235,
+      "y": 0.68,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.045411109924316,
+    "input_tokens": 1583,
+    "output_tokens": 521,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 36,
+   "read": {
+    "hero": "Jh4d",
+    "board": "Th9d8h7d",
+    "pot": 65,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.415,
+      "y": 0.1,
+      "stack": null,
+      "bet": 21,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.59,
+      "y": 0.1,
+      "stack": null,
+      "bet": 11,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.16,
+      "stack": null,
+      "bet": 31,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.122119426727295,
+    "input_tokens": 1583,
+    "output_tokens": 521,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 37,
+   "read": {
+    "hero": "Jh4d",
+    "board": "Th9d8h7d",
+    "pot": 65,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.43,
+      "y": 0.12,
+      "stack": null,
+      "bet": 21,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.11,
+      "stack": null,
+      "bet": 11,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.27,
+      "y": 0.15,
+      "stack": null,
+      "bet": 31,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.69,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.095247268676758,
+    "input_tokens": 1583,
+    "output_tokens": 521,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 38,
+   "read": {
+    "hero": "Jh4d",
+    "board": "Th9d8h7d7s",
+    "pot": 75,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.43,
+      "y": 0.11,
+      "stack": null,
+      "bet": 31,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.12,
+      "stack": null,
+      "bet": 11,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.16,
+      "stack": null,
+      "bet": 31,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.22,
+      "y": 0.68,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.0945703983306885,
+    "input_tokens": 1583,
+    "output_tokens": 524,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 39,
+   "read": {
+    "hero": "Jh4d",
+    "board": "Th9d8h7d7s",
+    "pot": 96,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": true,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.33,
+      "y": 0.13,
+      "stack": null,
+      "bet": 52,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.42,
+      "y": 0.1,
+      "stack": null,
+      "bet": 31,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": true,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.1,
+      "stack": null,
+      "bet": 11,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.18,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.68,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.209390163421631,
+    "input_tokens": 1583,
+    "output_tokens": 524,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 40,
+   "read": {
+    "hero": "Jh4d",
+    "board": "Th9d8h7d7s",
+    "pot": 117,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.43,
+      "y": 0.11,
+      "stack": null,
+      "bet": 52,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.11,
+      "stack": null,
+      "bet": 11,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.26,
+      "y": 0.15,
+      "stack": null,
+      "bet": 52,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.68,
+      "stack": null,
+      "bet": 2,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.101758241653442,
+    "input_tokens": 1583,
+    "output_tokens": 524,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 41,
+   "read": {
+    "hero": "Jh",
+    "board": "Th9d8h7d7s",
+    "pot": 117,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.27,
+      "y": 0.15,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": "As6d"
+     },
+     {
+      "name": null,
+      "x": 0.42,
+      "y": 0.1,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.1,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.43,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.093625783920288,
+    "input_tokens": 1583,
+    "output_tokens": 526,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 42,
+   "read": {
+    "hero": "JhJd",
+    "board": "Th9d8h7d7s",
+    "pot": 117,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.43,
+      "y": 0.1,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.1,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.26,
+      "y": 0.15,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": "As6d"
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.42,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.24,
+      "y": 0.69,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.522753477096558,
+    "input_tokens": 1583,
+    "output_tokens": 530,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 43,
+   "read": {
+    "hero": "As6d",
+    "board": "",
+    "pot": 117,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": null,
+      "x": 0.25,
+      "y": 0.15,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.42,
+      "y": 0.14,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": true,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.58,
+      "y": 0.11,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.42,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.23,
+      "y": 0.69,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 12.182027339935303,
+    "input_tokens": 1583,
+    "output_tokens": 1115,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  },
+  {
+   "k": 44,
+   "read": {
+    "hero": "",
+    "board": "",
+    "pot": 0,
+    "pot_includes_bets": true,
+    "big_blind": null,
+    "bets_whole_hand": true,
+    "hero_to_act": false,
+    "seats": [
+     {
+      "name": "Bigstack Bully",
+      "x": 0.415,
+      "y": 0.06,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": true,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.578,
+      "y": 0.12,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.255,
+      "y": 0.14,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.17,
+      "y": 0.42,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": true,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     },
+     {
+      "name": null,
+      "x": 0.235,
+      "y": 0.69,
+      "stack": null,
+      "bet": 0.0,
+      "in_hand": false,
+      "hero": false,
+      "button": false,
+      "sitting_out": false,
+      "acting": false,
+      "cards": ""
+     }
+    ]
+   },
+   "call": {
+    "service": "claude",
+    "model": "claude-opus-5-5",
+    "seconds": 4.844870090484619,
+    "input_tokens": 1583,
+    "output_tokens": 509,
+    "cache_read_tokens": 2350,
+    "cache_write_tokens": 0
+   }
+  }
+ ]
+}

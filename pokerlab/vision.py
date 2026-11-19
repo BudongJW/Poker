@@ -394,7 +394,9 @@ decks blue is diamonds and green is clubs. If you cannot read both, answer an em
 def read_hero_cards(image, mime_type="image/jpeg", place=None, notes=None, model=None, timeout=60, call=None):
     """Read the hero's two cards again, and nothing else (when the frames of a hand disagree about them).
     place: where the hero's seat is (x, y as fractions of the picture). -> 'AhKc', or '' if not read.
-    Claude only; raises :class:`VisionError`."""
+    Claude only; raises :class:`VisionError`. With ``POKERLAB_VISION_REPLAY`` set nothing is sent: ''."""
+    if os.environ.get("POKERLAB_VISION_REPLAY"):
+        return ""
     try:
         import anthropic
     except ImportError:

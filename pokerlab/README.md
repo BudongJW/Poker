@@ -72,6 +72,8 @@ py -m pokerlab check
 
 Windows에서는 아래의 `python -m pokerlab ...` 명령을 모두 `py -m pokerlab ...`으로 씁니다.
 
+개발을 이어서 할 때는 `HANDOFF.md`(지금 상태, 남은 일, 비용 기준)와 `tools/README.md`(오독 측정, 저장된 읽기 다시 돌리기, 플레이 영상 찍기)를 봅니다. 테스트와 도구까지 쓰려면 `pip install -e ".[claude,dev]"`로 설치합니다.
+
 ### 웹 화면: 창을 골라 실시간으로 읽기
 
 ```bash

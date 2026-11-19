@@ -1,0 +1,7 @@
+{
+  "private": true,
+  "description": "Browser driver for pokerlab/tools/demo/record.py",
+  "dependencies": {
+    "playwright": "^1.63.0"
+  }
+}
