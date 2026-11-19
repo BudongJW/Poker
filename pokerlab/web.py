@@ -147,11 +147,14 @@ def capture_request(body):
             follower.push(snapshot)
         elif do != "state":
             raise ValueError(f"unknown request {do!r}")
-        tie = follower.card_tie() if calls and vision.provider() == "claude" else None
+        claude = bool(calls) and vision.provider() == "claude"
+        tie = follower.card_tie() if claude else None
+        area = follower.board_check() if claude else None
+    notes = str(body.get("notes") or "")[:2000] or None
     if tie is not None:                     # the frames disagree about the hero's cards: read them again on their own
         call = {}
         try:
-            cards = vision.read_hero_cards(*_picture(body), place=tie, notes=str(body.get("notes") or "")[:2000] or None, call=call)
+            cards = vision.read_hero_cards(*_picture(body), place=tie, notes=notes, call=call)
         except vision.VisionError:
             cards = ""
         with _SOURCES_LOCK:
@@ -159,6 +162,17 @@ def capture_request(body):
             follower.settle_cards(cards)
             if call:
                 follower.spend([call], card_check=True)
+    if area is not None:                    # a street's cards have come: read the board again, enlarged
+        call = {}
+        try:
+            board = vision.read_board(*_picture(body), area=area, notes=notes, call=call)
+        except vision.VisionError:
+            board = ""
+        with _SOURCES_LOCK:
+            follower = _follower(name)
+            follower.settle_board(board)
+            if call:
+                follower.spend([call], board_check=True)
     with _SOURCES_LOCK:
         follower = _follower(name)
         out = follower.state()

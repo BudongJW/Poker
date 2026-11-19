@@ -21,7 +21,7 @@ from pokerlab.bots import make_bot                      # noqa: E402
 from pokerlab.cards import card_str                     # noqa: E402
 from pokerlab.engine import play_hand                   # noqa: E402
 
-KINDS = ["in_hand flicker", "bet misread", "stack misread", "pot misread", "hero card", "button moved",
+KINDS = ["in_hand flicker", "bet misread", "stack misread", "pot misread", "hero card", "board card", "button moved",
          "hero mark moved", "frame missing"]
 
 
@@ -34,8 +34,9 @@ def hands(count, seed, stacks):
 
 
 def actions(hand):
+    """What a record must get right: the actions in order, and the board."""
     names = [int(name[1:]) for name in hand["names"]]
-    return [(a[0], names[a[1]], a[2], round(a[3])) for a in hand["actions"]]
+    return [(a[0], names[a[1]], a[2], round(a[3])) for a in hand["actions"]] + [tuple(hand["board"])]
 
 
 def misread(shot, kind, rng):
@@ -55,6 +56,12 @@ def misread(shot, kind, rng):
     elif kind == "hero card":
         used = {shot["hero"][j:j + 2] for j in (0, 2)} | {shot["board"][j:j + 2] for j in range(0, len(shot["board"]), 2)}
         shot["hero"] = shot["hero"][:2] + next(card_str(c) for c in rng.sample(range(52), 52) if card_str(c) not in used)
+    elif kind == "board card":
+        if shot["board"]:
+            used = {shot["hero"][j:j + 2] for j in (0, 2)} | {shot["board"][j:j + 2] for j in range(0, len(shot["board"]), 2)}
+            j = 2 * rng.randrange(len(shot["board"]) // 2)
+            other = next(card_str(c) for c in rng.sample(range(52), 52) if card_str(c) not in used)
+            shot["board"] = shot["board"][:j] + other + shot["board"][j + 2:]
     elif kind == "button moved":
         button = next(j for j, s in enumerate(seats) if s["button"])
         for j, s in enumerate(seats):

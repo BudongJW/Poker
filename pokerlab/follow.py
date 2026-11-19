@@ -70,7 +70,8 @@ class Follower:
         self.unread_run = 0                     # frames in a row from which no hand could be read (between hands, a few)
         # what reading the window has cost: frames read by a service, dollars (None once a call had no known
         # price), seconds, and frames read again by the main model after the cheaper one's reading was doubted
-        self.spending = {"frames": 0, "dollars": 0.0, "seconds": 0.0, "read_again": 0, "doubts": {}, "card_checks": 0}
+        self.spending = {"frames": 0, "dollars": 0.0, "seconds": 0.0, "read_again": 0, "doubts": {}, "card_checks": 0,
+                         "board_checks": 0}
         self._clear()
 
     def _clear(self):
@@ -83,6 +84,8 @@ class Follower:
         self.held = None                        # a frame set aside as perhaps a passing moment (see push)
         self.card_checks = []                   # the hero's cards as read again on their own in this hand (see card_tie)
         self._checked_at = None                 # how many frames the hand had at the last such reading
+        self.board_checks = []                  # (cards on the board then, the board as read again on its own) (see board_check)
+        self._took = None                       # the frame count when the last frame pushed was taken into the hand
 
     def push(self, snapshot):
         """Take the next snapshot. Returns True if anything changed.
@@ -153,7 +156,11 @@ class Follower:
                 return True
         if self.shots:
             base = table.normalize(self.shots[0])
-            if not self._same(table.normalize(self.shots[-1]), shot):
+            try:                                # the last frame, with the board most frames show
+                last = table.normalize(self._board_agreed(self.shots)[-1])
+            except ValueError:
+                last = table.normalize(self.shots[-1])
+            if not self._same(last, shot):
                 self.close()
             else:
                 turned = self._keep_cards(base, shot)
@@ -172,6 +179,7 @@ class Follower:
             self.open = bool(table.shown_cards(shot))
             self._keep_cards(shot, shot)
         self.shots = (self.shots + [snapshot])[-MAX_FRAMES:]
+        self._took = self.counts["frames"]
         self.error = self.note = None
         try:
             self.hand = table.reconstruct(self._agreed())
@@ -185,6 +193,7 @@ class Follower:
             self.waiting = []
             if self.hand is not None and len(self.shots) > 1 and self._paid_out(shot):
                 self.shots.pop()                # the pot went to the winner: the hand is over
+                self._took = None
                 self._finish(self._stayed_out(shot))
                 return True
             try:                                # this frame does not follow from the earlier ones: start again from it
@@ -194,7 +203,7 @@ class Follower:
                 self.counts["restarts"] += 1
                 self._keep_cards(shot, shot)
             except ValueError as alone:
-                self.error, self.shots = str(alone), self.shots[:-1]
+                self.error, self.shots, self._took = str(alone), self.shots[:-1], None
         return True
 
     def _with_hero_cards(self, snapshot):
@@ -258,12 +267,13 @@ class Follower:
         except ValueError:
             return False
 
-    def spend(self, calls, doubts=(), card_check=False):
+    def spend(self, calls, doubts=(), card_check=False, board_check=False):
         """Count what reading one frame cost: ``calls`` as :func:`pokerlab.vision.recognize` describes
         them (more than one when it was read again), ``doubts`` the reasons it was read again.
-        card_check: the call read the hero's cards of a frame already counted again (see card_tie)."""
+        card_check, board_check: the call read the hero's cards, or the board, of a frame already
+        counted again (see card_tie, board_check)."""
         spending = self.spending
-        spending["card_checks" if card_check else "frames"] += 1
+        spending["card_checks" if card_check else "board_checks" if board_check else "frames"] += 1
         spending["seconds"] += sum(call.get("seconds") or 0.0 for call in calls)
         costs = [call.get("cost") for call in calls]
         spending["dollars"] = None if spending["dollars"] is None or None in costs else spending["dollars"] + sum(costs)
@@ -287,7 +297,7 @@ class Follower:
         trial.record, trial._analysis, trial._last, trial.held = None, None, None, None
         trial.shots, trial.counts, trial.shown = list(self.shots), dict(self.counts), dict(self.shown)
         trial.hero_places, trial.waiting, trial.spending = list(self.hero_places), list(self.waiting), dict(self.spending)
-        trial.card_checks = list(self.card_checks)
+        trial.card_checks, trial.board_checks = list(self.card_checks), list(self.board_checks)
         trial._take(snapshot)
         return trial
 
@@ -397,24 +407,100 @@ class Follower:
             self._analysis = None
 
     def _agreed(self):
-        """The hand's snapshots, each with the hero's cards that most of them show (the earliest on a tie);
-        a reading of the cards on their own counts as :data:`CHECK_VOTES` frames."""
+        """The hand's snapshots, each with the hero's cards that most of them show (the earliest on a tie;
+        a reading of the cards on their own counts as :data:`CHECK_VOTES` frames), and the board cards
+        that most of them show (see :meth:`_board_agreed`)."""
         reads = self._readings()
         if len(set(reads)) <= 1:
-            return self.shots
+            return self._board_agreed(self.shots)
         common = max(reads, key=lambda cards: (reads.count(cards), -reads.index(cards)))
         if not any(s.get("hero") and frozenset(parse_cards(s["hero"])) == common for s in self.shots):
-            return [dict(s, hero="".join(card_str(c) for c in sorted(common, reverse=True))) if s.get("hero") else s for s in self.shots]
-        cards = next(s["hero"] for s in self.shots if s.get("hero") and frozenset(parse_cards(s["hero"])) == common)
-        return [dict(s, hero=cards) if s.get("hero") else s for s in self.shots]
+            shots = [dict(s, hero="".join(card_str(c) for c in sorted(common, reverse=True))) if s.get("hero") else s
+                     for s in self.shots]
+        else:
+            cards = next(s["hero"] for s in self.shots if s.get("hero") and frozenset(parse_cards(s["hero"])) == common)
+            shots = [dict(s, hero=cards) if s.get("hero") else s for s in self.shots]
+        return self._board_agreed(shots)
+
+    def _board_agreed(self, shots):
+        """``shots`` with one board: each card the one most frames show in its place (the earliest on a
+        tie; a card stays on the board for the rest of the hand, so later streets vote on it too; a
+        reading of the board on its own counts as :data:`CHECK_VOTES` frames). A card that would be in
+        two places goes where more frames put it, and the other place gets its next card. As they
+        are when the frames agree, or when no such board can be made."""
+        boards = [parse_cards(s.get("board") or "") for s in shots]
+        checks = [parse_cards(cards) for _, cards in self.board_checks if cards]
+        longest = max(boards, key=len)
+        if all(board == longest[:len(board)] for board in boards + checks):
+            return shots
+        ranked = []                             # per place: [(votes, card)], the most first (the earliest on a tie)
+        for place in range(len(longest)):
+            votes = [board[place] for board in boards if len(board) > place]
+            votes += [board[place] for board in checks if len(board) > place for _ in range(self.CHECK_VOTES)]
+            ranked.append(sorted(((votes.count(card), card) for card in set(votes)),
+                                 key=lambda vc: (-vc[0], votes.index(vc[1]))))
+        sure = sorted(range(len(ranked)), key=lambda place: (       # surest places choose first
+            -ranked[place][0][0], -(ranked[place][0][0] - (ranked[place][1][0] if len(ranked[place]) > 1 else 0)), place))
+        agreed, used = [None] * len(ranked), {card for s in shots if s.get("hero") for card in parse_cards(s["hero"])}
+        for place in sure:
+            card = next((card for _, card in ranked[place] if card not in used), None)
+            if card is None:
+                return shots
+            agreed[place] = card
+            used.add(card)
+        return [s if board == agreed[:len(board)] else dict(s, board="".join(card_str(c) for c in agreed[:len(board)]))
+                for s, board in zip(shots, boards)]
+
+    MAX_BOARD_CHECKS = 3                        # readings of the board on its own in one hand at most (one a street)
+
+    def board_check(self):
+        """Has a street's card come that was not read again on its own yet? Then -> the part of the
+        picture the seats surround (x0, y0, x1, y1 as fractions), to read the board again from it,
+        enlarged (small cards are misread in the whole frame, the same way in every frame); else None.
+        Once a street, from the frame just taken in."""
+        if self.hand is None or self.held is not None or self._took != self.counts["frames"]:
+            return None
+        board = self.hand["board"]
+        if not board or len(self.board_checks) >= self.MAX_BOARD_CHECKS or any(n >= len(board) for n, _ in self.board_checks):
+            return None
+        if len(parse_cards(self.shots[-1].get("board") or "")) != len(board):
+            return None
+        try:
+            seats = [seat for seat in table.normalize(self.shots[-1])["seats"] if seat["x"] is not None and seat["y"] is not None]
+        except ValueError:
+            return None
+        if len(seats) < 2:
+            return None
+        xs, ys = [seat["x"] for seat in seats], [seat["y"] for seat in seats]
+        middle = ((min(xs) + max(xs)) / 2, (min(ys) + max(ys)) / 2)
+        wide, high = max(max(xs) - min(xs) + 0.1, 0.5), max(max(ys) - min(ys) + 0.1, 0.4)
+        return (max(0.0, middle[0] - wide / 2), max(0.0, middle[1] - high / 2),
+                min(1.0, middle[0] + wide / 2), min(1.0, middle[1] + high / 2))
+
+    def settle_board(self, cards):
+        """The board as read again on its own ('' if it could not be): weighed in with the frames."""
+        size = len(self.hand["board"]) if self.hand is not None else 0
+        try:
+            read = len(parse_cards(cards or "")) == size > 0
+        except ValueError:
+            read = False
+        self.board_checks.append((size, cards if read else ""))   # an unread one still uses up the street's reading
+        if read:
+            try:
+                self.hand = table.reconstruct(self._agreed(), finished=self.finished)
+            except ValueError:
+                pass
+            self.version += 1
+            self._analysis = None
 
     @staticmethod
     def _same(before, shot):
         """Is ``shot`` a later moment of the hand ``before`` belongs to?"""
         if (before["hero_seat"] is None) != (shot["hero_seat"] is None):
             return False
-        if shot["street"] < before["street"] or shot["board"][:len(before["board"])] != before["board"]:
-            return False
+        shared = zip(before["board"], shot["board"])
+        if shot["street"] < before["street"] or sum(a != b for a, b in shared) > 1:
+            return False                        # (one card that differs: read wrong in one frame or the other)
         n = len(before["seats"])
         if len(shot["seats"]) != n:
             return False

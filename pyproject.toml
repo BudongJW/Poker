@@ -11,7 +11,7 @@ requires-python = ">=3.9"
 dependencies = ["numpy", "pandas"]
 
 [project.optional-dependencies]
-claude = ["anthropic>=2"]      # reading windows with Claude instead of Gemini
+claude = ["anthropic>=2", "pillow"]   # reading windows with Claude (Pillow: the board read again, enlarged)
 dev = ["pytest", "pillow"]     # the tests, and the tools in pokerlab/tools
 
 [project.scripts]

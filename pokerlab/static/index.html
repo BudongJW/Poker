@@ -492,7 +492,7 @@ function spendingText(sp) {         // what reading this window has cost so far
   if (!sp || !sp.frames) return "";
   return `, 읽은 화면 ${sp.frames}장` + (sp.dollars === null || !sp.seconds ? "" : `, 약 $${sp.dollars.toFixed(2)}`) +
     (sp.seconds ? `, 평균 ${(sp.seconds / sp.frames).toFixed(1)}초` : "") + (sp.read_again ? `, 다시 읽은 화면 ${sp.read_again}장` : "") +
-    (sp.card_checks ? `, 내 카드만 다시 읽음 ${sp.card_checks}번` : "");
+    (sp.card_checks ? `, 내 카드만 다시 읽음 ${sp.card_checks}번` : "") + (sp.board_checks ? `, 보드만 크게 다시 읽음 ${sp.board_checks}번` : "");
 }
 function qualityText(q) {          // read from the frames themselves: chips that do not add up, hands started again, a hero mark that moved
   if (!q || !q.frames) return "";

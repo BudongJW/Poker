@@ -77,6 +77,11 @@ def run(read=True, model=None, out=print):
             return 1
         main = model or os.environ.get("POKERLAB_VISION_MODEL") or vision.CLAUDE_MODEL
         out(f"인식 서비스: Claude ({package}), 기본 모델 {main}, 아껴 읽기 모델 {vision.saving_model()}")
+        try:
+            import PIL
+            out(f"보드 크게 다시 읽기: 켜짐 (Pillow {PIL.__version__})")
+        except ImportError:
+            out("보드 크게 다시 읽기: 꺼짐. Pillow 패키지가 없습니다. 설치: pip install pillow")
         if os.environ.get("POKERLAB_ANTHROPIC_BASE_URL"):
             out(f"API 주소: {os.environ['POKERLAB_ANTHROPIC_BASE_URL']} (POKERLAB_ANTHROPIC_BASE_URL)")
     else:

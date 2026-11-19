@@ -2278,6 +2278,97 @@ def test_the_heros_cards_are_read_again_when_frames_disagree(monkeypatch):
     web._SOURCES.clear()
 
 
+def _misread_board(shot, place, used):
+    """``shot`` with the board card at ``place`` read as another card (one not in ``used``)."""
+    from pokerlab.cards import card_str
+    other = next(card_str(c) for c in range(52) if card_str(c) not in used)
+    return dict(shot, board=shot["board"][:2 * place] + other + shot["board"][2 * place + 2:])
+
+
+def test_a_board_card_misread_in_one_frame_does_not_split_the_hand():
+    rng, checked = random.Random(3), 0
+    for result, chips in _engine_hands(60):
+        shots = table.frames(result, chips, 0, 5, every=True, to_end=True)
+        flop = [k for k, shot in enumerate(shots) if shot["board"]]
+        if len(flop) < 3:
+            continue
+        clean, noisy = follow.Follower("lab"), follow.Follower("lab")
+        for shot in shots:
+            clean.push(shot)
+        k = rng.choice(flop[:-1])                   # any frame after the flop but the last: one card read wrong
+        used = set(shots[k]["hero"][j:j + 2] for j in (0, 2)) | {shots[-1]["board"][j:j + 2] for j in range(0, 10, 2)}
+        for i, shot in enumerate(shots):
+            noisy.push(_misread_board(shot, rng.randrange(len(shot["board"]) // 2), used) if i == k else shot)
+        assert noisy.counts["hands"] == clean.counts["hands"] and not noisy.restarted
+        assert noisy.hand["board"] == clean.hand["board"] and _actions(noisy.hand) == _actions(clean.hand)
+        checked += 1
+    assert checked > 10
+
+
+def test_a_board_card_voted_into_two_places_goes_where_more_frames_put_it():
+    follower = follow.Follower("lab")
+    shots = [{"board": "AdTh4d"}, {"board": "AdThKh4d"}, {"board": "AdThKh4d"}]     # the flop's Kh read as the turn's 4d once
+    assert [s["board"] for s in follower._board_agreed(shots)] == ["AdThKh", "AdThKh4d", "AdThKh4d"]
+    tie = [{"board": "AdTh4d"}, {"board": "AdThKh4d"}]                              # one each: 4d has the turn to itself
+    assert [s["board"] for s in follower._board_agreed(tie)] == ["AdThKh", "AdThKh4d"]
+    agreeing = [{"board": ""}, {"board": "AdThKh"}, {"board": "AdThKh4d"}]
+    assert follower._board_agreed(agreeing) is agreeing
+
+
+def test_the_board_is_read_again_once_a_street_and_settles_a_tie(monkeypatch):
+    from pokerlab.cards import card_str
+    result, chips = next(r for r in _engine_hands(60, stacks=(1000,)) if any(a[0] == 3 for a in r[0].actions))   # bets on the river
+    shots = table.frames(result, chips, 0, 5, every=True, to_end=True)
+    first = next(k for k, shot in enumerate(shots) if shot["board"])
+    used = set(shots[0]["hero"][j:j + 2] for j in (0, 2)) | {shots[-1]["board"][j:j + 2] for j in range(0, 10, 2)}
+    follower, asked = follow.Follower("lab"), []
+    for k, shot in enumerate(shots):
+        follower.push(_misread_board(shot, 1, used) if k == first else shot)    # the flop's first frame: one card wrong
+        if k == first:
+            assert follower.hand["board"] != parse_cards(shot["board"])
+        area = follower.board_check()
+        if area is not None:
+            asked.append((k, len(follower.hand["board"])))
+            assert all(0 <= v <= 1 for v in area) and area[0] < area[2] and area[1] < area[3]
+            follower.settle_board(shot["board"])
+            assert follower.board_check() is None
+            assert follower.hand["board"] == parse_cards(shot["board"])     # its reading outweighs the frame read wrong
+    assert [n for _, n in asked] == [3, 4, 5] and asked[0][0] == first
+    assert follower.hand["board"] == list(result.board) and not follower.restarted
+    # through the web page: the picture is read again for the board alone, and that call is counted
+    web._SOURCES.clear()
+    monkeypatch.setattr(vision, "provider", lambda: "claude")
+    frames = [_misread_board(shot, 1, used) if k == first else shot for k, shot in enumerate(shots)]
+    monkeypatch.setattr(vision, "recognize", lambda image, mime_type, notes=None, model=None, call=None:
+                        call.update(seconds=1.0, cost=0.02) or frames.pop(0))
+    boards = iter(shot["board"] for shot in shots)
+    seen = []
+    def read_board(image, mime_type, area=None, notes=None, call=None):
+        seen.append(area)
+        call.update(seconds=0.5, cost=0.01)
+        return truth
+    monkeypatch.setattr(vision, "read_board", read_board)
+    for shot in shots:
+        truth = next(boards)
+        state = web.capture_request({"source": "B", "image": "QUJD", "trials": 1000})
+    assert len(seen) == 3 and state["spending"]["board_checks"] == 3 and state["spending"]["frames"] == len(shots)
+    assert state["table"]["board"] == [card_str(c) for c in result.board]
+    web._SOURCES.clear()
+
+
+def test_the_board_picture_is_the_middle_enlarged(monkeypatch):
+    image_module = pytest.importorskip("PIL.Image")
+    import io
+    picture = image_module.new("RGB", (1280, 800), "green")
+    raw = io.BytesIO()
+    picture.save(raw, "PNG")
+    part = image_module.open(io.BytesIO(vision.board_picture(raw.getvalue(), (0.25, 0.25, 0.75, 0.5))))
+    assert part.size == (vision.BOARD_SIDE, round(200 * vision.BOARD_SIDE / 640))
+    assert vision.board_picture(b"not a picture", (0, 0, 1, 1)) is None
+    monkeypatch.setenv("POKERLAB_VISION_REPLAY", "saved.json")
+    assert vision.read_board(raw.getvalue(), "image/png", (0, 0, 1, 1)) == ""    # nothing is sent when replaying
+
+
 def test_one_frame_misreads_of_bets_and_folds():
     rng = random.Random(4)
     exact = total = restarted = 0

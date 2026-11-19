@@ -25,9 +25,9 @@
 
 | File | What it holds |
 |---|---|
-| `vision.py` | the reader: prompt and JSON schema, Claude (default) and Gemini calls, prices, the optional short answer form, reading the hero's cards again |
+| `vision.py` | the reader: prompt and JSON schema, Claude (default) and Gemini calls, prices, the optional short answer form, reading the hero's cards or the board again (the board from an enlarged crop) |
 | `table.py` | a frame checked and put in order (`normalize`), a hand put back together from its frames (`reconstruct`): misread smoothing (`_steady`, `_rising`, `_answered`), whole-hand amounts (`_street_bets`), the betting replay (`_Street.play`, guessed order) |
-| `follow.py` | `Follower`, one per window: new hands, frames set aside as passing moments or one-off misreads, the hero's seat kept per source, hero card checks, doubts for the saving reader, records, quality and spending |
+| `follow.py` | `Follower`, one per window: new hands, frames set aside as passing moments or one-off misreads, the hero's seat kept per source, hero cards and board by majority with their checks, doubts for the saving reader, records, quality and spending |
 | `web.py`, `static/index.html` | the local page and its API (`/api/capture`, `/api/analyze`) |
 | `records.py` | learning the `live` model from recorded hands, quality per program |
 | `check.py` | `python -m pokerlab check` |

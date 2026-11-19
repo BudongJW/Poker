@@ -391,12 +391,16 @@ together, each as rank then suit (ranks 2 3 4 5 6 7 8 9 T J Q K A, suits s h d c
 decks blue is diamonds and green is clubs. If you cannot read both, answer an empty string."""
 
 
-def read_hero_cards(image, mime_type="image/jpeg", place=None, notes=None, model=None, timeout=60, call=None):
-    """Read the hero's two cards again, and nothing else (when the frames of a hand disagree about them).
-    place: where the hero's seat is (x, y as fractions of the picture). -> 'AhKc', or '' if not read.
-    Claude only; raises :class:`VisionError`. With ``POKERLAB_VISION_REPLAY`` set nothing is sent: ''."""
-    if os.environ.get("POKERLAB_VISION_REPLAY"):
-        return ""
+BOARD_PROMPT = """This is one frame of a program's window that shows a Texas Hold'em table. Read only the community \
+cards: the face-up cards in the middle of the table, left to right (0, 3, 4 or 5 cards). Read each card's rank and \
+suit from its corner index (the small number or letter and the suit sign under it), not from the symbols in the \
+middle. Write the cards together, each as rank then suit (ranks 2 3 4 5 6 7 8 9 T J Q K A, suits s h d c; for \
+example "Ah7d2c"); in four-colour decks blue is diamonds and green is clubs."""
+BOARD_SIDE = 1568               # the long side the part of the picture with the board is enlarged to
+
+
+def _read_cards(image, mime_type, text, model, timeout, call):
+    """Some cards of a picture, and nothing else, as Claude reads them -> the cards written together ('' if none)."""
     try:
         import anthropic
     except ImportError:
@@ -406,9 +410,6 @@ def read_hero_cards(image, mime_type="image/jpeg", place=None, notes=None, model
     if os.environ.get("POKERLAB_ANTHROPIC_BASE_URL"):
         options["base_url"] = os.environ["POKERLAB_ANTHROPIC_BASE_URL"]
     client = anthropic.Anthropic(timeout=timeout, max_retries=1, **options)
-    where = f" (its name plate is at about x={place[0]:.2f}, y={place[1]:.2f} as fractions of the picture)" if place else \
-        " (normally the seat at the bottom centre)"
-    text = CARDS_PROMPT.format(place=where) + (f"\nAbout the program in this picture: {notes}" if notes else "")
     model = model or os.environ.get("POKERLAB_VISION_MODEL") or CLAUDE_MODEL
     started = time.time()
     try:
@@ -416,7 +417,7 @@ def read_hero_cards(image, mime_type="image/jpeg", place=None, notes=None, model
             {"type": "image", "source": {"type": "base64", "media_type": mime_type, "data": base64.standard_b64encode(image).decode()}},
             {"type": "text", "text": text}]}],
             output_config={"format": {"type": "json_schema", "schema": {
-                "type": "object", "properties": {"h": {"type": "string"}}, "required": ["h"], "additionalProperties": False}},
+                "type": "object", "properties": {"c": {"type": "string"}}, "required": ["c"], "additionalProperties": False}},
                 "effort": os.environ.get("POKERLAB_VISION_EFFORT") or CLAUDE_EFFORT})
     except anthropic.APIError as error:
         raise VisionError(f"Claude API 오류: {error}"[:300]) from None
@@ -429,10 +430,62 @@ def read_hero_cards(image, mime_type="image/jpeg", place=None, notes=None, model
         call.update(info)
     answer = next((block.text for block in reply.content if block.type == "text"), "")
     try:
-        cards = _cards(json.loads(answer).get("h"))
+        return "".join(_card(card) for card in _cards(json.loads(answer).get("c")))
     except (json.JSONDecodeError, AttributeError):
         return ""
-    return "".join(cards) if len(cards) == 2 else ""
+
+
+def read_hero_cards(image, mime_type="image/jpeg", place=None, notes=None, model=None, timeout=60, call=None):
+    """Read the hero's two cards again, and nothing else (when the frames of a hand disagree about them).
+    place: where the hero's seat is (x, y as fractions of the picture). -> 'AhKc', or '' if not read.
+    Claude only; raises :class:`VisionError`. With ``POKERLAB_VISION_REPLAY`` set nothing is sent: ''."""
+    if os.environ.get("POKERLAB_VISION_REPLAY"):
+        return ""
+    where = f" (its name plate is at about x={place[0]:.2f}, y={place[1]:.2f} as fractions of the picture)" if place else \
+        " (normally the seat at the bottom centre)"
+    text = CARDS_PROMPT.format(place=where) + (f"\nAbout the program in this picture: {notes}" if notes else "")
+    cards = _read_cards(image, mime_type, text, model, timeout, call)
+    return cards if len(cards) == 4 else ""
+
+
+def board_picture(image, area):
+    """The part ``area`` (x0, y0, x1, y1 as fractions) of a picture, enlarged to :data:`BOARD_SIDE` on
+    its long side, as JPEG bytes; None without the Pillow package, or when the picture cannot be opened."""
+    try:
+        from PIL import Image
+    except ImportError:
+        return None
+    import io
+    try:
+        picture = Image.open(io.BytesIO(image))
+        picture.load()
+    except (OSError, ValueError):               # (Pillow's UnidentifiedImageError is an OSError)
+        return None
+    box = (int(area[0] * picture.width), int(area[1] * picture.height), int(area[2] * picture.width), int(area[3] * picture.height))
+    if box[2] - box[0] < 2 or box[3] - box[1] < 2:
+        return None
+    part = picture.crop(box)
+    scale = BOARD_SIDE / max(part.size)
+    part = part.resize((max(1, round(part.width * scale)), max(1, round(part.height * scale))), Image.LANCZOS)
+    out = io.BytesIO()
+    part.convert("RGB").save(out, "JPEG", quality=92)
+    return out.getvalue()
+
+
+def read_board(image, mime_type="image/jpeg", area=None, notes=None, model=None, timeout=60, call=None):
+    """Read the board again, and nothing else, from the part ``area`` of the picture (where the seats
+    are, see :meth:`pokerlab.follow.Follower.board_check`) enlarged: small cards that are misread in
+    the whole frame are read right that way. -> 'Ah7d2c', or '' if not read. Claude only, and only
+    with the Pillow package (without it nothing is sent: reading the whole frame again does not
+    help); raises :class:`VisionError`. With ``POKERLAB_VISION_REPLAY`` set nothing is sent: ''."""
+    if os.environ.get("POKERLAB_VISION_REPLAY"):
+        return ""
+    picture = board_picture(image, area or (0.0, 0.0, 1.0, 1.0))
+    if picture is None:
+        return ""
+    text = BOARD_PROMPT + (f"\nAbout the program in this picture: {notes}" if notes else "")
+    cards = _read_cards(picture, "image/jpeg", text, model, timeout, call)
+    return cards if len(cards) in (6, 8, 10) else ""
 
 
 def recognize(image, mime_type="image/png", model=None, key=None, timeout=90, notes=None, call=None):
