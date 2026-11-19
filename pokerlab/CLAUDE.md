@@ -1,6 +1,6 @@
 # pokerlab: notes for Claude Code
 
-`pokerlab/` is an independent package in this repository; `poker/` next to it is a separate older project, leave it alone. Start from `HANDOFF.md` (state, open items) and `README.md` (what everything does, with measured results).
+`pokerlab/` is an independent package in this repository; `poker/` next to it is a separate older project, leave it alone. Start from `HANDOFF.md` (state, open items) and `README.md` (what everything does, with measured results); `INCIDENTS.md` is the manual for what goes wrong while reading or playing (keep it up to date when a new kind of incident turns up).
 
 ## Working with the user
 
@@ -33,4 +33,4 @@
 | `check.py` | `python -m pokerlab check` |
 | `advisor.py`, `equity.py`, `preflop.py`, `inference.py` | equity, ranges and the opponent action model |
 | `engine.py`, `bots.py`, `selfplay.py`, `daily.py`, `formats.py` | the engine, bots, self-play and the daily learning cycle |
-| `tools/` | development tools and saved reads (see `tools/README.md`) |
+| `tools/` | development tools and saved reads (see `tools/README.md`); `tools/demo/watchdog.py` gets a stopped game going again while `record.py` plays |

@@ -110,6 +110,9 @@ Numbers: plain numbers in the unit the table uses, without currency signs or tho
 If the table shows amounts in big blinds ("98.5 BB"), report those numbers and answer 1 for big_blind.
 hero_to_act: true if the hero's own action buttons (fold, check, call, bet, raise) are on screen and usable, false \
 if they are not, null if you cannot tell.
+covered: true if a window, dialog, tip, message, menu or pop-up of the program lies over part of the table (seats, \
+cards, chips or the pot), so that some of it cannot be seen; false otherwise. Panels beside the table and a chat box \
+that does not overlap it do not count.
 is_poker_table: false if the picture does not show a hold'em table; then leave everything else empty."""
 
 _NUMBER = {"type": ["number", "null"]}
@@ -117,6 +120,7 @@ SCHEMA = {
     "type": "object",
     "properties": {
         "is_poker_table": {"type": "boolean"},
+        "covered": {"type": "boolean"},
         "hero_cards": {"type": "array", "items": {"type": "string"}},
         "board": {"type": "array", "items": {"type": "string"}},
         "pot": _NUMBER,
@@ -133,7 +137,7 @@ SCHEMA = {
                 "acting": {"type": "boolean"}, "cards": {"type": "array", "items": {"type": "string"}}},
             "required": ["x", "y", "stack", "bet", "in_hand", "is_hero", "has_button", "sitting_out", "all_in", "acting"]}},
     },
-    "required": ["is_poker_table", "hero_cards", "board", "pot", "hero_to_act", "seats"],
+    "required": ["is_poker_table", "covered", "hero_cards", "board", "pot", "hero_to_act", "seats"],
 }
 
 
@@ -201,12 +205,14 @@ Numbers: plain numbers in the unit the table uses, without currency signs or tho
 If the table shows amounts in big blinds ("98.5 BB"), report those numbers and answer 1 for bb.
 act: true if the hero's own action buttons (fold, check, call, bet, raise) are on screen and usable, false if they are \
 not, null if you cannot tell.
+cv: true if a window, dialog, tip, message, menu or pop-up of the program lies over part of the table, so that some \
+of it cannot be seen; false otherwise (panels beside the table do not count).
 ok: false if the picture does not show a hold'em table; then leave everything else empty."""
 
 COMPACT_SCHEMA = _strict({
     "type": "object",
     "properties": {
-        "ok": {"type": "boolean"}, "h": {"type": "string"}, "bd": {"type": "string"}, "p": _NUMBER,
+        "ok": {"type": "boolean"}, "cv": {"type": "boolean"}, "h": {"type": "string"}, "bd": {"type": "string"}, "p": _NUMBER,
         "pib": {"type": ["boolean", "null"]}, "wh": {"type": ["boolean", "null"]}, "bb": _NUMBER,
         "act": {"type": ["boolean", "null"]},
         "seats": {"type": "array", "items": {"type": "object", "properties": {
@@ -234,7 +240,7 @@ def from_compact(answer):
         seats.append({"name": seat.get("n"), "x": seat.get("x"), "y": seat.get("y"), "stack": seat.get("s"), "bet": seat.get("b"),
                       "in_hand": "I" in flags, "is_hero": "H" in flags, "has_button": "D" in flags,
                       "sitting_out": "O" in flags, "all_in": "A" in flags, "acting": "T" in flags, "cards": _cards(seat.get("c"))})
-    return {"is_poker_table": answer.get("ok", True), "hero_cards": _cards(answer.get("h")), "board": _cards(answer.get("bd")),
+    return {"is_poker_table": answer.get("ok", True), "covered": answer.get("cv", False), "hero_cards": _cards(answer.get("h")), "board": _cards(answer.get("bd")),
             "pot": answer.get("p"), "pot_includes_bets": answer.get("pib"), "bets_whole_hand": answer.get("wh"),
             "big_blind": answer.get("bb"), "hero_to_act": answer.get("act"), "seats": seats}
 
@@ -276,7 +282,7 @@ def to_snapshot(answer):
                       "acting": bool(seat.get("acting")),
                       "cards": "" if seat.get("is_hero") else "".join(_card(c) for c in seat.get("cards") or [])})
     includes = answer.get("pot_includes_bets")
-    return {"hero": "".join(_card(c) for c in answer.get("hero_cards") or []),
+    return {"covered": answer.get("covered") is True, "hero": "".join(_card(c) for c in answer.get("hero_cards") or []),
             "board": "".join(_card(c) for c in answer.get("board") or []), "pot": answer.get("pot"),
             "pot_includes_bets": True if includes is None else bool(includes), "big_blind": answer.get("big_blind"),
             "bets_whole_hand": answer.get("bets_whole_hand") is True, "hero_to_act": bool(answer.get("hero_to_act")),

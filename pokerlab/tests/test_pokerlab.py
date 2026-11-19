@@ -5,6 +5,8 @@ import os
 import random
 import sqlite3
 import threading
+import time
+import types
 import urllib.request
 
 import numpy as np
@@ -2548,3 +2550,96 @@ def test_cards_shown_to_a_hero_who_folded_while_the_betting_goes_on():
         assert [(a[0], engine[a[1]], a[2], round(a[3])) for a in follower.hand["actions"]] == [tuple(a[:4]) for a in result.actions]
         checked += 1
     assert checked > 3
+
+
+def test_the_players_watchdog_gets_a_stopped_game_going_or_gives_up(tmp_path):
+    image = pytest.importorskip("PIL.Image")
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("watchdog", os.path.join(os.path.dirname(__file__), "..", "tools", "demo", "watchdog.py"))
+    watchdog = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(watchdog)
+    frames = tmp_path / "frames"
+    frames.mkdir()
+    count = [0]
+
+    def picture(colour, age=0.0, folder=frames):     # a saved game picture, ``age`` seconds old
+        path = folder / f"{count[0]:05d}.jpg"
+        count[0] += 1
+        image.new("RGB", (320, 200), colour).save(path)
+        stamp = time.time() - age
+        os.utime(path, (stamp, stamp))
+
+    for k in range(10):                     # the same picture for 20 seconds: a tip window over the game
+        picture("green", age=20 - 2 * k)
+    done = []
+
+    def act(kind, **what):
+        done.append((kind, what))
+        if kind == "fix" and what["name"] == "close the tip":
+            picture("white")                # the game goes on: the picture changes
+            picture("green")
+
+    watch = watchdog.Watchdog(str(frames), str(tmp_path), act, fixes=["switch it off", "close the tip"], ask=None, settle=0)
+    watch._last_move = time.time() - 30     # (as if it had been watching all along)
+    assert watch.check() == "solved"
+    assert done == [("fix", {"name": "switch it off"}), ("fix", {"name": "close the tip"})]
+    incident = json.load(open(tmp_path / "incidents.json"))[0]
+    assert incident["solved_by"].endswith("close the tip") and os.path.exists(incident["picture"])
+    assert watch.check() == "ok"            # it has just moved again
+    # nothing helps: every step is tried, twice, and then it gives up (the player stops playing and reading)
+    asked, still = [], tmp_path / "still"
+    still.mkdir()
+    stuck = watchdog.Watchdog(str(still), str(tmp_path), lambda kind, **what: done.append(kind), fixes=["close the tip"],
+                              ask=lambda path: asked.append(path) or {"blocking": True, "what": "a box", "action": "key", "x": 0, "y": 0,
+                                                                      "key": "Escape", "cost": 0.01}, settle=0)
+    for k in range(10):
+        picture("green", age=10 - k, folder=still)
+    stuck._last_move = time.time() - 30
+    assert stuck.check() == "stop" and stuck.gave_up and stuck.check() == "stop"
+    assert len(asked) == watchdog.MAX_TRIES and json.load(open(tmp_path / "incidents.json"))[-1]["gave_up"]
+    # the player's loop: an alert box is noted, a budget reached stops playing and reading
+    spec = importlib.util.spec_from_file_location("record_demo", os.path.join(os.path.dirname(__file__), "..", "tools", "demo", "record.py"))
+    record = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(record)
+    spent = ["읽은 화면 40장, 약 $0.80, 평균 4.4초"]
+    answers = {"/dialogs": lambda: json.dumps([{"type": "alert", "message": "Your browser do not support localStorage"}]),
+               "/state": lambda: spent[0]}
+    record.ask = lambda path, **query: answers[path]()
+    calm = types.SimpleNamespace(incidents=[], check=lambda: "ok")
+    run = record.Run(1, calm, budget=1.0)
+    assert run.going() and calm.incidents[0]["what"].startswith("alert")
+    spent[0] = "읽은 화면 52장, 약 $1.02, 평균 4.4초"
+    run._checked = 0
+    assert not run.going() and "예산" in run.stopped and not run.going()
+    assert record.Run(1, types.SimpleNamespace(incidents=[], check=lambda: "stop")).going() is False
+
+
+def test_a_window_over_the_table_is_not_read_and_the_same_table_is_counted():
+    result, chips = next(r for r in _engine_hands(30, stacks=(1000,)) if len(r[0].actions) >= 8)
+    shots = table.frames(result, chips, 0, 5, every=True, to_end=True)
+    clean, covered = follow.Follower("lab"), follow.Follower("lab")
+    for shot in shots:
+        clean.push(shot)
+    for k, shot in enumerate(shots):
+        if k == 3:                          # a tip over the table: what was read of it (two seats hidden) is not used
+            tip = dict(shot, covered=True, seats=shot["seats"][:-2])
+            covered.push(tip)
+            covered.push(dict(tip))                     # the same covered picture read again counts too
+            assert covered.covered_run == 2 and covered.state()["covered_run"] == 2
+        covered.push(shot)
+        assert covered.covered_run == 0
+    assert _actions(covered.hand) == _actions(clean.hand) and not covered.restarted
+    assert covered.quality()["covered"] == 2 and covered.counts["frames"] == clean.counts["frames"] + 2
+    # the same table read again and again (an animation): counted, so the page can read less often
+    same = follow.Follower("lab")
+    for k in range(4):
+        same.push(dict(shots[0], seats=[dict(seat, x=seat["x"] + 0.001 * k) for seat in shots[0]["seats"]]))
+    assert same.state()["same_run"] == 3
+    same.push(shots[1])
+    assert same.state()["same_run"] == 0
+    # the reader's answer carries it, in the long and in the short form
+    answer = {"is_poker_table": True, "covered": True, "hero_cards": [], "board": [], "pot": 10, "seats": []}
+    assert vision.to_snapshot(answer)["covered"] and not vision.to_snapshot(dict(answer, covered=False))["covered"]
+    assert vision.from_compact({"ok": True, "cv": True, "seats": []})["covered"] is True
+    assert "covered" in vision.CLAUDE_SCHEMA["required"] and "cv" in vision.COMPACT_SCHEMA["properties"]
+

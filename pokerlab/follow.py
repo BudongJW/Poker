@@ -64,10 +64,12 @@ class Follower:
         self._last = self._analysis = None
         # how well the window is being read, without knowing the right answers (see quality())
         self.counts = {"frames": 0, "unread": 0, "restarts": 0, "hands": 0, "restarted_hands": 0, "checked": 0, "mismatched": 0,
-                       "moved": 0, "passing": 0}
+                       "moved": 0, "passing": 0, "covered": 0}
         self._kept = 0                          # frames set aside as passing moments that were taken in after all
         self.hero_places = []                   # where the latest frames that showed the hero's cards put the hero's seat
         self.unread_run = 0                     # frames in a row from which no hand could be read (between hands, a few)
+        self.covered_run = 0                    # frames in a row that something lay over (a tip, a dialog, a menu)
+        self.same_run, self._sig = 0, None      # frames in a row that showed the table as the one before (see _signature)
         # what reading the window has cost: frames read by a service, dollars (None once a call had no known
         # price), seconds, and frames read again by the main model after the cheaper one's reading was doubted
         self.spending = {"frames": 0, "dollars": 0.0, "seconds": 0.0, "read_again": 0, "doubts": {}, "card_checks": 0,
@@ -95,10 +97,20 @@ class Follower:
         follow from the hand at all (one frame read wrong), is set aside: dropped if the next frame
         of the hand fits without it, otherwise taken in after all, before the next one. A source
         whose set-aside frames mostly turn out to be needed is not held back any more."""
+        sig = self._signature(snapshot)
+        self.same_run, self._sig = (self.same_run + 1 if sig == self._sig else 0), sig
+        if snapshot.get("covered"):             # a window over the table: what was read of it is not used at all
+            self._last = snapshot               # (counted each time, the same picture read again included)
+            self.counts["frames"] += 1
+            self.counts["covered"] += 1
+            self.covered_run += 1
+            self.version += 1
+            return True
         if snapshot == self._last:
             return False
         self._last = snapshot
         self.counts["frames"] += 1
+        self.covered_run = 0
         if self.held is not None:
             held, self.held = self.held, None
             trial = self._trial(snapshot)
@@ -120,6 +132,14 @@ class Follower:
         taken = self._take(snapshot)
         self.unread_run = self.unread_run + 1 if self.error else 0
         return taken
+
+    @staticmethod
+    def _signature(snapshot):
+        """What a frame says about the table, without where things are drawn: two frames with the same one
+        showed nothing new (a window whose picture moves while the table does not: an animation, a timer)."""
+        seats = sorted(json.dumps([seat.get(key) for key in ("name", "stack", "bet", "in_hand", "button", "hero", "acting", "cards")])
+                       for seat in snapshot.get("seats") or [])
+        return json.dumps([snapshot.get(key) for key in ("hero", "board", "pot", "hero_to_act", "covered")] + seats)
 
     @staticmethod
     def _pot_shown(snapshot):
@@ -638,6 +658,7 @@ class Follower:
         that did not follow from the hand, when the next frame fitted without it.
         moved: frames that marked another seat as the hero's than the one where the hero sits (the
         mark was put back); many of them mean the reader needs to be told where the hero sits.
+        covered: frames with a window, tip or menu over the table (not used).
         """
         mismatched, checked = table.mismatched_totals(self.shots)        # the hand going on now as well
         out = dict(self.counts, checked=self.counts["checked"] + checked, mismatched=self.counts["mismatched"] + mismatched)
@@ -649,7 +670,7 @@ class Follower:
         """What the source shows now, JSON-ready."""
         out = {"name": self.name, "version": self.version, "hands": self.hands, "frames": len(self.shots),
                "error": self.error, "note": self.note, "phase": "hand" if self.hand else "waiting", "quality": self.quality(),
-               "unread_run": self.unread_run,
+               "unread_run": self.unread_run, "covered_run": self.covered_run, "same_run": self.same_run,
                "spending": dict(self.spending, doubts=dict(self.spending["doubts"]))}
         if self.hand:
             hand = self.hand

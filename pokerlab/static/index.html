@@ -465,10 +465,16 @@ function capLook(source) {
   for (let i = 0; i < grey.length; i++) grey[i] = (rgba[4 * i] * 3 + rgba[4 * i + 1] * 6 + rgba[4 * i + 2]) / 10;
   return grey;
 }
-function capMoved(before, now) {     // a few clearly changed spots, not the average over the whole window
+function capChanged(before, now) {   // how many spots of the small copy changed clearly (not the average over the whole window)
   let changed = 0;
-  for (let i = 0; i < now.length; i++) if (Math.abs(now[i] - before[i]) > 10 && ++changed >= 2) return true;
-  return false;
+  for (let i = 0; i < now.length; i++) if (Math.abs(now[i] - before[i]) > 10) changed++;
+  return changed;
+}
+const BIG_CHANGE = 0.03;            // a share of the spots: cards, chips, a window closing. An animation or a timer stays under it
+function capEvery(source) {         // ms between reads: longer while small changes keep showing the same table (up to 30 s)
+  const base = Number(source.every.value) * 1000, st = source.state;
+  const same = st ? Math.max(st.same_run || 0, st.covered_run || 0) : 0;
+  return source.big || same < 3 ? base : Math.min(base * 2 ** (same - 2), 30000);
 }
 function capDescribe(source) {
   const st = source.state;
@@ -477,11 +483,13 @@ function capDescribe(source) {
   if (source.busy) return "읽는 중";
   if (!st) return "화면을 기다리는 중";
   const t = st.table;
-  return (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]}, ${t.n_players}명 중 ${t.live}명, ${
+  const covered = st.covered_run ? `화면이 가려져 있어 읽은 값을 쓰지 않았습니다 (${st.covered_run}장째). 프로그램의 팝업, 팁, 메뉴를 닫아 주세요. ` : "";
+  return covered + (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]}, ${t.n_players}명 중 ${t.live}명, ${
       st.observer ? "관전 화면" : st.hero_folded ? "내가 폴드함" : st.hero_to_act ? "내 차례" : "진행 중"}`
     : capWaiting(st)) + `, 끝난 핸드 ${st.hands}개` +
     (st.profile && st.profile !== "all" ? ", 이 프로그램의 기록으로 읽는 중" : "") + qualityText(st.quality) + spendingText(st.spending) +
-    (source.label.value.trim() ? "" : ". 이름 없음: 이 소스의 핸드는 학습에 쓰지 않습니다") + (source.readAt ? `. ${source.readAt}에 읽음` : "");
+    (source.label.value.trim() ? "" : ". 이름 없음: 이 소스의 핸드는 학습에 쓰지 않습니다") + (source.readAt ? `. ${source.readAt}에 읽음` : "") +
+    (capEvery(source) > Number(source.every.value) * 1000 ? `. 같은 테이블이 계속 읽혀 ${Math.round(capEvery(source) / 1000)}초마다 읽습니다 (크게 바뀌면 바로 읽음)` : "");
 }
 function capWaiting(st) {           // between hands a few frames cannot be read (cards being dealt, chips gathered): that is no error
   if (st.error && st.unread_run >= UNREAD_ALARM) return `화면을 계속 읽지 못합니다 (${st.unread_run}장째): ${st.error}`;
@@ -499,6 +507,7 @@ function qualityText(q) {          // read from the frames themselves: chips tha
   const parts = [];
   if (q.mismatched) parts.push(`칩 합계가 안 맞은 화면 ${q.mismatched}/${q.checked}`);
   else if (q.checked) parts.push(`칩 합계 일치 ${q.checked}화면`);
+  if (q.covered) parts.push(`가려져서 쓰지 않은 화면 ${q.covered}장`);
   if (q.restarts) parts.push(`다시 읽음 ${q.restarts}번`);
   if (q.moved) parts.push(`내 자리를 다른 곳으로 읽은 화면 ${q.moved}/${q.frames}` +
     (q.moved >= 3 && q.moved >= 0.1 * q.frames ? ": 소스 메모에 내 자리를 적어 주세요 (예: 내 자리는 위 가운데)" : ""));
@@ -548,7 +557,7 @@ async function capSend(source) {
   cap.shot.width = Math.round(video.videoWidth * scale); cap.shot.height = Math.round(video.videoHeight * scale);
   cap.shot.getContext("2d").drawImage(video, 0, 0, cap.shot.width, cap.shot.height);
   const [model, profile] = $("capModel").value.split(":");
-  source.busy = true; source.changed = false; source.sentAt = performance.now(); capRefresh(source);
+  source.busy = true; source.changed = false; source.big = false; source.sentAt = performance.now(); capRefresh(source);
   try {
     const data = await post("/api/capture", {source: source.id, label: source.label.value, image: cap.shot.toDataURL("image/jpeg", 0.92),
       notes: source.notes.value, reader: source.reader.value, model, profile, trials: 100000});
@@ -575,15 +584,16 @@ function capTick() {                  // read a window again when its picture ha
     if (source.live && source.stream.getVideoTracks().every(track => track.readyState === "ended")) { source.live = false; capRefresh(source); }
     if (!source.live || source.busy || source.video.readyState < 2 || !source.video.videoWidth) continue;
     const look = capLook(source);
-    const moved = !source.look || capMoved(source.look, look);
+    const changed = source.look ? capChanged(source.look, look) : look.length;
     source.look = look;
-    if (moved) {
+    if (changed >= 2) {
       if (!source.changed) source.firstAt = now;
       source.changed = true; source.movedAt = now;
+      if (changed >= BIG_CHANGE * look.length) source.big = true;   // read at once, however long the wait has grown
     }
     // held still for a moment, or, on a screen that never does (a running timer bar), a little later anyway
     const settled = now - source.movedAt >= 350 || now - source.firstAt >= 1500;
-    if (source.changed && settled && now - source.sentAt >= Number(source.every.value) * 1000) capSend(source);
+    if (source.changed && settled && now - source.sentAt >= capEvery(source)) capSend(source);
   }
 }
 async function capAdd() {

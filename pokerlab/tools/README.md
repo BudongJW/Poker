@@ -68,6 +68,8 @@ python pokerlab/tools/demo/record.py flash GAME_DIR out_flash --minutes 4
 
 결과: `OUT/demo.mp4`(영상), `OUT/hands.jsonl`(따라간 핸드 기록), HTML5는 `OUT/truth.json`(게임 내부 상태, 기록과 대조용).
 
+플레이하는 동안 감시 장치(`demo/watchdog.py`)가 게임이 15초 넘게 멈추면 알려진 처리, Esc와 Enter, Claude에게 묻기 순서로 다시 움직이게 하고, 안 되면 플레이와 읽기를 멈춥니다. 있었던 일은 `OUT/incidents.json`과 `incident_N.jpg`에 남습니다(자세히는 `../INCIDENTS.md`). 옵션: `--budget 달러`(읽기 비용이 닿으면 멈춤), `--no-read`(pokerlab 없이 플레이와 감시만, 비용 없음), `--no-ask`(Claude에게 묻지 않음).
+
 메뉴 클릭 좌표는 1280x800 화면 기준입니다. 게임 버전이 다르면 `record.py`의 좌표를 고쳐야 합니다. Flash 게임은 그래픽 가속 없이 돌리면 느려서, 화면을 0.7초보다 자주 찍으면 멈출 수 있습니다.
 
 ## 실제 창 캡처로 시험하기 (비용 있음)
