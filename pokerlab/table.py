@@ -658,6 +658,7 @@ def reconstruct(snapshots, finished=False, folded=()):
     if hero in table.live and others:
         cover = max(table.cur[j] + table.stack[j] for j in others)
         to_call = min(max(0.0, min(table.level, cover) - table.cur[hero]), table.stack[hero])
+    hand["notes"] = list(dict.fromkeys(hand["notes"]))         # each said once, in the order first said
     hand.update(pot=table.pot(), live=sorted(table.live), bets=[table.cur[i] for i in range(n)], actor=actor,
                 stacks=[None if table.stack[i] == _INF else table.stack[i] for i in range(n)], to_call=to_call)
     return hand

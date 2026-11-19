@@ -197,13 +197,13 @@ def main(argv=None):
         if args.depths:
             pool = [make_bot(kind, seed=index) for index, kind in enumerate(("tag", "lag", "nit", "tag_range", "human", "pro"))]
             turn = iter(range(10 ** 9))
-            print(f"\n형식별 스택 깊이 ({args.depths:,}핸드, 봇: tag·lag·nit·tag_range·human·pro)")
+            print(f"\n형식별 스택 깊이 ({args.depths:,}핸드, 봇: tag, lag, nit, tag_range, human, pro)")
             for name, fmt in formats.load().items():
                 if fmt.playable:
                     found = formats.depths(fmt, lambda: pool[next(turn) % len(pool)], random.Random(1), args.depths)
-                    share = " · ".join(f"{key} {value:.0%}" for key, value in found["share"].items())
-                    print(f"  {name:<12} 테이블 {found['tables']}개 · 평균 {found['players']:.1f}명 · 스택 중앙값 {found['median_bb']:.0f}BB"
-                          f" · {share} · 최고 레벨 {found['max_level']}")
+                    share = ", ".join(f"{key} {value:.0%}" for key, value in found["share"].items())
+                    print(f"  {name:<12} 테이블 {found['tables']}개, 평균 {found['players']:.1f}명, 스택 중앙값 {found['median_bb']:.0f}BB"
+                          f", {share}, 최고 레벨 {found['max_level']}")
     elif args.command == "report":
         report.print_report(args.db)
     elif args.command == "fit-model":
@@ -278,7 +278,7 @@ def main(argv=None):
                   "(처음부터 따라간 핸드만 씁니다). 모델을 바꾸지 않았습니다.")
         else:
             print(f"기록 {summary['records']}줄 가운데 {summary['hands']}핸드로 학습했습니다 -> {summary['out']}\n"
-                  f"프로그램: {', '.join(summary['programs'])} · 쇼다운에서 공개된 카드 {summary['shown']}건")
+                  f"프로그램: {', '.join(summary['programs'])}, 쇼다운에서 공개된 카드 {summary['shown']}건")
     elif args.command == "preflop-table":
         preflop.build_table(args.trials, args.processes, progress=print)
         print("written", preflop.TABLE_PATH)

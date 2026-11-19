@@ -210,16 +210,16 @@ def describe(path=PATH):
         lines.append(f"{name}: {fmt.label}  ({fmt.example})")
         if fmt.playable:
             small, big, ante = fmt.blinds(1)
-            lines.append(f"  시작 {fmt.start_bb:g}BB · {fmt.seats}인 · 블라인드 {small}/{big}"
-                         f"{f' 앤티 {ante}' if ante else ''} · 레벨마다 ×{fmt.growth:g}, {fmt.hands_per_level}핸드마다 상승"
-                         f" · 추가 등록 레벨 {fmt.late_reg_levels}까지 · {fmt.finish}명 남으면 종료")
+            lines.append(f"  시작 {fmt.start_bb:g}BB, {fmt.seats}인, 블라인드 {small}/{big}"
+                         f"{f' 앤티 {ante}' if ante else ''}, 레벨마다 ×{fmt.growth:g}, {fmt.hands_per_level}핸드마다 상승"
+                         f", 추가 등록 레벨 {fmt.late_reg_levels}까지, {fmt.finish}명 남으면 종료")
         for key, entry in fmt.notes.items():
-            note = f"  — {entry['note']}" if entry.get("note") else ""
+            note = f"  ({entry['note']})" if entry.get("note") else ""
             origin = f" {entry['source']}" if entry.get("source") else ""
             lines.append(f"    {key:<20} {entry['value']!s:<10} [{marks[entry.get('basis', 'unknown')]}{origin}]{note}")
     for name, mix in data.get("mixes", {}).items():
         lines.append(f"{name}: {mix.get('label', '')}  " + ", ".join(f"{k} {w}" for k, w in mix["weights"].items())
                      + f"  [{marks[mix.get('basis', 'unknown')]} {mix.get('source', '')}]")
     for name, spec in data.get("observations", {}).items():
-        lines.append(f"({name}: {spec.get('label', '')} — 돌릴 수 없음: {spec.get('why_not_played', '')})")
+        lines.append(f"({name}: {spec.get('label', '')}, 돌릴 수 없음: {spec.get('why_not_played', '')})")
     return lines

@@ -56,7 +56,7 @@ def compare(read, answers):
 
 def run(read=True, model=None, out=print):
     """Check and report (through ``out``) -> 0 when ready (and, with ``read``, the sample was read right), else 1."""
-    out(f"Python {platform.python_version()} · {sys.platform}")
+    out(f"Python {platform.python_version()}, {sys.platform}")
     key = _key_name()
     if key is None:
         out("API 키: 없음. 창을 읽으려면 Claude API 키를 환경 변수 ANTHROPIC_API_KEY에 넣어 주세요 "
@@ -73,15 +73,15 @@ def run(read=True, model=None, out=print):
             import anthropic
             package = f"anthropic {anthropic.__version__}"
         except ImportError:
-            out("인식 서비스: Claude · anthropic 패키지가 없습니다. 설치: pip install -e \".[claude]\"")
+            out("인식 서비스: Claude. anthropic 패키지가 없습니다. 설치: pip install -e \".[claude]\"")
             return 1
         main = model or os.environ.get("POKERLAB_VISION_MODEL") or vision.CLAUDE_MODEL
-        out(f"인식 서비스: Claude ({package}) · 기본 모델 {main} · 아껴 읽기 모델 {vision.saving_model()}")
+        out(f"인식 서비스: Claude ({package}), 기본 모델 {main}, 아껴 읽기 모델 {vision.saving_model()}")
         if os.environ.get("POKERLAB_ANTHROPIC_BASE_URL"):
             out(f"API 주소: {os.environ['POKERLAB_ANTHROPIC_BASE_URL']} (POKERLAB_ANTHROPIC_BASE_URL)")
     else:
         main = model or os.environ.get("POKERLAB_VISION_MODEL") or vision.DEFAULT_MODEL
-        out(f"인식 서비스: Gemini · 모델 {main}")
+        out(f"인식 서비스: Gemini, 모델 {main}")
     out(f"API 키: 환경 변수 {key}에 있음 (키 값은 표시하지 않습니다)")
     if not read:
         out("그림은 읽지 않았습니다 (--no-read). 아무것도 보내지 않았고 비용도 없습니다.")
@@ -99,13 +99,13 @@ def run(read=True, model=None, out=print):
         return 1
     spent = call.get("cost")
     out(f"읽기: {call.get('seconds', 0):.1f}초" + (f", 약 ${spent:.3f}" if spent is not None else "")
-        + (f" · 응답한 모델 {call['model']}" if call.get("model") else ""))
+        + (f", 응답한 모델 {call['model']}" if call.get("model") else ""))
     wrong = compare(got, answers)
     if wrong:
         out("틀리게 읽은 값:")
         for line in wrong:
             out(f"  - {line}")
         return 1
-    out("모두 맞게 읽었습니다 (내 카드, 보드, 팟, 6자리의 스택·앞에 놓인 칩·카드 보유·내 자리·딜러 버튼).")
+    out("모두 맞게 읽었습니다 (내 카드, 보드, 팟, 6자리의 스택, 앞에 놓인 칩, 카드 보유, 내 자리, 딜러 버튼).")
     out("준비됐습니다: python -m pokerlab serve 를 실행하고 브라우저에서 http://127.0.0.1:8765 를 여세요.")
     return 0

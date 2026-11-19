@@ -174,7 +174,7 @@ def report(a):
             f"{CATEGORIES_KO[CATEGORIES.index(name)]} {p:.1%}" for name, p in dist if p >= 0.005))
     if "next_cards" in a:
         nc = a["next_cards"]
-        groups = ", ".join(f"{CATEGORIES_KO[g['made_hand']]} {len(g['cards'])}장 → {g['equity']:.0%}" for g in nc["groups"])
+        groups = ", ".join(f"{CATEGORIES_KO[g['made_hand']]} {len(g['cards'])}장 평균 {g['equity']:.0%}" for g in nc["groups"])
         lines_out.append(f"다음 카드별 승률: {groups}")
         lines_out.append(f"  승률이 10%p 이상 오르는 카드 {nc['better']}장, 10%p 이상 떨어지는 카드 {nc['worse']}장 "
                          f"(전체 {len(nc['cards'])}장)")

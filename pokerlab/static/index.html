@@ -74,8 +74,9 @@ input[type=number] { width: 84px; }
 .opponent input[type=text] { flex: 1; }
 label.field { display: grid; gap: 2px; font-size: 12px; color: var(--ink-2); }
 .seats { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.seats th, .seats td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--grid); vertical-align: top; }
-.seats th { font-weight: 400; color: var(--ink-2); }
+.seats th, .seats td { text-align: left; padding: 6px 8px; border-bottom: 1px solid var(--grid); vertical-align: middle; }
+.seats th { font-weight: 400; color: var(--ink-2); text-align: center; white-space: nowrap; }
+.seats td.short { white-space: nowrap; }
 .seats td.num { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .seats tr.me td { font-weight: 650; }
 .seats tr.out td { color: var(--muted); }
@@ -155,7 +156,7 @@ th { color: var(--muted); }
 </head>
 <body>
 <main>
-  <h1>pokerlab <small>텍사스 홀덤 · 창을 읽어 실시간으로 계산</small></h1>
+  <h1>pokerlab <small>텍사스 홀덤, 창을 읽어 실시간으로 계산</small></h1>
 
   <div class="modes" role="tablist" aria-label="화면">
     <button class="btn" id="modeCapture" type="button" role="tab" aria-selected="true">실시간 인식</button>
@@ -171,16 +172,16 @@ th { color: var(--muted); }
     <label class="field">상대의 액션을 해석할 모델 (어떤 플레이어들의 습관으로 레인지를 추정할지)
       <select id="capModel">
         <option value="live:auto" selected>이 프로그램에서 기록한 핸드로 보정 (기록이 없으면 실전 온라인)</option>
-        <option value="online:all">실전 온라인 2009 · 전체</option>
-        <option value="online:nl25-50">실전 온라인 · 25~50NL</option>
-        <option value="online:nl100-200">실전 온라인 · 100~200NL</option>
-        <option value="online:nl400-600">실전 온라인 · 400~600NL</option>
-        <option value="online:nl1000">실전 온라인 · 1000NL</option>
+        <option value="online:all">실전 온라인 2009 전체</option>
+        <option value="online:nl25-50">실전 온라인 25~50NL</option>
+        <option value="online:nl100-200">실전 온라인 100~200NL</option>
+        <option value="online:nl400-600">실전 온라인 400~600NL</option>
+        <option value="online:nl1000">실전 온라인 1000NL</option>
         <option value="pro:all">프로와 Pluribus (6인)</option>
         <option value="selfplay:all">이 프로그램의 봇</option>
       </select>
     </label>
-    <p class="hint" id="capHint">"창 추가"를 누르면 브라우저가 창 목록을 보여 줍니다. 고른 창이 소스가 되고, 화면이 바뀔 때마다 좌석·스택·앞에 놓인 칩·딜러 버튼·카드를 읽어 핸드를 따라갑니다. 포지션, 상대의 액션과 벳 크기, 올인, 스택 깊이는 읽은 값에서 계산하므로 고를 것이 없습니다. 프로그램마다 소스를 따로 추가하고, 화면이 특이한 점은 소스의 메모에 적어 주세요.</p>
+    <p class="hint" id="capHint">"창 추가"를 누르면 브라우저가 창 목록을 보여 줍니다. 고른 창이 소스가 되고, 화면이 바뀔 때마다 좌석, 스택, 앞에 놓인 칩, 딜러 버튼, 카드를 읽어 핸드를 따라갑니다. 포지션, 상대의 액션과 벳 크기, 올인, 스택 깊이는 읽은 값에서 계산하므로 고를 것이 없습니다. 프로그램마다 소스를 따로 추가하고, 화면이 특이한 점은 소스의 메모에 적어 주세요.</p>
     <p class="hint">화면은 인식을 위해 키를 넣은 서비스(Anthropic Claude 또는 Google Gemini)로 전송됩니다.</p>
   </section>
 
@@ -203,10 +204,10 @@ th { color: var(--muted); }
       </label>
       <label class="field">정밀도
         <select id="quality">
-          <option value="fast">빠름 · 5만 회</option>
-          <option value="normal" selected>보통 · 20만 회</option>
-          <option value="precise">정밀 · ±0.1%p</option>
-          <option value="ultra">초정밀 · ±0.05%p</option>
+          <option value="fast">빠름 (5만 회)</option>
+          <option value="normal" selected>보통 (20만 회)</option>
+          <option value="precise">정밀 (±0.1%p)</option>
+          <option value="ultra">초정밀 (±0.05%p)</option>
         </select>
       </label>
       <button class="btn" id="reset" type="button" style="margin-left:auto;align-self:flex-end">초기화</button>
@@ -223,11 +224,11 @@ th { color: var(--muted); }
       </div>
       <label class="field">액션을 해석할 모델 (어떤 플레이어들의 습관으로 레인지를 추정할지)
         <select id="model">
-          <option value="online:all">실전 온라인 2009 · 전체</option>
-          <option value="online:nl25-50">실전 온라인 · 25~50NL</option>
-          <option value="online:nl100-200">실전 온라인 · 100~200NL</option>
-          <option value="online:nl400-600">실전 온라인 · 400~600NL</option>
-          <option value="online:nl1000">실전 온라인 · 1000NL</option>
+          <option value="online:all">실전 온라인 2009 전체</option>
+          <option value="online:nl25-50">실전 온라인 25~50NL</option>
+          <option value="online:nl100-200">실전 온라인 100~200NL</option>
+          <option value="online:nl400-600">실전 온라인 400~600NL</option>
+          <option value="online:nl1000">실전 온라인 1000NL</option>
           <option value="pro:all">프로와 Pluribus (6인)</option>
           <option value="selfplay:all">이 프로그램의 봇</option>
         </select>
@@ -249,9 +250,9 @@ const SLOT_NAMES = ["내 핸드", "플랍", "턴", "리버"];
 const HAND_KO = {"high card": "하이카드", "pair": "원페어", "two pair": "투페어", "three of a kind": "트리플",
   "straight": "스트레이트", "flush": "플러시", "full house": "풀하우스", "four of a kind": "포카드",
   "straight flush": "스트레이트 플러시"};
-const PREFLOP_ACTIONS = [["", "—"], ["limp", "림프"], ["open", "오픈 레이즈"], ["call", "레이즈에 콜"], ["3bet", "3벳"],
+const PREFLOP_ACTIONS = [["", "없음"], ["limp", "림프"], ["open", "오픈 레이즈"], ["call", "레이즈에 콜"], ["3bet", "3벳"],
   ["call3bet", "3벳에 콜"], ["4bet", "4벳"], ["check", "체크(BB)"]];
-const POSTFLOP_ACTIONS = [["", "—"], ["check", "체크"], ["bet", "벳"], ["call", "콜"], ["raise", "레이즈"],
+const POSTFLOP_ACTIONS = [["", "없음"], ["check", "체크"], ["bet", "벳"], ["call", "콜"], ["raise", "레이즈"],
   ["check call", "체크 후 콜"], ["check raise", "체크레이즈"], ["bet callraise", "벳 후 레이즈에 콜"], ["reraise", "리레이즈"]];
 const STREETS = ["프리플랍", "플랍", "턴", "리버"];
 // bet sizes the model tells apart, as a share of the pot; a pre-flop open (or the open that was called) in big blinds
@@ -432,7 +433,7 @@ async function post(url, body) {
 function tableCard(t) {
   const amount = x => x == null ? "모름" : t.big_blind ? (x / t.big_blind).toFixed(1) + "bb" : String(+x.toFixed(2));
   const box = section(t.observer ? "창에서 읽은 테이블 (관전 화면)" : "창에서 읽은 테이블",
-    `${t.n_players}명 중 ${t.live}명 남음 · 팟 ${amount(t.pot)}` + (t.observer ? "" : ` · 콜 금액 ${amount(t.to_call)}`));
+    `${t.n_players}명 중 ${t.live}명 남음, 팟 ${amount(t.pot)}` + (t.observer ? "" : `, 콜 금액 ${amount(t.to_call)}`));
   const table = el("table", "seats"), head = el("tr");
   for (const title of ["포지션", "플레이어", "카드", "스택", "앞에 놓인 칩", "액션"]) head.append(el("th", null, title));
   table.append(head);
@@ -440,9 +441,9 @@ function tableCard(t) {
     const row = el("tr", (seat.hero ? "me " : "") + (seat.in_hand ? "" : "out")), cards = el("td", "num");
     const shown = seat.hero ? t.hero : seat.cards ? seat.cards.match(/../g) : null;
     if (shown && shown.length) for (const card of shown) cards.append(el("span", "suit-" + card[1], cardLabel(card) + " "));
-    else cards.textContent = "—";
-    row.append(el("td", null, seat.position_ko), el("td", null, seat.hero ? "나" : seat.name || `자리 ${seat.seat + 1}`), cards,
-      el("td", "num", amount(seat.stack)), el("td", "num", seat.bet ? amount(seat.bet) : "—"),
+    else cards.textContent = "-";
+    row.append(el("td", "short", seat.position_ko), el("td", "short", seat.hero ? "나" : seat.name || `자리 ${seat.seat + 1}`), cards,
+      el("td", "num", amount(seat.stack)), el("td", "num", seat.bet ? amount(seat.bet) : "-"),
       el("td", null, seat.actions || (seat.in_hand ? "아직 액션 없음" : "폴드")));
     table.append(row);
   }
@@ -473,19 +474,19 @@ function capDescribe(source) {
   const st = source.state;
   if (source.error) return source.error;
   if (!source.live) return "창 공유가 끝났습니다";
-  if (source.busy) return "읽는 중…";
+  if (source.busy) return "읽는 중";
   if (!st) return "화면을 기다리는 중";
   const t = st.table;
-  return (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]} · ${t.n_players}명 중 ${t.live}명 · ${
+  return (t ? `${["프리플랍", "", "", "플랍", "턴", "리버"][t.board.length]}, ${t.n_players}명 중 ${t.live}명, ${
       st.observer ? "관전 화면" : st.hero_folded ? "내가 폴드함" : st.hero_to_act ? "내 차례" : "진행 중"}`
-    : st.error || "핸드를 기다리는 중") + ` · 끝난 핸드 ${st.hands}개` +
-    (st.profile && st.profile !== "all" ? " · 이 프로그램의 기록으로 읽는 중" : "") + qualityText(st.quality) + spendingText(st.spending) +
-    (source.label.value.trim() ? "" : " · 이름 없음: 이 소스의 핸드는 학습에 쓰지 않습니다") + ` · ${source.readAt || ""}`;
+    : st.error || "핸드를 기다리는 중") + `, 끝난 핸드 ${st.hands}개` +
+    (st.profile && st.profile !== "all" ? ", 이 프로그램의 기록으로 읽는 중" : "") + qualityText(st.quality) + spendingText(st.spending) +
+    (source.label.value.trim() ? "" : ". 이름 없음: 이 소스의 핸드는 학습에 쓰지 않습니다") + (source.readAt ? `. ${source.readAt}에 읽음` : "");
 }
 function spendingText(sp) {         // what reading this window has cost so far
   if (!sp || !sp.frames) return "";
-  return ` · 읽은 화면 ${sp.frames}장` + (sp.dollars === null ? "" : `, 약 $${sp.dollars.toFixed(2)}`) +
-    `, 평균 ${(sp.seconds / sp.frames).toFixed(1)}초` + (sp.read_again ? `, 다시 읽은 화면 ${sp.read_again}장` : "") +
+  return `, 읽은 화면 ${sp.frames}장` + (sp.dollars === null || !sp.seconds ? "" : `, 약 $${sp.dollars.toFixed(2)}`) +
+    (sp.seconds ? `, 평균 ${(sp.seconds / sp.frames).toFixed(1)}초` : "") + (sp.read_again ? `, 다시 읽은 화면 ${sp.read_again}장` : "") +
     (sp.card_checks ? `, 내 카드만 다시 읽음 ${sp.card_checks}번` : "");
 }
 function qualityText(q) {          // read from the frames themselves: chips that do not add up, hands started again, a hero mark that moved
@@ -496,7 +497,7 @@ function qualityText(q) {          // read from the frames themselves: chips tha
   if (q.restarts) parts.push(`다시 읽음 ${q.restarts}번`);
   if (q.moved) parts.push(`내 자리를 다른 곳으로 읽은 화면 ${q.moved}/${q.frames}` +
     (q.moved >= 3 && q.moved >= 0.1 * q.frames ? ": 소스 메모에 내 자리를 적어 주세요 (예: 내 자리는 위 가운데)" : ""));
-  return parts.length ? " · " + parts.join(" · ") : "";
+  return parts.length ? ", " + parts.join(", ") : "";
 }
 function capRefresh(source) {
   source.line.textContent = capDescribe(source);
@@ -518,14 +519,14 @@ function capShow() {
 }
 function renderPlayers(d) {         // watched from outside, or after the hero's fold: everyone's equity against everyone
   const box = section(d.table && d.table.observer ? "모든 플레이어의 승률 (관전 화면)" : "남은 플레이어의 승률 (내가 폴드한 핸드)",
-    (d.board.length ? `보드 ${d.board.map(cardLabel).join(" ")} · ` : "프리플랍 · ") +
+    (d.board.length ? `보드 ${d.board.map(cardLabel).join(" ")}, ` : "프리플랍, ") +
     (d.exact ? "전수 계산, 오차 없음" : `몬테카를로 ${d.trials.toLocaleString()}회, ±${(d.ci95 * 100).toFixed(2)}%p`));
   const bars = el("div", "bars"), top = Math.max(...d.players.map(p => p.equity));
   for (const p of d.players) {
     const name = el("div", "name");
     name.append(document.createTextNode(`${p.position_ko} ${p.name || "자리 " + (p.seat + 1)} `));
     if (p.cards) for (const card of p.cards) name.append(el("span", "suit-" + card[1], cardLabel(card)));
-    else name.append(el("span", null, p.range ? `· 레인지 약 ${pct(p.range.width, 0)}` : "· 랜덤 핸드"));
+    else name.append(el("span", null, p.range ? `(레인지 약 ${pct(p.range.width, 0)})` : "(랜덤 핸드)"));
     const track = el("div", "track"), bar = el("div", "bar");
     bar.style.width = `calc((100% - 56px) * ${top > 0 ? p.equity / top : 0})`;
     attachTip(bar, pct(p.equity, 2), p.cards ? "공개된 카드 기준" : p.range ? p.range.label : "아직 액션 없음");
@@ -577,7 +578,7 @@ async function capAdd() {
   catch (e) { renderMessage("창을 고르지 않았습니다.", false); return; }
   const source = {id: `소스 ${cap.next++}`, stream, live: true, busy: false, changed: true, movedAt: 0, firstAt: 0, sentAt: -1e9, look: null, state: null, error: null};
   const node = source.node = el("div", "source"), head = el("div", "row");
-  const name = source.label = el("input"); name.type = "text"; name.placeholder = `${source.id} · 프로그램 이름을 정해 주세요`;
+  const name = source.label = el("input"); name.type = "text"; name.placeholder = `${source.id}: 프로그램 이름을 정해 주세요`;
   name.setAttribute("aria-label", "프로그램 이름 (기록 학습과 프로그램별 모델이 이 이름으로 묶입니다)");
   name.oninput = () => capRefresh(source);
   name.onclick = e => e.stopPropagation();
@@ -624,7 +625,7 @@ function setMode(mode) {
   state.seq++; $("result").classList.remove("loading");
   if (mode === "capture") capShow();
   else if (state.slots[0] && state.slots[1]) schedule(0);
-  else renderMessage("내 카드 두 장을 고르면 계산합니다. 보드는 비워 두거나 3·4·5장을 고르세요.");
+  else renderMessage("내 카드 두 장을 고르면 계산합니다. 보드는 비워 두거나 3장, 4장, 5장을 고르세요.");
 }
 
 function renderMessage(text, isError) {
@@ -646,12 +647,12 @@ function renderResult(d) {
   /* headline */
   const head = el("div", "card-box stack");
   const hero = el("div", "hero");
-  hero.append(el("span", "figure", pct(d.equity)), el("span", "label", "승률(에퀴티) · " +
+  hero.append(el("span", "figure", pct(d.equity)), el("span", "label", "승률(에퀴티), " +
     (d.exact ? "전수 계산, 오차 없음" : `몬테카를로 ${d.trials.toLocaleString()}회, ±${(d.ci95 * 100).toFixed(2)}%p`)));
   head.append(hero);
   const verdict = el("div", "row");
   verdict.append(el("span", "chip", d.verdict), el("span", "hint",
-    `${d.n_players}명 기준 평균 승률 ${pct(d.fair_share)}의 ${(d.equity / d.fair_share).toFixed(2)}배 · 상대 ${nOpp}명 ${d.ranged ? "(레인지 반영)" : "(랜덤 핸드 가정)"}`));
+    `${d.n_players}명 기준 평균 승률 ${pct(d.fair_share)}의 ${(d.equity / d.fair_share).toFixed(2)}배, 상대 ${nOpp}명 ${d.ranged ? "(레인지 반영)" : "(랜덤 핸드 가정)"}`));
   head.append(verdict);
   const bar = el("div", "segbar"); bar.setAttribute("role", "img");
   bar.setAttribute("aria-label", `승 ${pct(d.win)}, 무 ${pct(d.tie)}, 패 ${pct(d.lose)}`);
@@ -667,20 +668,20 @@ function renderResult(d) {
   head.append(bar, legend);
 
   const facts = el("ul", "facts");
-  if (d.made_hand) facts.append(fact("현재 족보", `${HAND_KO[d.made_hand]} · 지금 쇼다운이면 랜덤 핸드 1개 상대로 앞섬 ${pct(d.ahead_now[0])} / 동률 ${pct(d.ahead_now[1])} / 뒤짐 ${pct(d.ahead_now[2])}`));
+  if (d.made_hand) facts.append(fact("현재 족보", `${HAND_KO[d.made_hand]}, 지금 쇼다운이면 랜덤 핸드 1개 상대로 앞섬 ${pct(d.ahead_now[0])} / 동률 ${pct(d.ahead_now[1])} / 뒤짐 ${pct(d.ahead_now[2])}`));
   if (d.preflop_rank) facts.append(fact("프리플랍 순위", `169개 스타팅 핸드 중 ${d.preflop_rank}위 (${d.hand_class})`));
-  if (d.pot_odds) facts.append(fact("팟 오즈", `팟 ${+d.pot_odds.pot.toFixed(2)}${d.unit || ""}에 ${+d.pot_odds.to_call.toFixed(2)}${d.unit || ""} 콜 → 필요 승률 ${pct(d.pot_odds.required_equity)} · 콜 기대값 ${d.pot_odds.ev_call >= 0 ? "+" : ""}${d.pot_odds.ev_call.toFixed(1)} (${d.pot_odds.profitable ? "수익" : "손실"} 콜)`));
+  if (d.pot_odds) facts.append(fact("팟 오즈", `팟 ${+d.pot_odds.pot.toFixed(2)}${d.unit || ""}에 ${+d.pot_odds.to_call.toFixed(2)}${d.unit || ""} 콜, 필요 승률 ${pct(d.pot_odds.required_equity)}, 콜 기대값 ${d.pot_odds.ev_call >= 0 ? "+" : ""}${d.pot_odds.ev_call.toFixed(1)} (${d.pot_odds.profitable ? "수익" : "손실"} 콜)`));
   if (d.bet) {
-    facts.append(fact("베팅", `팟 ${d.bet.pot}에 ${d.bet.bet} → 블러프 손익분기 폴드율 ${pct(d.bet.bluff_breakeven_folds)} · 콜 받을 때 필요 승률 ${pct(d.bet.called_breakeven_equity)}`));
-    facts.append(fact("베팅 기대값", `현재 승률 그대로 콜 받으면 ${d.bet.ev_if_called >= 0 ? "+" : ""}${d.bet.ev_if_called.toFixed(1)} · 체크로 쇼다운이면 +${d.bet.ev_check.toFixed(1)}`));
+    facts.append(fact("베팅", `팟 ${d.bet.pot}에 ${d.bet.bet} 벳, 블러프 손익분기 폴드율 ${pct(d.bet.bluff_breakeven_folds)}, 콜 받을 때 필요 승률 ${pct(d.bet.called_breakeven_equity)}`));
+    facts.append(fact("베팅 기대값", `현재 승률 그대로 콜 받으면 ${d.bet.ev_if_called >= 0 ? "+" : ""}${d.bet.ev_if_called.toFixed(1)}, 체크로 쇼다운이면 +${d.bet.ev_check.toFixed(1)}`));
   }
   if (!d.ranged && d.table) facts.append(fact("주의", "남은 상대가 아직 액션하지 않아 랜덤 핸드로 계산했습니다."));
-  else if (!d.ranged) facts.append(fact("주의", "상대가 랜덤 핸드라는 가정입니다. 베팅·레이즈한 상대는 '상대 추가'로 액션을 넣으면 레인지를 추정해 다시 계산합니다."));
+  else if (!d.ranged) facts.append(fact("주의", "상대가 랜덤 핸드라는 가정입니다. 베팅이나 레이즈를 한 상대는 '상대 추가'로 액션을 넣으면 레인지를 추정해 다시 계산합니다."));
   head.append(facts); out.push(head);
 
   /* opponent ranges: sequential, one hue */
   d.ranges.forEach((r, i) => {
-    const box = section(`상대 ${i + 1} 레인지`, `${r.label} · 전체 핸드의 약 ${pct(r.width, 0)} 폭`);
+    const box = section(`상대 ${i + 1} 레인지`, `${r.label}, 전체 핸드의 약 ${pct(r.width, 0)} 폭`);
     const grid = el("div", "rangegrid"); grid.setAttribute("role", "img"); grid.setAttribute("aria-label", "스타팅 핸드별 비중");
     const density = cls => r.classes[cls] / (cls.length === 2 ? 6 : cls.endsWith("s") ? 4 : 12);
     const peak = Math.max(...Object.keys(r.classes).map(density));
@@ -688,7 +689,7 @@ function renderResult(d) {
       const cls = a === b ? RANKS[a] + RANKS[a] : a < b ? RANKS[a] + RANKS[b] + "s" : RANKS[b] + RANKS[a] + "o";
       const share = r.classes[cls] || 0, level = share > 0 ? Math.min(5, 1 + Math.floor(density(cls) / peak * 4.999)) : 0;
       const cell = el("div", "cell" + (level && density(cls) / peak >= 0.04 ? " s" + level : ""), cls);
-      attachTip(cell, pct(share, 2), `${cls} · 레인지에서 차지하는 비중`); grid.append(cell);
+      attachTip(cell, pct(share, 2), `${cls}: 레인지에서 차지하는 비중`); grid.append(cell);
     }
     const legend = el("div", "legend"), scale = el("span", "scale");
     for (let s = 1; s <= 5; s++) { const sw = el("i"); sw.style.background = `var(--seq-${s})`; scale.append(sw); }
@@ -699,7 +700,7 @@ function renderResult(d) {
 
   /* next card: diverging around the current equity */
   if (d.next_cards) {
-    const nc = d.next_cards, box = section("다음 카드별 승률", `현재 ${pct(d.equity)} 대비 · 10%p 이상 오르는 카드 ${nc.better}장, 떨어지는 카드 ${nc.worse}장`);
+    const nc = d.next_cards, box = section("다음 카드별 승률", `현재 ${pct(d.equity)} 대비, 10%p 이상 오르는 카드 ${nc.better}장, 떨어지는 카드 ${nc.worse}장`);
     const grid = el("div", "cardgrid");
     for (const s of SUITS) for (const r of RANKS) {
       const card = r + s, e = nc.cards[card];
@@ -713,7 +714,7 @@ function renderResult(d) {
       "color-mix(in oklab, var(--pos) 35%, var(--mid))", "color-mix(in oklab, var(--pos) 68%, var(--mid))", "var(--pos)"]) { const sw = el("i"); sw.style.background = c; scale.append(sw); }
     legend.append(document.createTextNode("승률 하락"), scale, document.createTextNode("상승 (±3 / 10 / 25%p 경계)"));
     const groups = el("ul", "facts"); groups.style.marginTop = "8px";
-    for (const g of nc.groups) groups.append(fact(`${HAND_KO[g.made_hand]} ${g.cards.length}장`, `→ 평균 승률 ${pct(g.equity)}  (${g.cards.map(cardLabel).join(" ")})`));
+    for (const g of nc.groups) groups.append(fact(`${HAND_KO[g.made_hand]} ${g.cards.length}장`, `평균 승률 ${pct(g.equity)} (${g.cards.map(cardLabel).join(" ")})`));
     const details = el("details"); details.append(el("summary", null, "표로 보기"));
     const table = el("table"), headRow = el("tr"); headRow.append(el("th", null, "카드"), el("th", null, "이후 승률"), el("th", null, "변화")); table.append(headRow);
     for (const [card, e] of Object.entries(nc.cards).sort((x, y) => y[1] - x[1])) {
@@ -736,7 +737,7 @@ function renderResult(d) {
 
   /* equity by number of opponents: the current count is the point, the rest is context */
   if (d.by_opponents) {
-    const box = section("상대 수별 승률", "같은 핸드·보드, 상대가 모두 랜덤 핸드일 때"), cols = el("div", "columns"), axis = el("div", "axis");
+    const box = section("상대 수별 승률", "같은 핸드와 보드, 상대가 모두 랜덤 핸드일 때"), cols = el("div", "columns"), axis = el("div", "axis");
     const entries = Object.entries(d.by_opponents), top = Math.max(...entries.map(([, e]) => e));
     for (const [n, e] of entries) {
       const col = el("div", "col" + (Number(n) === nOpp ? " current" : "")), fill = el("div", "fill");
@@ -774,7 +775,7 @@ $("capModel").onchange = async () => {              // the same pictures, read w
 $("reset").onclick = () => {
   state.slots.fill(null); state.active = 0; state.opponents = []; state.seq++;
   for (const id of ["pot", "toCall", "bet", "position"]) $(id).value = "";
-  renderInput(); renderMessage("내 카드 두 장을 고르면 계산합니다. 보드는 비워 두거나 3·4·5장을 고르세요.");
+  renderInput(); renderMessage("내 카드 두 장을 고르면 계산합니다. 보드는 비워 두거나 3장, 4장, 5장을 고르세요.");
 };
 renderInput(); capShow();
 </script>
