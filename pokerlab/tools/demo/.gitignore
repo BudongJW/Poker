@@ -1,4 +1,5 @@
-# driver.js is ours (the repository ignores *.js elsewhere); npm install puts its packages here
+# driver.js and capture_check.js are ours (the repository ignores *.js elsewhere); npm install puts its packages here
 !driver.js
+!capture_check.js
 node_modules/
 package-lock.json

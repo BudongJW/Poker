@@ -2453,6 +2453,8 @@ def test_the_board_is_read_again_once_a_street_and_settles_a_tie(monkeypatch):
     state = web.capture_request({"source": "B", "do": "state", "trials": 1000})
     assert not state["checking"]
     assert len(seen) == 3 and state["spending"]["board_checks"] == 3 and state["spending"]["frames"] == len(shots)
+    # the time an answer waits for is the frames' reading; the readings again run after it, counted apart
+    assert state["spending"]["seconds"] == pytest.approx(len(shots)) and state["spending"]["check_seconds"] == pytest.approx(1.5)
     assert state["table"]["board"] == [card_str(c) for c in result.board]
     web._SOURCES.clear()
 

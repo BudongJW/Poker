@@ -69,3 +69,22 @@ python pokerlab/tools/demo/record.py flash GAME_DIR out_flash --minutes 4
 결과: `OUT/demo.mp4`(영상), `OUT/hands.jsonl`(따라간 핸드 기록), HTML5는 `OUT/truth.json`(게임 내부 상태, 기록과 대조용).
 
 메뉴 클릭 좌표는 1280x800 화면 기준입니다. 게임 버전이 다르면 `record.py`의 좌표를 고쳐야 합니다. Flash 게임은 그래픽 가속 없이 돌리면 느려서, 화면을 0.7초보다 자주 찍으면 멈출 수 있습니다.
+
+## 실제 창 캡처로 시험하기 (비용 있음)
+
+`record.py`는 게임 화면을 캔버스로 넣어 주지만, 이 도구는 페이지의 "창 추가"가 브라우저의 실제 창 캡처(getDisplayMedia)를 부르고 Chromium이 게임 탭을 제목으로 고르게 합니다. 사람이 창을 고르는 것과 같은 경로로 화면이 들어가고, 처음에는 "정확하게", 나중에는 "빠르게"로 읽습니다. 모든 요청의 시간과 답, 게임 내부 상태, 상태 줄을 저장합니다.
+
+```bash
+python -m pokerlab serve --port 8790 --record out_capture/hands.jsonl
+```
+
+```bash
+python -I -m http.server 8781 --directory GAME_DIR
+```
+
+```bash
+cd pokerlab/tools/demo && xvfb-run -a node capture_check.js ../../../out_capture ../fixtures/html5_notes.txt 2 1.5
+```
+
+화면이 있는 Windows, macOS에서는 `xvfb-run -a` 없이 실행합니다. Chromium의 화면 없는 모드(headless)는 창 캡처를 지원하지 않습니다. 2026-11-19에 3.5분 돌린 결과: 48장, 정확하게 중앙값 5.24초, 빠르게 2.29초, 약 1.64달러. 기록된 3핸드 모두 보드와 각자 낸 칩이 게임과 같았습니다.
+

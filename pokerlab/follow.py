@@ -71,7 +71,7 @@ class Follower:
         # what reading the window has cost: frames read by a service, dollars (None once a call had no known
         # price), seconds, and frames read again by the main model after the cheaper one's reading was doubted
         self.spending = {"frames": 0, "dollars": 0.0, "seconds": 0.0, "read_again": 0, "doubts": {}, "card_checks": 0,
-                         "board_checks": 0}
+                         "board_checks": 0, "check_seconds": 0.0}   # seconds: reading frames (what the answer waits for)
         self._clear()
 
     def _clear(self):
@@ -274,7 +274,7 @@ class Follower:
         counted again (see card_tie, board_check)."""
         spending = self.spending
         spending["card_checks" if card_check else "board_checks" if board_check else "frames"] += 1
-        spending["seconds"] += sum(call.get("seconds") or 0.0 for call in calls)
+        spending["check_seconds" if card_check or board_check else "seconds"] += sum(call.get("seconds") or 0.0 for call in calls)
         costs = [call.get("cost") for call in calls]
         spending["dollars"] = None if spending["dollars"] is None or None in costs else spending["dollars"] + sum(costs)
         if doubts:
