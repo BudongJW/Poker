@@ -6,12 +6,14 @@ for almost two minutes (and pokerlab kept reading the covered table). The watchd
 
 1. Notice: the game's pictures (driver.js saves one about every 0.7 s) have not changed for
    STALL_SECONDS. "Changed" means a step in which at least 3% of a small copy of the picture moved
-   clearly; in the Flash video a tip window's little animations stayed under 1.2%, play never went
-   20 seconds without a step of 7% or more.
-2. Act, cheapest first, looking again after each step:
+   clearly; in the Flash video a tip window's little animations stayed under 1.2%. Play can stand
+   still for a while too: on a slow machine the Flash game's showdowns lasted 17 to 18 seconds,
+   while the tip window stood for 105.
+2. Act, looking again after each step:
    a. the fixes known for that game (close a tip and switch tips off, start a new game ...);
-   b. Escape, then Enter;
-   c. ask Claude what is in the way and where to click (about $0.02), and do that.
+   b. ask Claude what is in the way and where to click (about $0.01), and do that; when it sees
+      nothing in the way, wait (a key pressed blindly could do something in the game);
+   c. only when Claude cannot be asked: Escape, then Enter.
 3. Give up after MAX_TRIES rounds that did not get the game going: the caller stops playing and
    reading, so that nothing more is spent on a game that does not go on.
 
@@ -24,7 +26,7 @@ import os
 import shutil
 import time
 
-STALL_SECONDS = 15.0
+STALL_SECONDS = 25.0
 CHANGED = 0.03              # share of pixels of a 160x100 copy that moved by more than 24 levels
 MAX_TRIES = 2               # rounds of the whole ladder for one incident before giving up
 
@@ -41,6 +43,18 @@ SCHEMA = {"type": "object", "additionalProperties": False,
           "properties": {"blocking": {"type": "boolean"}, "what": {"type": "string"},
                          "action": {"type": "string", "enum": ["click", "key", "wait"]},
                          "x": {"type": "number"}, "y": {"type": "number"}, "key": {"type": "string"}}}
+
+
+def outcome(incident):
+    """How an incident ended, in a few words: what got the game going, that nothing was in the way, or that it gave up."""
+    if incident.get("solved_by"):
+        return incident["solved_by"]
+    if incident.get("gave_up"):
+        return "해결 못함: 플레이와 읽기를 멈춤"
+    if incident.get("what"):
+        return incident["what"]
+    steps = [step["step"] for step in incident.get("tried") or [] if "step" in step]
+    return steps[-1] if steps else ""
 
 
 def _small(path):
@@ -154,28 +168,29 @@ class Watchdog:
             for name in self.fixes:
                 if self._try(incident, f"알려진 처리: {name}", "fix", name=name):
                     return self._done("solved")
-            for key in ("Escape", "Enter"):
-                if self._try(incident, f"키 {key}", "key", key=key):
-                    return self._done("solved")
+            seen = None
             if self.ask is not None and incident["picture"]:
                 try:
                     seen = self.ask(incident["picture"])
                 except Exception as error:
                     incident["tried"].append({"step": "Claude에게 묻기", "error": str(error)[:200]})
-                    seen = None
-                if seen:
-                    incident.setdefault("claude", []).append(seen)
-                    if seen["action"] == "click" and 0 <= seen["x"] <= 1 and 0 <= seen["y"] <= 1:
-                        if self._try(incident, f"Claude가 고른 곳 클릭: {seen['what']}", "click",
-                                     x=round(seen["x"] * self.size[0]), y=round(seen["y"] * self.size[1])):
-                            return self._done("solved")
-                    elif seen["action"] == "key" and seen["key"]:
-                        if self._try(incident, f"Claude가 고른 키 {seen['key']}: {seen['what']}", "key", key=seen["key"]):
-                            return self._done("solved")
-                    elif seen["action"] == "wait" and not seen["blocking"]:
-                        incident["tried"].append({"step": f"Claude: 막은 것 없음, 기다림 ({seen['what']})"})
-                        self._last_move = time.time()
-                        return self._done("ok")
+            if seen is None:                    # no one to ask: the keys that close most boxes
+                for key in ("Escape", "Enter"):
+                    if self._try(incident, f"키 {key}", "key", key=key):
+                        return self._done("solved")
+            if seen:
+                incident.setdefault("claude", []).append(seen)
+                if seen["action"] == "click" and 0 <= seen["x"] <= 1 and 0 <= seen["y"] <= 1:
+                    if self._try(incident, f"Claude가 고른 곳 클릭: {seen['what']}", "click",
+                                 x=round(seen["x"] * self.size[0]), y=round(seen["y"] * self.size[1])):
+                        return self._done("solved")
+                elif seen["action"] == "key" and seen["key"]:
+                    if self._try(incident, f"Claude가 고른 키 {seen['key']}: {seen['what']}", "key", key=seen["key"]):
+                        return self._done("solved")
+                elif seen["action"] == "wait" and not seen["blocking"]:
+                    incident["tried"].append({"step": f"Claude: 막은 것 없음, 기다림 ({seen['what']})"})
+                    self._last_move = time.time()
+                    return self._done("ok")
             if pictures:                        # a fresh picture for the next round
                 pictures = self._pictures()
                 shutil.copyfile(pictures[-1], incident["picture"])

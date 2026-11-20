@@ -34,7 +34,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
 FIXTURES = os.path.join(HERE, "..", "fixtures")
 sys.path.insert(0, HERE)
-from watchdog import Watchdog, ask_claude  # noqa: E402
+from watchdog import Watchdog, ask_claude, outcome  # noqa: E402
 
 GAME_PORT, POKERLAB_PORT, DRIVER_PORT = 8781, 8790, 8795
 
@@ -223,7 +223,7 @@ def main():
     print(f"돌발상황 {len(watchdog.incidents)}건" + (f", 멈춘 이유: {run.stopped}" if run.stopped else "") +
           (f" (자세히: {os.path.join(out, 'incidents.json')})" if watchdog.incidents else ""))
     for incident in watchdog.incidents:
-        print(f"  {incident['time']}: " + (incident.get("solved_by") or ("해결 못함" if incident.get("gave_up") else incident.get("what", ""))))
+        print(f"  {incident['time']}: {outcome(incident)}")
     if not reading:
         return
     command = [sys.executable, os.path.join(HERE, "compose.py"), out, subtitle] + ([crop] if crop else [])
